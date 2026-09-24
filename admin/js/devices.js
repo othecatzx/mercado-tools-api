@@ -381,15 +381,11 @@ async saveName(deviceId) {
 
                             <div class="table-actions">
 <button
-class="secondary-button small"
-onclick="devicesPage.reloadDevice('${device.id}')"
-${device.status !== "active" ? "disabled" : ""}
-
-
-
-
-🔄 Atualizar
-
+    class="secondary-button small"
+    onclick="devicesPage.reloadDevice('${device.id}')"
+    ${device.status !== "active" ? "disabled" : ""}
+>
+    🔄 Atualizar
 </button>
                                 ${
                                     device.status === "active"

@@ -23,8 +23,7 @@ const licensesPage = {
 
                     <button
                         class="secondary-button"
-                        id="refreshLicensesButton"
-                    >
+                        id="refreshLicensesButton">
                         ↻ Atualizar
                     </button>
 
