@@ -415,7 +415,7 @@ async saveName(deviceId) {
 
                                         <button
                                             class="secondary-button small"
-                                            onclick="devicesPage.changeStatus('${device.id}', 'removed')"
+                                            onclick="devicesPage.removeDevice('${device.id}')"
                                         >
                                             Remover
                                         </button>
@@ -1242,6 +1242,67 @@ async saveName(deviceId) {
     } catch (error) {
 
         console.error(error);
+
+        alert(
+            error.message ||
+            "Não foi possível remover o dispositivo."
+        );
+    }
+},
+
+async removeDevice(id) {
+
+    const device = this.devices.find(
+        item => item.id === id
+    );
+
+    if (!device) return;
+
+    const nome =
+        device.nome ||
+        device.device_id ||
+        "este dispositivo";
+
+    const confirmed = confirm(
+        `Tem certeza que deseja remover "${nome}"?\n\n` +
+        `O dispositivo será excluído permanentemente do banco de dados.\n\n` +
+        `Essa ação não poderá ser desfeita.`
+    );
+
+    if (!confirmed) return;
+
+    try {
+
+        const response = await apiFetch(
+            `/api/admin/devices/${id}`,
+            {
+                method: "DELETE"
+            }
+        );
+
+        if (!response) return;
+
+        const data = await response.json();
+
+        if (!response.ok || !data.ok) {
+            throw new Error(
+                data.reason ||
+                data.error ||
+                data.message ||
+                "Erro ao remover dispositivo"
+            );
+        }
+
+        await this.load();
+
+        alert("Dispositivo removido com sucesso.");
+
+    } catch (error) {
+
+        console.error(
+            "Erro ao remover dispositivo:",
+            error
+        );
 
         alert(
             error.message ||
