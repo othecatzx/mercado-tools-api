@@ -1982,6 +1982,88 @@ app.patch("/api/admin/devices/:id/status", verificarAdmin, async (req, res) => {
     }
 });
 
+
+app.delete("/api/admin/devices/:id", verificarAdmin, async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        // Buscar dispositivo antes de excluir
+        const { data: existingDevice, error: findError } = await supabase
+            .from("devices")
+            .select("*")
+            .eq("id", id)
+            .maybeSingle();
+
+        if (findError) {
+            console.error("Erro ao buscar dispositivo:", findError);
+
+            return res.status(500).json({
+                ok: false,
+                reason: "database_error"
+            });
+        }
+
+        if (!existingDevice) {
+            return res.status(404).json({
+                ok: false,
+                reason: "device_not_found",
+                message: "Dispositivo não encontrado"
+            });
+        }
+
+        // Excluir permanentemente do banco
+        const { error: deleteError } = await supabase
+            .from("devices")
+            .delete()
+            .eq("id", id);
+
+        if (deleteError) {
+            console.error(
+                "Erro ao excluir dispositivo:",
+                deleteError
+            );
+
+            return res.status(500).json({
+                ok: false,
+                reason: "database_error",
+                message: "Não foi possível excluir o dispositivo"
+            });
+        }
+
+        // Registrar log da exclusão
+        await supabase
+            .from("logs")
+            .insert({
+                company_id: existingDevice.company_id,
+                user_id: existingDevice.user_id,
+                device_id: id,
+                admin_id: req.admin.admin_id,
+                acao: "device_deleted",
+                detalhes: {
+                    device_identifier: existingDevice.device_id,
+                    device_name: existingDevice.nome,
+                    previous_status: existingDevice.status
+                }
+            });
+
+        return res.json({
+            ok: true,
+            message: "Dispositivo excluído com sucesso"
+        });
+
+    } catch (error) {
+        console.error(
+            "Erro inesperado ao excluir dispositivo:",
+            error
+        );
+
+        return res.status(500).json({
+            ok: false,
+            reason: "server_error"
+        });
+    }
+});
+
 app.patch("/api/admin/devices/:id/user", verificarAdmin, async (req, res) => {
     try {
 
