@@ -380,7 +380,17 @@ async saveName(deviceId) {
                         <td>
 
                             <div class="table-actions">
+<button
+class="secondary-button small"
+onclick="devicesPage.reloadDevice('${device.id}')"
+${device.status !== "active" ? "disabled" : ""}
 
+
+
+
+🔄 Atualizar
+
+</button>
                                 ${
                                     device.status === "active"
 
@@ -1310,6 +1320,75 @@ async removeDevice(id) {
         );
     }
 },
+async reloadDevice(id) {
+
+const device =
+    this.devices.find(
+        item => item.id === id
+    );
+
+if (!device) return;
+
+const nome =
+    device.nome ||
+    device.device_id ||
+    "este dispositivo";
+
+const confirmed =
+    confirm(
+        `Deseja atualizar a página de "${nome}"?`
+    );
+
+if (!confirmed) return;
+
+try {
+
+    const response =
+        await apiFetch(
+            `/api/admin/devices/${id}/reload`,
+            {
+                method: "POST"
+            }
+        );
+
+    if (!response) return;
+
+    const data =
+        await response.json();
+
+    if (!response.ok || !data.ok) {
+
+        if (data.reason === "device_offline") {
+            throw new Error(
+                "O dispositivo está offline."
+            );
+        }
+
+        throw new Error(
+            data.reason ||
+            data.message ||
+            "Não foi possível atualizar o dispositivo."
+        );
+    }
+
+    alert(
+        `Comando de atualização enviado para "${nome}".`
+    );
+
+} catch (error) {
+
+    console.error(
+        "Erro ao atualizar dispositivo:",
+        error
+    );
+
+    alert(
+        error.message ||
+        "Não foi possível atualizar o dispositivo."
+    );
+}
+
+}, 
 
     async changeStatus(id, status) {
 

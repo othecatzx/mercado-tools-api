@@ -1,6 +1,7 @@
 const express = require("express");
 const crypto = require("crypto");
 const axios = require("axios");
+const { WebSocketServer } = require("ws");
 const cors = require("cors");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
@@ -2738,7 +2739,181 @@ app.post("/api/license/status", async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
+// ==========================================
+// 🔄 RECARREGAR DISPOSITIVO REMOTAMENTE
+// ==========================================
+
+app.post(
+    "/api/admin/devices/:id/reload",
+    verificarAdmin,
+    async (req, res) => {
+
+        try {
+
+            const { id } = req.params;
+
+            // Buscar dispositivo
+            const { data: device, error } = await supabase
+                .from("devices")
+                .select("*")
+                .eq("id", id)
+                .maybeSingle();
+
+            if (error) {
+                console.error(
+                    "Erro ao buscar dispositivo:",
+                    error
+                );
+
+                return res.status(500).json({
+                    ok: false,
+                    reason: "database_error"
+                });
+            }
+
+            if (!device) {
+                return res.status(404).json({
+                    ok: false,
+                    reason: "device_not_found"
+                });
+            }
+
+            // Procurar WebSocket desse dispositivo
+            const socket = connectedDevices.get(
+                device.device_id
+            );
+
+            // Dispositivo offline
+            if (
+                !socket ||
+                socket.readyState !== 1
+            ) {
+                return res.status(409).json({
+                    ok: false,
+                    reason: "device_offline",
+                    message: "Dispositivo offline"
+                });
+            }
+
+            // Enviar comando
+            socket.send(JSON.stringify({
+                type: "reload"
+            }));
+
+            console.log(
+                `🔄 Reload enviado para ${device.device_id}`
+            );
+
+            return res.json({
+                ok: true,
+                message: "Comando enviado"
+            });
+
+        } catch (error) {
+
+            console.error(
+                "Erro ao enviar reload:",
+                error
+            );
+
+            return res.status(500).json({
+                ok: false,
+                reason: "server_error"
+            });
+        }
+    }
+);
+
+const server = app.listen(PORT, () => {
     console.log(`API rodando em http://localhost:${PORT}`);
-    
+});
+
+// ==========================================
+// 🔌 WEBSOCKET
+// ==========================================
+
+const wss = new WebSocketServer({
+    server
+});
+
+const connectedDevices = new Map();
+
+wss.on("connection", (ws) => {
+
+    console.log("🔌 Novo dispositivo conectado");
+
+    let deviceId = null;
+
+    ws.on("message", (message) => {
+
+        try {
+
+            const data = JSON.parse(
+                message.toString()
+            );
+
+            console.log(
+                "📩 WebSocket:",
+                data
+            );
+
+            if (data.type === "register") {
+
+                if (!data.device_id) {
+                    return;
+                }
+
+                deviceId = data.device_id;
+
+                connectedDevices.set(
+                    deviceId,
+                    ws
+                );
+
+                console.log(
+                    `📱 Dispositivo conectado: ${deviceId}`
+                );
+
+                ws.send(JSON.stringify({
+                    type: "registered",
+                    device_id: deviceId
+                }));
+            }
+
+        } catch (error) {
+
+            console.error(
+                "Erro WebSocket:",
+                error
+            );
+
+        }
+    });
+
+    ws.on("close", () => {
+
+        if (deviceId) {
+
+            if (
+                connectedDevices.get(deviceId) === ws
+            ) {
+                connectedDevices.delete(deviceId);
+            }
+
+            console.log(
+                `📴 Dispositivo desconectado: ${deviceId}`
+            );
+        }
+
+    });
+
+    ws.on("error", (error) => {
+
+        console.error(
+            "WebSocket error:",
+            error
+        );
+
+    });
+
 });
