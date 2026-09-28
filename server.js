@@ -2839,6 +2839,259 @@ const mlOAuthStates = new Map();
 // MERCADO LIVRE - GERENCIADOR DE TOKEN
 // ============================================================
 
+const mlTokenRefreshPromises = new Map();
+
+async function getValidMercadoLivreToken(companyId) {
+
+    if (!companyId) {
+        throw new Error("companyId é obrigatório");
+    }
+
+    const { data: account, error: accountError } =
+        await supabase
+            .from("mercadolivre_accounts")
+            .select("*")
+            .eq("company_id", companyId)
+            .maybeSingle();
+
+    if (accountError) {
+        console.error(
+            "❌ Erro ao buscar conta Mercado Livre:",
+            accountError
+        );
+
+        throw new Error(
+            "Erro ao buscar conta Mercado Livre"
+        );
+    }
+
+    if (!account) {
+        throw new Error(
+            "Conta Mercado Livre não conectada"
+        );
+    }
+
+    if (!account.access_token) {
+        throw new Error(
+            "Access token do Mercado Livre não encontrado"
+        );
+    }
+
+    if (!account.refresh_token) {
+        throw new Error(
+            "Refresh token do Mercado Livre não encontrado"
+        );
+    }
+
+    // ========================================================
+    // VERIFICAR SE AINDA ESTÁ VÁLIDO
+    // ========================================================
+
+    const expiresAt =
+        account.token_expires_at
+            ? new Date(
+                account.token_expires_at
+            ).getTime()
+            : 0;
+
+    const agora = Date.now();
+
+    // Renovar 5 minutos antes de expirar
+    const margemRenovacao =
+        5 * 60 * 1000;
+
+    if (
+        expiresAt > 0 &&
+        agora < expiresAt - margemRenovacao
+    ) {
+
+        return account.access_token;
+    }
+
+    // ========================================================
+    // EVITAR DUAS RENOVAÇÕES SIMULTÂNEAS
+    // ========================================================
+
+    if (mlTokenRefreshPromises.has(companyId)) {
+
+        console.log(
+            `⏳ Renovação ML já em andamento | Empresa: ${companyId}`
+        );
+
+        return await mlTokenRefreshPromises.get(
+            companyId
+        );
+    }
+
+    // ========================================================
+    // CRIAR PROMISE DE RENOVAÇÃO
+    // ========================================================
+
+    const refreshPromise = (async () => {
+
+        try {
+
+            console.log(
+                `🔄 Renovando token Mercado Livre | Empresa: ${companyId}`
+            );
+
+            const refreshResponse =
+                await axios.post(
+
+                    "https://api.mercadolibre.com/oauth/token",
+
+                    new URLSearchParams({
+
+                        grant_type:
+                            "refresh_token",
+
+                        client_id:
+                            ML_CLIENT_ID,
+
+                        client_secret:
+                            ML_CLIENT_SECRET,
+
+                        refresh_token:
+                            account.refresh_token
+
+                    }).toString(),
+
+                    {
+                        headers: {
+                            accept:
+                                "application/json",
+
+                            "content-type":
+                                "application/x-www-form-urlencoded"
+                        }
+                    }
+                );
+
+            const tokenData =
+                refreshResponse.data;
+
+            if (!tokenData.access_token) {
+
+                throw new Error(
+                    "Mercado Livre não retornou um novo access token"
+                );
+            }
+
+            if (!tokenData.refresh_token) {
+
+                throw new Error(
+                    "Mercado Livre não retornou um novo refresh token"
+                );
+            }
+
+            const expiresIn =
+                Number(
+                    tokenData.expires_in ||
+                    21600
+                );
+
+            const tokenExpiresAt =
+                new Date(
+                    Date.now() +
+                    expiresIn * 1000
+                ).toISOString();
+
+            // =================================================
+            // SALVAR OS NOVOS TOKENS
+            // =================================================
+
+            const { error: updateError } =
+                await supabase
+                    .from("mercadolivre_accounts")
+                    .update({
+
+                        access_token:
+                            tokenData.access_token,
+
+                        refresh_token:
+                            tokenData.refresh_token,
+
+                        token_expires_at:
+                            tokenExpiresAt,
+
+                        scope:
+                            tokenData.scope ||
+                            account.scope ||
+                            null,
+
+                        updated_at:
+                            new Date().toISOString()
+
+                    })
+                    .eq(
+                        "company_id",
+                        companyId
+                    );
+
+            if (updateError) {
+
+                console.error(
+                    "❌ Erro ao salvar novos tokens ML:",
+                    updateError
+                );
+
+                throw new Error(
+                    "Token renovado, mas não foi possível salvar no banco"
+                );
+            }
+
+            console.log(
+                `✅ Token Mercado Livre renovado | Empresa: ${companyId}`
+            );
+
+            return tokenData.access_token;
+
+        } catch (error) {
+
+            console.error(
+                "❌ Erro ao renovar token Mercado Livre:",
+                error.response?.data ||
+                error.message
+            );
+
+            if (
+                error.response?.data?.error ===
+                "invalid_grant"
+            ) {
+
+                console.error(
+                    `⚠️ Refresh token inválido/expirado | Empresa: ${companyId}`
+                );
+
+                throw new Error(
+                    "A autorização do Mercado Livre expirou. É necessário conectar novamente."
+                );
+            }
+
+            throw error;
+
+        } finally {
+
+            mlTokenRefreshPromises.delete(
+                companyId
+            );
+
+        }
+
+    })();
+
+    mlTokenRefreshPromises.set(
+        companyId,
+        refreshPromise
+    );
+
+    return await refreshPromise;
+}
+
+// ============================================================
+// MERCADO LIVRE - GERENCIADOR DE TOKEN
+// ============================================================
+
 async function getValidMercadoLivreToken(companyId) {
 
     if (!companyId) {
@@ -3916,6 +4169,210 @@ app.get("/api/mercadolivre/status", async (req, res) => {
 
 });
 
+// ============================================================
+// TESTE - MERCADO LIVRE API
+// ============================================================
+
+app.get("/api/mercadolivre/test", async (req, res) => {
+
+    try {
+
+        const {
+            chave,
+            device_id
+        } = req.query;
+
+        if (!chave || !device_id) {
+
+            return res.status(400).json({
+                ok: false,
+                reason: "missing_data",
+                message:
+                    "chave e device_id são obrigatórios"
+            });
+        }
+
+        // ====================================================
+        // BUSCAR LICENÇA
+        // ====================================================
+
+        const { data: license, error: licenseError } =
+            await supabase
+                .from("licenses")
+                .select("*")
+                .eq("chave", chave)
+                .maybeSingle();
+
+        if (licenseError) {
+
+            console.error(
+                "Erro ao buscar licença:",
+                licenseError
+            );
+
+            return res.status(500).json({
+                ok: false,
+                reason: "database_error"
+            });
+        }
+
+        if (!license) {
+
+            return res.status(404).json({
+                ok: false,
+                reason: "invalid_license"
+            });
+        }
+
+        if (license.status !== "active") {
+
+            return res.status(403).json({
+                ok: false,
+                reason: "license_inactive"
+            });
+        }
+
+        if (
+            license.vencimento &&
+            new Date(
+                license.vencimento
+            ).getTime() < Date.now()
+        ) {
+
+            return res.status(403).json({
+                ok: false,
+                reason: "license_expired"
+            });
+        }
+
+        // ====================================================
+        // VALIDAR DISPOSITIVO
+        // ====================================================
+
+        const { data: device, error: deviceError } =
+            await supabase
+                .from("devices")
+                .select(
+                    "id, device_id, status, company_id"
+                )
+                .eq(
+                    "company_id",
+                    license.company_id
+                )
+                .eq(
+                    "device_id",
+                    device_id
+                )
+                .maybeSingle();
+
+        if (deviceError) {
+
+            console.error(
+                "Erro ao buscar dispositivo:",
+                deviceError
+            );
+
+            return res.status(500).json({
+                ok: false,
+                reason: "database_error"
+            });
+        }
+
+        if (!device) {
+
+            return res.status(403).json({
+                ok: false,
+                reason: "device_not_registered"
+            });
+        }
+
+        if (device.status !== "active") {
+
+            return res.status(403).json({
+                ok: false,
+                reason: "device_inactive"
+            });
+        }
+
+        // ====================================================
+        // PEGAR TOKEN VÁLIDO
+        // ====================================================
+
+        const accessToken =
+            await getValidMercadoLivreToken(
+                license.company_id
+            );
+
+        // ====================================================
+        // TESTAR API DO MERCADO LIVRE
+        // ====================================================
+
+        const response =
+            await axios.get(
+                "https://api.mercadolibre.com/users/me",
+                {
+                    headers: {
+                        Authorization:
+                            `Bearer ${accessToken}`
+                    }
+                }
+            );
+
+        const user =
+            response.data;
+
+        // ====================================================
+        // NÃO RETORNAR TOKEN
+        // ====================================================
+
+        return res.json({
+
+            ok: true,
+
+            message:
+                "Mercado Livre API funcionando",
+
+            account: {
+
+                id:
+                    user.id,
+
+                nickname:
+                    user.nickname,
+
+                country_id:
+                    user.country_id,
+
+                site_id:
+                    user.site_id
+
+            }
+
+        });
+
+    } catch (error) {
+
+        console.error(
+            "❌ Erro no teste Mercado Livre:",
+            error.response?.data ||
+            error.message
+        );
+
+        return res.status(500).json({
+
+            ok: false,
+
+            reason:
+                "mercadolivre_api_error",
+
+            message:
+                error.message
+
+        });
+
+    }
+
+});
 
 const server = app.listen(PORT, () => {
     console.log(`API rodando em http://localhost:${PORT}`);
