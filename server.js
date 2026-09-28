@@ -6281,7 +6281,7 @@ app.get("/api/mercadolivre/pos-venda", async (req, res) => {
         let entregues = 0;
 
         let emTransporte = 0;
-
+let quantidadeItensEmTransporte = 0;
         let cancelados = 0;
 
         let pagos = 0;
@@ -6584,6 +6584,7 @@ app.get("/api/mercadolivre/pos-venda", async (req, res) => {
 // Cada pedido entra em apenas UMA categoria
 // =================================================
 
+
 let categoria = "outros";
 
 
@@ -6609,18 +6610,14 @@ if (pedidoCancelado) {
     categoria = "entregues";
 
 } else if (
-    [
-        "pending",
-        "handling",
-        "ready_to_ship",
-        "shipped"
-    ].includes(
-        shippingStatus
-    )
+    ["pending","handling","ready_to_ship","shipped"].includes(shippingStatus)
 ) {
-
     categoria = "em_transporte";
 
+    quantidadeItensEmTransporte += order.order_items.reduce(
+        (total, item) => total + Number(item.quantity || 0),
+        0
+    );
 }
 
 
@@ -7028,7 +7025,7 @@ switch (categoria) {
 
                 em_transporte:
                     emTransporte,
-
+quantidade_itens_em_transporte: quantidadeItensEmTransporte,
                 pagos,
 
                 cancelados,
