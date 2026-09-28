@@ -6547,52 +6547,6 @@ app.get("/api/mercadolivre/pos-venda", async (req, res) => {
 
 
             // =================================================
-            // ENTREGUE
-            // =================================================
-
-            {
-
-                entregues++;
-
-                vendasPorStatus.entregues.push({
-
-                    ...venda,
-
-                    shipment_id:
-                        shipmentPrincipal?.id || null,
-
-                    shipment_status:
-                        shippingStatus
-
-                });
-
-            }
-
-
-            // =================================================
-            // EM TRANSPORTE
-            // =================================================
-
-             {
-
-                emTransporte++;
-
-                vendasPorStatus.em_transporte.push({
-
-                    ...venda,
-
-                    shipment_id:
-                        shipmentPrincipal?.id || null,
-
-                    shipment_status:
-                        shippingStatus
-
-                });
-
-            }
-
-
-            // =================================================
             // PROBLEMAS
             // =================================================
 
