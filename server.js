@@ -4974,12 +4974,12 @@ if (device.mercadolivre_admin !== true) {
                     </div>
                 </div>
 
-                <a
-                    href="javascript:history.back()"
-                    class="button"
-                >
-                    ← Voltar
-                </a>
+               <button
+    class="button"
+    onclick="window.close()"
+>
+    ← Voltar
+</button>
 
                 <div class="footer">
                     ML Support • Mercado Livre
