@@ -3908,9 +3908,7 @@ if (!isCatalogItem) {
             "Este anúncio é um Product item e não possui performance disponível neste endpoint."
     };
 
-    console.log(
-        `ℹ️ Raio-X: ${itemId} é Product item; performance ignorada.`
-    );
+    
 }
 
         // ====================================================
