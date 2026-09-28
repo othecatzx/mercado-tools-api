@@ -380,6 +380,31 @@ async saveName(deviceId) {
                         <td>
 
                             <div class="table-actions">
+                            ${
+    device.mercadolivre_admin === true
+
+        ? `
+            <button
+                class="success-button small"
+                onclick="devicesPage.toggleMercadoLivreAdmin('${device.id}')"
+                title="Este dispositivo é o ADM do Mercado Livre"
+            >
+                🛒 ADM Mercado Livre
+            </button>
+        `
+
+        : `
+            <button
+                class="secondary-button small"
+                onclick="devicesPage.toggleMercadoLivreAdmin('${device.id}')"
+                title="Tornar este dispositivo o ADM do Mercado Livre"
+            >
+                🛒 Tornar ADM ML
+            </button>
+        `
+}
+
+
 <button
     class="secondary-button small"
     onclick="devicesPage.reloadDevice('${device.id}')"
@@ -1384,6 +1409,96 @@ try {
 }
 
 }, 
+
+async toggleMercadoLivreAdmin(id) {
+
+    const device =
+        this.devices.find(
+            item => item.id === id
+        );
+
+    if (!device) return;
+
+    const isAdmin =
+        device.mercadolivre_admin === true;
+
+    const nome =
+        device.nome ||
+        device.device_id ||
+        "este dispositivo";
+
+    const action =
+        isAdmin
+            ? "remover o acesso de ADM do Mercado Livre"
+            : "tornar este dispositivo o ADM do Mercado Livre";
+
+    const confirmed =
+        confirm(
+            `Deseja ${action}?\n\n` +
+            `Dispositivo: ${nome}`
+        );
+
+    if (!confirmed) return;
+
+    try {
+
+        const response =
+            await apiFetch(
+                `/api/admin/devices/${id}/mercadolivre-admin`,
+                {
+                    method: "PATCH",
+
+                    headers: {
+                        "Content-Type":
+                            "application/json"
+                    },
+
+                    body: JSON.stringify({
+                        mercadolivre_admin:
+                            !isAdmin
+                    })
+                }
+            );
+
+        if (!response) return;
+
+        const data =
+            await response.json();
+
+        if (!response.ok || !data.ok) {
+
+            throw new Error(
+                data.reason ||
+                data.error ||
+                data.message ||
+                "Erro ao alterar ADM do Mercado Livre"
+            );
+
+        }
+
+        await this.load();
+
+        alert(
+            !isAdmin
+                ? `"${nome}" agora é o ADM do Mercado Livre.`
+                : `O dispositivo "${nome}" não é mais ADM do Mercado Livre.`
+        );
+
+    } catch (error) {
+
+        console.error(
+            "Erro ao alterar ADM do Mercado Livre:",
+            error
+        );
+
+        alert(
+            error.message ||
+            "Não foi possível alterar o ADM do Mercado Livre."
+        );
+
+    }
+
+},
 
     async changeStatus(id, status) {
 

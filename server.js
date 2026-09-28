@@ -2259,6 +2259,212 @@ app.patch("/api/admin/devices/:id/user", verificarAdmin, async (req, res) => {
     }
 });
 
+// ==========================================
+// DEFINIR ADM DO MERCADO LIVRE
+// ==========================================
+
+app.patch(
+    "/api/admin/devices/:id/mercadolivre-admin",
+    verificarAdmin,
+    async (req, res) => {
+
+        try {
+
+            const { id } = req.params;
+
+            const { mercadolivre_admin } =
+                req.body;
+
+            const novoStatus =
+                mercadolivre_admin === true;
+
+
+            // Buscar dispositivo
+            const { data: device, error: deviceError } =
+                await supabase
+                    .from("devices")
+                    .select(`
+                        id,
+                        device_id,
+                        nome,
+                        company_id,
+                        user_id,
+                        mercadolivre_admin
+                    `)
+                    .eq("id", id)
+                    .maybeSingle();
+
+
+            if (deviceError) {
+
+                console.error(
+                    "Erro ao buscar dispositivo ML ADM:",
+                    deviceError
+                );
+
+                return res.status(500).json({
+                    ok: false,
+                    reason: "database_error"
+                });
+
+            }
+
+
+            if (!device) {
+
+                return res.status(404).json({
+                    ok: false,
+                    reason: "device_not_found",
+                    message: "Dispositivo não encontrado"
+                });
+
+            }
+
+
+            // ==========================================
+            // SE ESTIVER MARCANDO COMO ADM
+            // REMOVE O ADM DOS OUTROS DISPOSITIVOS
+            // DA MESMA EMPRESA
+            // ==========================================
+
+            if (novoStatus) {
+
+                const { error: resetError } =
+                    await supabase
+                        .from("devices")
+                        .update({
+                            mercadolivre_admin: false
+                        })
+                        .eq(
+                            "company_id",
+                            device.company_id
+                        );
+
+
+                if (resetError) {
+
+                    console.error(
+                        "Erro ao remover ADM anterior:",
+                        resetError
+                    );
+
+                    return res.status(500).json({
+                        ok: false,
+                        reason: "database_error",
+                        message:
+                            "Não foi possível atualizar o ADM anterior."
+                    });
+
+                }
+
+            }
+
+
+            // ==========================================
+            // ATUALIZA O DISPOSITIVO SELECIONADO
+            // ==========================================
+
+            const { data: updatedDevice, error: updateError } =
+                await supabase
+                    .from("devices")
+                    .update({
+                        mercadolivre_admin: novoStatus
+                    })
+                    .eq("id", id)
+                    .select()
+                    .single();
+
+
+            if (updateError) {
+
+                console.error(
+                    "Erro ao definir ADM Mercado Livre:",
+                    updateError
+                );
+
+                return res.status(500).json({
+                    ok: false,
+                    reason: "database_error"
+                });
+
+            }
+
+
+            // ==========================================
+            // REGISTRAR LOG
+            // ==========================================
+
+            await supabase
+                .from("logs")
+                .insert({
+
+                    company_id:
+                        device.company_id,
+
+                    user_id:
+                        device.user_id,
+
+                    device_id:
+                        device.id,
+
+                    admin_id:
+                        req.admin.admin_id,
+
+                    acao:
+                        novoStatus
+                            ? "mercadolivre_admin_enabled"
+                            : "mercadolivre_admin_disabled",
+
+                    detalhes: {
+
+                        device_identifier:
+                            device.device_id,
+
+                        device_name:
+                            device.nome,
+
+                        previous_value:
+                            device.mercadolivre_admin,
+
+                        new_value:
+                            novoStatus
+
+                    }
+
+                });
+
+
+            return res.json({
+
+                ok: true,
+
+                device: updatedDevice,
+
+                message:
+                    novoStatus
+                        ? "Dispositivo definido como ADM do Mercado Livre."
+                        : "ADM do Mercado Livre removido do dispositivo."
+
+            });
+
+
+        } catch (error) {
+
+            console.error(
+                "Erro inesperado ao definir ADM ML:",
+                error
+            );
+
+            return res.status(500).json({
+                ok: false,
+                reason: "server_error"
+            });
+
+        }
+
+    }
+);
+
 app.get("/api/admin/logs", verificarAdmin, async (req, res) => {
     try {
         const { data: logs, error } = await supabase
@@ -4569,12 +4775,12 @@ app.get("/api/mercadolivre/auth", async (req, res) => {
         // VALIDAR DISPOSITIVO
         // ====================================================
 
-        const { data: device, error: deviceError } = await supabase
-            .from("devices")
-            .select("id, device_id, status, company_id")
-            .eq("company_id", company.id)
-            .eq("device_id", device_id)
-            .maybeSingle();
+       const { data: device, error: deviceError } = await supabase
+    .from("devices")
+    .select("id, device_id, status, company_id, mercadolivre_admin")
+    .eq("company_id", company.id)
+    .eq("device_id", device_id)
+    .maybeSingle();
 
         if (deviceError) {
             console.error(
@@ -4603,7 +4809,17 @@ app.get("/api/mercadolivre/auth", async (req, res) => {
                 message: "Dispositivo não está ativo"
             });
         }
+        // ====================================================
+// SOMENTE ADM PODE CONECTAR O MERCADO LIVRE
+// ====================================================
 
+if (device.mercadolivre_admin !== true) {
+    return res.status(403).json({
+        ok: false,
+        reason: "mercadolivre_admin_required",
+        message: "Somente o dispositivo ADM pode conectar o Mercado Livre."
+    });
+}
 
         // ====================================================
         // GERAR PKCE
@@ -5214,36 +5430,85 @@ app.get("/api/mercadolivre/status", async (req, res) => {
 
         }
 
+        // ====================================================
+// IDENTIFICAR SE O DISPOSITIVO É ADM
+// ====================================================
+
+const { data: device, error: deviceError } =
+    await supabase
+        .from("devices")
+        .select(
+            "id, device_id, status, mercadolivre_admin"
+        )
+        .eq(
+            "company_id",
+            license.company_id
+        )
+        .eq(
+            "device_id",
+            device_id
+        )
+        .maybeSingle();
+
+if (deviceError) {
+    console.error(
+        "Erro ao consultar dispositivo ML:",
+        deviceError
+    );
+
+    return res.status(500).json({
+        connected: false,
+        reason: "database_error"
+    });
+}
+
+if (!device) {
+    return res.status(403).json({
+        connected: false,
+        reason: "device_not_registered"
+    });
+}
+
+if (device.status !== "active") {
+    return res.status(403).json({
+        connected: false,
+        reason: "device_inactive"
+    });
+}
 
         return res.json({
+    configured: !!(
+        ML_CLIENT_ID &&
+        ML_CLIENT_SECRET &&
+        ML_REDIRECT_URI
+    ),
 
-            configured: !!(
-                ML_CLIENT_ID &&
-                ML_CLIENT_SECRET &&
-                ML_REDIRECT_URI
-            ),
+    connected: !!account,
 
-            connected: !!account,
+    is_admin: device.mercadolivre_admin === true,
 
-            account: account
-                ? {
+    can_connect: device.mercadolivre_admin === true,
 
-                    ml_user_id:
-                        account.ml_user_id,
+    company: {
+        name: license.company_id
+    },
 
-                    nickname:
-                        account.nickname,
+    account: account
+        ? {
+            ml_user_id:
+                account.ml_user_id,
 
-                    token_expires_at:
-                        account.token_expires_at,
+            nickname:
+                account.nickname,
 
-                    scope:
-                        account.scope
+            token_expires_at:
+                account.token_expires_at,
 
-                }
-                : null
-
-        });
+            scope:
+                account.scope
+        }
+        : null
+});
 
 
     } catch (error) {
