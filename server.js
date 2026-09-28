@@ -3341,6 +3341,1103 @@ async function getValidMercadoLivreToken(companyId) {
     }
 }
 
+// ============================================================
+// MERCADO LIVRE - FUNÇÕES EXTRAS
+// 🔬 RAIO-X + 💰 PREÇO IDEAL
+// ============================================================
+
+async function validarAcessoMercadoLivre(chave, device_id) {
+
+    if (!chave || !device_id) {
+        const error = new Error(
+            "chave e device_id são obrigatórios"
+        );
+
+        error.statusCode = 400;
+        error.reason = "missing_data";
+
+        throw error;
+    }
+
+
+    // ========================================================
+    // BUSCAR LICENÇA
+    // ========================================================
+
+    const { data: license, error: licenseError } =
+        await supabase
+            .from("licenses")
+            .select("*")
+            .eq("chave", chave)
+            .maybeSingle();
+
+
+    if (licenseError) {
+
+        console.error(
+            "Erro ao buscar licença ML:",
+            licenseError
+        );
+
+        const error = new Error(
+            "Erro ao consultar licença"
+        );
+
+        error.statusCode = 500;
+        error.reason = "database_error";
+
+        throw error;
+    }
+
+
+    if (!license) {
+
+        const error = new Error(
+            "Licença não encontrada"
+        );
+
+        error.statusCode = 404;
+        error.reason = "invalid_license";
+
+        throw error;
+    }
+
+
+    // ========================================================
+    // VALIDAR LICENÇA
+    // ========================================================
+
+    if (license.status !== "active") {
+
+        const error = new Error(
+            "Licença não está ativa"
+        );
+
+        error.statusCode = 403;
+        error.reason = "license_inactive";
+
+        throw error;
+    }
+
+
+    if (
+        license.vencimento &&
+        new Date(license.vencimento).getTime() < Date.now()
+    ) {
+
+        const error = new Error(
+            "Licença expirada"
+        );
+
+        error.statusCode = 403;
+        error.reason = "license_expired";
+
+        throw error;
+    }
+
+
+    // ========================================================
+    // BUSCAR EMPRESA
+    // ========================================================
+
+    const { data: company, error: companyError } =
+        await supabase
+            .from("companies")
+            .select("id, nome, status")
+            .eq("id", license.company_id)
+            .maybeSingle();
+
+
+    if (companyError) {
+
+        console.error(
+            "Erro ao buscar empresa ML:",
+            companyError
+        );
+
+        const error = new Error(
+            "Erro ao consultar empresa"
+        );
+
+        error.statusCode = 500;
+        error.reason = "database_error";
+
+        throw error;
+    }
+
+
+    if (!company) {
+
+        const error = new Error(
+            "Empresa não encontrada"
+        );
+
+        error.statusCode = 404;
+        error.reason = "company_not_found";
+
+        throw error;
+    }
+
+
+    if (company.status !== "active") {
+
+        const error = new Error(
+            "Empresa não está ativa"
+        );
+
+        error.statusCode = 403;
+        error.reason = "company_inactive";
+
+        throw error;
+    }
+
+
+    // ========================================================
+    // VALIDAR DISPOSITIVO
+    // ========================================================
+
+    const { data: device, error: deviceError } =
+        await supabase
+            .from("devices")
+            .select("id, device_id, status, company_id")
+            .eq("company_id", company.id)
+            .eq("device_id", device_id)
+            .maybeSingle();
+
+
+    if (deviceError) {
+
+        console.error(
+            "Erro ao buscar dispositivo ML:",
+            deviceError
+        );
+
+        const error = new Error(
+            "Erro ao consultar dispositivo"
+        );
+
+        error.statusCode = 500;
+        error.reason = "database_error";
+
+        throw error;
+    }
+
+
+    if (!device) {
+
+        const error = new Error(
+            "Dispositivo não registrado"
+        );
+
+        error.statusCode = 403;
+        error.reason = "device_not_registered";
+
+        throw error;
+    }
+
+
+    if (device.status !== "active") {
+
+        const error = new Error(
+            "Dispositivo não está ativo"
+        );
+
+        error.statusCode = 403;
+        error.reason = "device_inactive";
+
+        throw error;
+    }
+
+
+    return {
+        license,
+        company,
+        device
+    };
+}
+
+
+// ============================================================
+// 🔬 RAIO-X DO ANÚNCIO
+// ============================================================
+
+app.get("/api/mercadolivre/rx", async (req, res) => {
+
+    try {
+
+        const {
+            chave,
+            device_id,
+            item_id
+        } = req.query;
+
+
+        // ====================================================
+        // VALIDAR ITEM
+        // ====================================================
+
+        if (!item_id) {
+
+            return res.status(400).json({
+                ok: false,
+                reason: "missing_item_id",
+                message: "item_id é obrigatório"
+            });
+
+        }
+
+
+        const itemId = String(item_id)
+            .trim()
+            .toUpperCase();
+
+
+        if (!/^MLB\d+$/i.test(itemId)) {
+
+            return res.status(400).json({
+                ok: false,
+                reason: "invalid_item_id",
+                message: "Informe um item_id válido, exemplo: MLB123456789"
+            });
+
+        }
+
+
+        // ====================================================
+        // VALIDAR ACESSO
+        // ====================================================
+
+        const {
+            company
+        } = await validarAcessoMercadoLivre(
+            chave,
+            device_id
+        );
+
+
+        // ====================================================
+        // TOKEN VÁLIDO
+        // ====================================================
+
+        const accessToken =
+            await getValidMercadoLivreToken(
+                company.id
+            );
+
+
+        const headers = {
+            Authorization:
+                `Bearer ${accessToken}`
+        };
+
+
+        // ====================================================
+        // CONSULTAR ITEM
+        // ====================================================
+
+        const itemResponse =
+            await axios.get(
+                `https://api.mercadolibre.com/items/${itemId}`,
+                {
+                    headers
+                }
+            );
+
+
+        const item =
+            itemResponse.data;
+
+
+        // ====================================================
+        // CONSULTAR PERFORMANCE
+        // ====================================================
+
+        let performance = null;
+        let performanceError = null;
+
+
+        try {
+
+            const performanceResponse =
+                await axios.get(
+                    `https://api.mercadolibre.com/item/${itemId}/performance`,
+                    {
+                        headers
+                    }
+                );
+
+
+            performance =
+                performanceResponse.data;
+
+
+        } catch (error) {
+
+            performanceError = {
+                status:
+                    error.response?.status || 500,
+
+                message:
+                    error.response?.data?.message ||
+                    error.message
+            };
+
+
+            console.warn(
+                "⚠️ Não foi possível consultar performance ML:",
+                performanceError
+            );
+
+        }
+
+
+        // ====================================================
+        // CONSULTAR DESCRIÇÃO
+        // ====================================================
+
+        let description = null;
+
+
+        try {
+
+            const descriptionResponse =
+                await axios.get(
+                    `https://api.mercadolibre.com/items/${itemId}/description`,
+                    {
+                        headers
+                    }
+                );
+
+
+            description =
+                descriptionResponse.data;
+
+        } catch (error) {
+
+            console.warn(
+                "⚠️ Não foi possível consultar descrição:",
+                error.response?.data ||
+                error.message
+            );
+
+        }
+
+
+        // ====================================================
+        // ANÁLISE DO ANÚNCIO
+        // ====================================================
+
+        const titulo =
+            String(item.title || "").trim();
+
+
+        const imagens =
+            Array.isArray(item.pictures)
+                ? item.pictures
+                : [];
+
+
+        const atributos =
+            Array.isArray(item.attributes)
+                ? item.attributes
+                : [];
+
+
+        const descricaoTexto =
+            description?.plain_text ||
+            description?.text ||
+            "";
+
+
+        const tags =
+            Array.isArray(item.tags)
+                ? item.tags
+                : [];
+
+
+        const diagnostico = {
+
+            titulo: {
+                valor: titulo,
+                caracteres: titulo.length,
+                preenchido: titulo.length > 0
+            },
+
+            imagens: {
+                quantidade: imagens.length,
+                preenchido: imagens.length > 0
+            },
+
+            descricao: {
+                preenchida:
+                    descricaoTexto.trim().length > 0,
+
+                caracteres:
+                    descricaoTexto.trim().length
+            },
+
+            atributos: {
+                quantidade: atributos.length
+            },
+
+            vendas: {
+                quantidade:
+                    item.sold_quantity ?? null
+            },
+
+            estoque: {
+                disponivel:
+                    item.available_quantity ?? null
+            },
+
+            tags,
+
+            categoria:
+                item.category_id || null,
+
+            tipo_anuncio:
+                item.listing_type_id || null,
+
+            condicao:
+                item.item_condition ||
+                item.condition ||
+                null
+
+        };
+
+
+        // ====================================================
+        // OBJETIVOS PENDENTES DO MERCADO LIVRE
+        // ====================================================
+
+        const pendencias = [];
+
+
+        if (performance?.buckets) {
+
+            for (
+                const bucket
+                of performance.buckets
+            ) {
+
+                const variables =
+                    Array.isArray(bucket.variables)
+                        ? bucket.variables
+                        : [];
+
+
+                for (
+                    const variable
+                    of variables
+                ) {
+
+                    const rules =
+                        Array.isArray(variable.rules)
+                            ? variable.rules
+                            : [];
+
+
+                    for (
+                        const rule
+                        of rules
+                    ) {
+
+                        if (
+                            String(rule.status || "")
+                                .toUpperCase() ===
+                            "PENDING"
+                        ) {
+
+                            pendencias.push({
+
+                                bucket:
+                                    bucket.key ||
+                                    null,
+
+                                variable:
+                                    variable.key ||
+                                    variable.name ||
+                                    null,
+
+                                rule:
+                                    rule.key ||
+                                    rule.name ||
+                                    null,
+
+                                status:
+                                    rule.status,
+
+                                mode:
+                                    rule.mode ||
+                                    null,
+
+                                link:
+                                    rule.link ||
+                                    null
+
+                            });
+
+                        }
+
+                    }
+
+                }
+
+            }
+
+        }
+
+
+        // ====================================================
+        // RESPOSTA
+        // ====================================================
+
+        return res.json({
+
+            ok: true,
+
+            item_id:
+                item.id,
+
+            anuncio: {
+
+                id:
+                    item.id,
+
+                titulo:
+                    item.title,
+
+                categoria:
+                    item.category_id,
+
+                preco:
+                    item.price,
+
+                moeda:
+                    item.currency_id,
+
+                quantidade_vendida:
+                    item.sold_quantity,
+
+                estoque:
+                    item.available_quantity,
+
+                status:
+                    item.status,
+
+                tipo_anuncio:
+                    item.listing_type_id,
+
+                permalink:
+                    item.permalink
+
+            },
+
+            diagnostico,
+
+            performance: performance
+                ? {
+
+                    score:
+                        performance.score ?? null,
+
+                    level:
+                        performance.level ?? null,
+
+                    level_wording:
+                        performance.level_wording ?? null,
+
+                    calculated_at:
+                        performance.calculated_at ?? null,
+
+                    pendencias
+
+                }
+                : null,
+
+            performance_error:
+                performanceError,
+
+            descricao: {
+
+                disponivel:
+                    !!description,
+
+                caracteres:
+                    descricaoTexto.length
+
+            },
+
+            analise: {
+
+                titulo_ok:
+                    titulo.length > 0,
+
+                imagens_ok:
+                    imagens.length > 0,
+
+                descricao_ok:
+                    descricaoTexto.trim().length > 0,
+
+                possui_pendencias:
+                    pendencias.length > 0,
+
+                quantidade_pendencias:
+                    pendencias.length
+
+            }
+
+        });
+
+
+    } catch (error) {
+
+        console.error(
+            "❌ Erro no Raio-X ML:",
+            error.response?.data ||
+            error.message ||
+            error
+        );
+
+
+        if (error.statusCode) {
+
+            return res.status(
+                error.statusCode
+            ).json({
+
+                ok: false,
+
+                reason:
+                    error.reason,
+
+                message:
+                    error.message
+
+            });
+
+        }
+
+
+        if (error.response) {
+
+            return res.status(
+                error.response.status || 500
+            ).json({
+
+                ok: false,
+
+                reason:
+                    "mercadolivre_api_error",
+
+                message:
+                    error.response.data?.message ||
+                    "Erro ao consultar Mercado Livre",
+
+                details:
+                    error.response.data || null
+
+            });
+
+        }
+
+
+        return res.status(500).json({
+
+            ok: false,
+
+            reason: "server_error",
+
+            message:
+                error.message ||
+                "Erro interno do servidor"
+
+        });
+
+    }
+
+});
+
+
+// ============================================================
+// 💰 PREÇO IDEAL
+// ============================================================
+
+app.get("/api/mercadolivre/preco", async (req, res) => {
+
+    try {
+
+        const {
+            chave,
+            device_id,
+            item_id
+        } = req.query;
+
+
+        // ====================================================
+        // VALIDAR ITEM
+        // ====================================================
+
+        if (!item_id) {
+
+            return res.status(400).json({
+
+                ok: false,
+
+                reason:
+                    "missing_item_id",
+
+                message:
+                    "item_id é obrigatório"
+
+            });
+
+        }
+
+
+        const itemId =
+            String(item_id)
+                .trim()
+                .toUpperCase();
+
+
+        if (!/^MLB\d+$/i.test(itemId)) {
+
+            return res.status(400).json({
+
+                ok: false,
+
+                reason:
+                    "invalid_item_id",
+
+                message:
+                    "Informe um item_id válido, exemplo: MLB123456789"
+
+            });
+
+        }
+
+
+        // ====================================================
+        // VALIDAR ACESSO
+        // ====================================================
+
+        const {
+            company
+        } = await validarAcessoMercadoLivre(
+            chave,
+            device_id
+        );
+
+
+        // ====================================================
+        // TOKEN
+        // ====================================================
+
+        const accessToken =
+            await getValidMercadoLivreToken(
+                company.id
+            );
+
+
+        const headers = {
+
+            Authorization:
+                `Bearer ${accessToken}`
+
+        };
+
+
+        // ====================================================
+        // PREÇO ATUAL
+        // ====================================================
+
+        const pricesResponse =
+            await axios.get(
+
+                `https://api.mercadolibre.com/items/${itemId}/prices`,
+
+                {
+                    headers
+                }
+
+            );
+
+
+        const pricesData =
+            pricesResponse.data;
+
+
+        // ====================================================
+        // REFERÊNCIA DE PREÇO
+        // ====================================================
+
+        let reference = null;
+        let referenceError = null;
+
+
+        try {
+
+            const referenceResponse =
+                await axios.get(
+
+                    `https://api.mercadolibre.com/suggestions/items/${itemId}/details`,
+
+                    {
+                        headers
+                    }
+
+                );
+
+
+            reference =
+                referenceResponse.data;
+
+
+        } catch (error) {
+
+            referenceError = {
+
+                status:
+                    error.response?.status || 500,
+
+                message:
+                    error.response?.data?.message ||
+                    error.message
+
+            };
+
+
+            console.warn(
+
+                "⚠️ Referência de preço indisponível:",
+
+                referenceError
+
+            );
+
+        }
+
+
+        // ====================================================
+        // NORMALIZAR PREÇOS
+        // ====================================================
+
+        const listaPrecos =
+            Array.isArray(
+                pricesData?.prices
+            )
+                ? pricesData.prices
+                : [];
+
+
+        const precoStandard =
+            listaPrecos.find(
+                price =>
+                    price.type === "standard"
+            ) || null;
+
+
+        const precoPromocional =
+            listaPrecos.find(
+                price =>
+                    price.type === "promotion"
+            ) || null;
+
+
+        // ====================================================
+        // RESPOSTA
+        // ====================================================
+
+        return res.json({
+
+            ok: true,
+
+            item_id:
+                itemId,
+
+            atual: {
+
+                standard:
+                    precoStandard
+                        ? {
+
+                            amount:
+                                precoStandard.amount,
+
+                            currency_id:
+                                precoStandard.currency_id,
+
+                            regular_amount:
+                                precoStandard.regular_amount,
+
+                            last_updated:
+                                precoStandard.last_updated
+
+                        }
+                        : null,
+
+                promotion:
+                    precoPromocional
+                        ? {
+
+                            amount:
+                                precoPromocional.amount,
+
+                            currency_id:
+                                precoPromocional.currency_id,
+
+                            regular_amount:
+                                precoPromocional.regular_amount,
+
+                            last_updated:
+                                precoPromocional.last_updated
+
+                        }
+                        : null
+
+            },
+
+            referencia: reference
+                ? {
+
+                    status:
+                        reference.status ||
+                        null,
+
+                    ratio:
+                        reference.ratio ??
+                        null,
+
+                    current_price:
+                        reference.current_price ||
+                        null,
+
+                    suggested_price:
+                        reference.suggested_price ||
+                        null,
+
+                    lowest_price:
+                        reference.lowest_price ||
+                        null,
+
+                    internal_price:
+                        reference.internal_price ||
+                        null,
+
+                    costs:
+                        reference.costs ||
+                        null,
+
+                    applicable_suggestion:
+                        reference.applicable_suggestion ??
+                        null,
+
+                    percent_difference:
+                        reference.percent_difference ??
+                        null,
+
+                    compared_values:
+                        reference.compared_values ??
+                        null,
+
+                    last_updated:
+                        reference.last_updated ||
+                        null
+
+                }
+                : null,
+
+            referencia_error:
+                referenceError,
+
+            informacoes: {
+
+                titulo:
+                    reference?.info?.title ||
+                    null,
+
+                vendas:
+                    reference?.info?.sold_quantity ??
+                    null
+
+            }
+
+        });
+
+
+    } catch (error) {
+
+        console.error(
+
+            "❌ Erro no Preço Ideal ML:",
+
+            error.response?.data ||
+            error.message ||
+            error
+
+        );
+
+
+        if (error.statusCode) {
+
+            return res.status(
+                error.statusCode
+            ).json({
+
+                ok: false,
+
+                reason:
+                    error.reason,
+
+                message:
+                    error.message
+
+            });
+
+        }
+
+
+        if (error.response) {
+
+            return res.status(
+                error.response.status || 500
+            ).json({
+
+                ok: false,
+
+                reason:
+                    "mercadolivre_api_error",
+
+                message:
+                    error.response.data?.message ||
+                    "Erro ao consultar Mercado Livre",
+
+                details:
+                    error.response.data || null
+
+            });
+
+        }
+
+
+        return res.status(500).json({
+
+            ok: false,
+
+            reason:
+                "server_error",
+
+            message:
+                error.message ||
+                "Erro interno do servidor"
+
+        });
+
+    }
+
+});
+
 function generateCodeVerifier() {
     return crypto.randomBytes(64).toString("base64url");
 }
@@ -4169,210 +5266,6 @@ app.get("/api/mercadolivre/status", async (req, res) => {
 
 });
 
-// ============================================================
-// TESTE - MERCADO LIVRE API
-// ============================================================
-
-app.get("/api/mercadolivre/test", async (req, res) => {
-
-    try {
-
-        const {
-            chave,
-            device_id
-        } = req.query;
-
-        if (!chave || !device_id) {
-
-            return res.status(400).json({
-                ok: false,
-                reason: "missing_data",
-                message:
-                    "chave e device_id são obrigatórios"
-            });
-        }
-
-        // ====================================================
-        // BUSCAR LICENÇA
-        // ====================================================
-
-        const { data: license, error: licenseError } =
-            await supabase
-                .from("licenses")
-                .select("*")
-                .eq("chave", chave)
-                .maybeSingle();
-
-        if (licenseError) {
-
-            console.error(
-                "Erro ao buscar licença:",
-                licenseError
-            );
-
-            return res.status(500).json({
-                ok: false,
-                reason: "database_error"
-            });
-        }
-
-        if (!license) {
-
-            return res.status(404).json({
-                ok: false,
-                reason: "invalid_license"
-            });
-        }
-
-        if (license.status !== "active") {
-
-            return res.status(403).json({
-                ok: false,
-                reason: "license_inactive"
-            });
-        }
-
-        if (
-            license.vencimento &&
-            new Date(
-                license.vencimento
-            ).getTime() < Date.now()
-        ) {
-
-            return res.status(403).json({
-                ok: false,
-                reason: "license_expired"
-            });
-        }
-
-        // ====================================================
-        // VALIDAR DISPOSITIVO
-        // ====================================================
-
-        const { data: device, error: deviceError } =
-            await supabase
-                .from("devices")
-                .select(
-                    "id, device_id, status, company_id"
-                )
-                .eq(
-                    "company_id",
-                    license.company_id
-                )
-                .eq(
-                    "device_id",
-                    device_id
-                )
-                .maybeSingle();
-
-        if (deviceError) {
-
-            console.error(
-                "Erro ao buscar dispositivo:",
-                deviceError
-            );
-
-            return res.status(500).json({
-                ok: false,
-                reason: "database_error"
-            });
-        }
-
-        if (!device) {
-
-            return res.status(403).json({
-                ok: false,
-                reason: "device_not_registered"
-            });
-        }
-
-        if (device.status !== "active") {
-
-            return res.status(403).json({
-                ok: false,
-                reason: "device_inactive"
-            });
-        }
-
-        // ====================================================
-        // PEGAR TOKEN VÁLIDO
-        // ====================================================
-
-        const accessToken =
-            await getValidMercadoLivreToken(
-                license.company_id
-            );
-
-        // ====================================================
-        // TESTAR API DO MERCADO LIVRE
-        // ====================================================
-
-        const response =
-            await axios.get(
-                "https://api.mercadolibre.com/users/me",
-                {
-                    headers: {
-                        Authorization:
-                            `Bearer ${accessToken}`
-                    }
-                }
-            );
-
-        const user =
-            response.data;
-
-        // ====================================================
-        // NÃO RETORNAR TOKEN
-        // ====================================================
-
-        return res.json({
-
-            ok: true,
-
-            message:
-                "Mercado Livre API funcionando",
-
-            account: {
-
-                id:
-                    user.id,
-
-                nickname:
-                    user.nickname,
-
-                country_id:
-                    user.country_id,
-
-                site_id:
-                    user.site_id
-
-            }
-
-        });
-
-    } catch (error) {
-
-        console.error(
-            "❌ Erro no teste Mercado Livre:",
-            error.response?.data ||
-            error.message
-        );
-
-        return res.status(500).json({
-
-            ok: false,
-
-            reason:
-                "mercadolivre_api_error",
-
-            message:
-                error.message
-
-        });
-
-    }
-
-});
 
 const server = app.listen(PORT, () => {
     console.log(`API rodando em http://localhost:${PORT}`);
