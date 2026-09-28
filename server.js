@@ -5942,6 +5942,657 @@ if (device.status !== "active") {
 });
 
 
+// ============================================================
+// 📊 RELATÓRIO DE PÓS-VENDA + 📦 ANÁLISE POR SKU
+// ============================================================
+
+app.get("/api/mercadolivre/pos-venda", async (req, res) => {
+
+    try {
+
+        const {
+            chave,
+            device_id,
+            data_inicio,
+            data_fim
+        } = req.query;
+
+
+        // ====================================================
+        // VALIDAR DATAS
+        // ====================================================
+
+        if (!data_inicio || !data_fim) {
+
+            return res.status(400).json({
+                ok: false,
+                reason: "missing_dates",
+                message: "Informe data_inicio e data_fim."
+            });
+
+        }
+
+
+        const inicio = new Date(`${data_inicio}T00:00:00.000Z`);
+        const fim = new Date(`${data_fim}T23:59:59.999Z`);
+
+
+        if (
+            Number.isNaN(inicio.getTime()) ||
+            Number.isNaN(fim.getTime())
+        ) {
+
+            return res.status(400).json({
+                ok: false,
+                reason: "invalid_dates",
+                message: "Período inválido."
+            });
+
+        }
+
+
+        if (inicio > fim) {
+
+            return res.status(400).json({
+                ok: false,
+                reason: "invalid_period",
+                message: "A data inicial não pode ser maior que a data final."
+            });
+
+        }
+
+
+        // ====================================================
+        // VALIDAR ACESSO
+        // ====================================================
+
+        const {
+            company
+        } = await validarAcessoMercadoLivre(
+            chave,
+            device_id
+        );
+
+
+        // ====================================================
+        // TOKEN
+        // ====================================================
+
+        const accessToken =
+            await getValidMercadoLivreToken(
+                company.id
+            );
+
+
+        const headers = {
+            Authorization:
+                `Bearer ${accessToken}`
+        };
+
+
+        // ====================================================
+        // CONTA DO MERCADO LIVRE
+        // ====================================================
+
+        const {
+            data: contaML,
+            error: contaError
+        } = await supabase
+            .from("mercadolivre_accounts")
+            .select(`
+                ml_user_id,
+                nickname
+            `)
+            .eq("company_id", company.id)
+            .maybeSingle();
+
+
+        if (contaError) {
+
+            console.error(
+                "Erro ao consultar conta Mercado Livre:",
+                contaError
+            );
+
+            return res.status(500).json({
+                ok: false,
+                reason: "database_error"
+            });
+
+        }
+
+
+        if (!contaML) {
+
+            return res.status(400).json({
+                ok: false,
+                reason: "mercadolivre_not_connected",
+                message: "Mercado Livre ainda não conectado."
+            });
+
+        }
+
+
+        const sellerId =
+            contaML.ml_user_id;
+
+
+        // ====================================================
+        // BUSCAR PEDIDOS
+        // ====================================================
+
+        const pedidos = [];
+
+        let offset = 0;
+        const limit = 50;
+
+        let totalPedidos = null;
+
+        const MAX_PEDIDOS = 5000;
+
+
+        while (true) {
+
+            const params = new URLSearchParams({
+
+                seller:
+                    String(sellerId),
+
+                "order.date_created.from":
+                    inicio.toISOString(),
+
+                "order.date_created.to":
+                    fim.toISOString(),
+
+                sort:
+                    "date_desc",
+
+                offset:
+                    String(offset),
+
+                limit:
+                    String(limit)
+
+            });
+
+
+            const response =
+                await axios.get(
+                    `https://api.mercadolibre.com/orders/search?${params.toString()}`,
+                    {
+                        headers
+                    }
+                );
+
+
+            const dados =
+                response.data || {};
+
+
+            const resultados =
+                Array.isArray(dados.results)
+                    ? dados.results
+                    : [];
+
+
+            if (totalPedidos === null) {
+
+                totalPedidos =
+                    dados.paging?.total ??
+                    resultados.length;
+
+            }
+
+
+            pedidos.push(
+                ...resultados
+            );
+
+
+            if (
+                resultados.length === 0 ||
+                resultados.length < limit ||
+                pedidos.length >= totalPedidos ||
+                pedidos.length >= MAX_PEDIDOS
+            ) {
+
+                break;
+
+            }
+
+
+            offset += limit;
+
+        }
+
+
+        // ====================================================
+        // LIMITAR CASO A API RETORNE MAIS DO QUE O MÁXIMO
+        // ====================================================
+
+        const pedidosProcessados =
+            pedidos.slice(0, MAX_PEDIDOS);
+
+
+        // ====================================================
+        // CONTADORES
+        // ====================================================
+
+        let totalVendido = 0;
+
+        let entregues = 0;
+        let emTransporte = 0;
+        let cancelados = 0;
+        let pagos = 0;
+        let parcialmenteReembolsados = 0;
+
+        let pedidosComProblema = 0;
+
+        let quantidadeItens = 0;
+
+
+        // ====================================================
+        // ANÁLISE POR SKU
+        // ====================================================
+
+        const skuMap = new Map();
+
+
+        // ====================================================
+        // PROCESSAR PEDIDOS
+        // ====================================================
+
+        for (const pedido of pedidosProcessados) {
+
+            const status =
+                String(
+                    pedido.status || ""
+                ).toLowerCase();
+
+
+            const tags =
+                Array.isArray(pedido.tags)
+                    ? pedido.tags
+                    : [];
+
+
+            const totalPedido =
+                Number(
+                    pedido.total_amount || 0
+                );
+
+
+            totalVendido +=
+                totalPedido;
+
+
+            if (status === "paid") {
+
+                pagos++;
+
+            }
+
+
+            if (
+                status === "partially_refunded"
+            ) {
+
+                parcialmenteReembolsados++;
+
+            }
+
+
+            if (
+                status === "cancelled" ||
+                status === "canceled" ||
+                status === "pending_cancel"
+            ) {
+
+                cancelados++;
+
+            }
+
+
+            // =================================================
+            // TAGS DE PROBLEMAS
+            // =================================================
+
+            const temProblema =
+                tags.some(tag =>
+                    [
+                        "not_delivered",
+                        "fraud_risk_detected",
+                        "delivered_not_confirmed",
+                        "return",
+                        "claim"
+                    ].includes(
+                        String(tag).toLowerCase()
+                    )
+                );
+
+
+            if (temProblema) {
+
+                pedidosComProblema++;
+
+            }
+
+
+            // =================================================
+            // STATUS DE ENVIO
+            // =================================================
+
+            const shipping =
+                pedido.shipping || {};
+
+
+            const shippingStatus =
+                String(
+                    shipping.status || ""
+                ).toLowerCase();
+
+
+            if (
+                shippingStatus === "delivered"
+            ) {
+
+                entregues++;
+
+            } else if (
+                [
+                    "pending",
+                    "handling",
+                    "ready_to_ship",
+                    "shipped",
+                    "in_transit"
+                ].includes(shippingStatus)
+            ) {
+
+                emTransporte++;
+
+            }
+
+
+            // =================================================
+            // ITENS DO PEDIDO
+            // =================================================
+
+            const itens =
+                Array.isArray(pedido.order_items)
+                    ? pedido.order_items
+                    : [];
+
+
+            for (const itemPedido of itens) {
+
+                const item =
+                    itemPedido.item || {};
+
+
+                const sku =
+                    item.seller_custom_field ||
+                    item.seller_sku ||
+                    item.id ||
+                    "SEM_SKU";
+
+
+                const titulo =
+                    item.title ||
+                    "Produto sem título";
+
+
+                const quantidade =
+                    Number(
+                        itemPedido.quantity || 0
+                    );
+
+
+                const precoUnitario =
+                    Number(
+                        itemPedido.unit_price || 0
+                    );
+
+
+                const valor =
+                    quantidade *
+                    precoUnitario;
+
+
+                quantidadeItens +=
+                    quantidade;
+
+
+                if (!skuMap.has(sku)) {
+
+                    skuMap.set(
+                        sku,
+                        {
+                            sku,
+                            titulo,
+                            vendas: 0,
+                            quantidade: 0,
+                            valor_vendido: 0,
+                            pedidos: 0,
+                            cancelamentos: 0,
+                            reembolsos: 0
+                        }
+                    );
+
+                }
+
+
+                const skuData =
+                    skuMap.get(sku);
+
+
+                skuData.vendas += 1;
+
+                skuData.quantidade +=
+                    quantidade;
+
+                skuData.valor_vendido +=
+                    valor;
+
+                skuData.pedidos += 1;
+
+
+                if (
+                    status === "cancelled" ||
+                    status === "canceled" ||
+                    status === "pending_cancel"
+                ) {
+
+                    skuData.cancelamentos++;
+
+                }
+
+
+                if (
+                    status === "partially_refunded"
+                ) {
+
+                    skuData.reembolsos++;
+
+                }
+
+            }
+
+        }
+
+
+        // ====================================================
+        // CONVERTER MAP DE SKU
+        // ====================================================
+
+        const skus =
+            Array.from(
+                skuMap.values()
+            )
+            .map(item => {
+
+                const ocorrencias =
+                    item.cancelamentos +
+                    item.reembolsos;
+
+
+                const taxa =
+                    item.quantidade > 0
+                        ? (
+                            ocorrencias /
+                            item.quantidade
+                        ) * 100
+                        : 0;
+
+
+                return {
+
+                    ...item,
+
+                    ocorrencias,
+
+                    taxa_problemas:
+                        Number(
+                            taxa.toFixed(2)
+                        ),
+
+                    valor_vendido:
+                        Number(
+                            item.valor_vendido.toFixed(2)
+                        )
+
+                };
+
+            })
+            .sort(
+                (a, b) =>
+                    b.quantidade -
+                    a.quantidade
+            );
+
+
+        // ====================================================
+        // PERCENTUAIS
+        // ====================================================
+
+        const total =
+            pedidosProcessados.length;
+
+
+        const percentual = (
+            valor
+        ) => {
+
+            if (!total) {
+                return 0;
+            }
+
+            return Number(
+                (
+                    (valor / total) *
+                    100
+                ).toFixed(2)
+            );
+
+        };
+
+
+        // ====================================================
+        // RESPOSTA
+        // ====================================================
+
+        return res.json({
+
+            ok: true,
+
+            periodo: {
+                inicio: data_inicio,
+                fim: data_fim
+            },
+
+            vendedor: {
+                id: sellerId,
+                nickname:
+                    contaML.nickname || null
+            },
+
+            resumo: {
+
+                pedidos: total,
+
+                pedidos_total_api:
+                    totalPedidos,
+
+                pedidos_processados:
+                    pedidosProcessados.length,
+
+                total_vendido:
+                    Number(
+                        totalVendido.toFixed(2)
+                    ),
+
+                quantidade_itens:
+                    quantidadeItens,
+
+                entregues,
+
+                em_transporte:
+                    emTransporte,
+
+                pagos,
+
+                cancelados,
+
+                parcialmente_reembolsados:
+
+                    parcialmenteReembolsados,
+
+                pedidos_com_problema:
+                    pedidosComProblema,
+
+                percentual_cancelamentos:
+                    percentual(cancelados),
+
+                percentual_problemas:
+                    percentual(pedidosComProblema)
+
+            },
+
+            skus,
+
+            pedidos: pedidosProcessados
+
+        });
+
+    } catch (error) {
+
+        console.error(
+            "Erro no relatório de pós-venda:",
+            error.response?.data ||
+            error.message ||
+            error
+        );
+
+
+        return res.status(
+            error.response?.status || 500
+        ).json({
+
+            ok: false,
+
+            reason:
+                "pos_venda_error",
+
+            message:
+                error.response?.data?.message ||
+                error.message ||
+                "Erro ao gerar relatório de pós-venda."
+
+        });
+
+    }
+
+});
+
 const server = app.listen(PORT, () => {
     console.log(`API rodando em http://localhost:${PORT}`);
 });
