@@ -6416,13 +6416,20 @@ app.get("/api/mercadolivre/pos-venda", async (req, res) => {
 
             if (pedidoCancelado) {
 
-                cancelados++;
+    cancelados++;
 
-                vendasPorStatus.cancelados.push(
-                    venda
-                );
+    console.log(
+        "❌ CANCELAMENTO:",
+        orderId,
+        "status:",
+        status
+    );
 
-            }
+    vendasPorStatus.cancelados.push(
+        venda
+    );
+
+}
 
 
             // =================================================
@@ -6455,13 +6462,25 @@ app.get("/api/mercadolivre/pos-venda", async (req, res) => {
 
             if (reembolsado) {
 
-                parcialmenteReembolsados++;
+    parcialmenteReembolsados++;
 
-                vendasPorStatus.reembolsados.push(
-                    venda
-                );
+    console.log(
+        "🔄 REEMBOLSO:",
+        orderId,
+        "status:",
+        status,
+        "payments:",
+        pagamentos.map(p => ({
+            id: p.id,
+            status: p.status
+        }))
+    );
 
-            }
+    vendasPorStatus.reembolsados.push(
+        venda
+    );
+
+}
 
 
             // =================================================
@@ -6653,9 +6672,8 @@ app.get("/api/mercadolivre/pos-venda", async (req, res) => {
 
 
             const problema =
-                problemaLogistico ||
-                problemaTag ||
-                reembolsado;
+    problemaLogistico ||
+    problemaTag;
 
 
             if (problema) {
@@ -6813,8 +6831,10 @@ app.get("/api/mercadolivre/pos-venda", async (req, res) => {
             .map(item => {
 
                 const ocorrencias =
-                    item.cancelamentos +
-                    item.reembolsos;
+    Math.max(
+        item.cancelamentos,
+        item.reembolsos
+    );
 
 
                 const taxa =
@@ -6952,6 +6972,30 @@ app.get("/api/mercadolivre/pos-venda", async (req, res) => {
         // ====================================================
         // RESPOSTA
         // ====================================================
+
+        const idsCancelados =
+    new Set(
+        vendasPorStatus.cancelados.map(v => v.id)
+    );
+
+const idsReembolsados =
+    new Set(
+        vendasPorStatus.reembolsados.map(v => v.id)
+    );
+
+const ambos = [
+    ...idsCancelados
+].filter(
+    id => idsReembolsados.has(id)
+);
+
+console.log("=================================");
+console.log("📊 COMPARAÇÃO CANCELAMENTO x REEMBOLSO");
+console.log("Cancelados:", idsCancelados.size);
+console.log("Reembolsados:", idsReembolsados.size);
+console.log("Nos dois:", ambos.length);
+console.log("IDs nos dois:", ambos);
+console.log("=================================");
 
         return res.json({
 
