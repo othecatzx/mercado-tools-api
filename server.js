@@ -7384,6 +7384,537 @@ app.get("/api/mercadolivre/monitor-vendas", async (req, res) => {
 
 });
 
+
+// ============================================================
+// 🔔 MONITOR DE VENDAS E CANCELAMENTOS
+// ============================================================
+//
+// Consulta:
+// - pedidos criados recentemente
+// - pedidos alterados nas últimas 2 horas
+// - cancelamentos explicitamente
+//
+// A extensão fará a consulta a cada 1 minuto.
+// ============================================================
+
+app.get(
+    "/api/mercadolivre/monitor-vendas",
+    async (req, res) => {
+
+        try {
+
+            const {
+                chave,
+                device_id
+            } = req.query;
+
+
+            // ====================================================
+            // VALIDAR ACESSO
+            // ====================================================
+
+            if (!chave || !device_id) {
+
+                return res.status(400).json({
+                    ok: false,
+                    reason: "missing_credentials",
+                    message:
+                        "chave e device_id são obrigatórios."
+                });
+
+            }
+
+
+            const {
+                company
+            } = await validarAcessoMercadoLivre(
+                chave,
+                device_id
+            );
+
+
+            // ====================================================
+            // TOKEN
+            // ====================================================
+
+            const accessToken =
+                await getValidMercadoLivreToken(
+                    company.id
+                );
+
+
+            const headers = {
+                Authorization:
+                    `Bearer ${accessToken}`
+            };
+
+
+            // ====================================================
+            // CONTA MERCADO LIVRE
+            // ====================================================
+
+            const {
+                data: contaML,
+                error: contaError
+            } = await supabase
+                .from("mercadolivre_accounts")
+                .select(`
+                    ml_user_id,
+                    nickname
+                `)
+                .eq(
+                    "company_id",
+                    company.id
+                )
+                .maybeSingle();
+
+
+            if (contaError) {
+
+                console.error(
+                    "Erro ao consultar conta ML:",
+                    contaError
+                );
+
+                return res.status(500).json({
+                    ok: false,
+                    reason: "database_error"
+                });
+
+            }
+
+
+            if (!contaML) {
+
+                return res.status(400).json({
+                    ok: false,
+                    reason:
+                        "mercadolivre_not_connected",
+                    message:
+                        "Mercado Livre ainda não conectado."
+                });
+
+            }
+
+
+            const sellerId =
+                contaML.ml_user_id;
+
+
+            // ====================================================
+            // JANELA DE SEGURANÇA
+            // ====================================================
+            //
+            // Últimas 2 horas.
+            //
+            // Mesmo que o monitor fique alguns minutos sem
+            // consultar, conseguimos recuperar alterações recentes.
+            // ====================================================
+
+            const agora =
+                new Date();
+
+            const duasHorasAtras =
+                new Date(
+                    agora.getTime() -
+                    (2 * 60 * 60 * 1000)
+                );
+
+
+            // ====================================================
+            // FUNÇÃO DE CONSULTA
+            // ====================================================
+
+            async function buscarPedidos(paramsExtras) {
+
+                const params =
+                    new URLSearchParams({
+
+                        seller:
+                            String(sellerId),
+
+                        sort:
+                            "date_desc",
+
+                        offset:
+                            "0",
+
+                        limit:
+                            "50",
+
+                        ...paramsExtras
+
+                    });
+
+
+                const response =
+                    await axios.get(
+                        `https://api.mercadolibre.com/orders/search?${params.toString()}`,
+                        {
+                            headers
+                        }
+                    );
+
+
+                return Array.isArray(
+                    response.data?.results
+                )
+                    ? response.data.results
+                    : [];
+
+            }
+
+
+            // ====================================================
+            // 1️⃣ PEDIDOS ALTERADOS NAS ÚLTIMAS 2 HORAS
+            // ====================================================
+
+            const pedidosAlterados =
+                await buscarPedidos({
+
+                    "order.date_last_updated.from":
+                        duasHorasAtras.toISOString(),
+
+                    "order.date_last_updated.to":
+                        agora.toISOString()
+
+                });
+
+
+            // ====================================================
+            // 2️⃣ PEDIDOS CRIADOS NAS ÚLTIMAS 2 HORAS
+            // ====================================================
+            //
+            // Mantemos essa consulta separada para garantir que
+            // vendas novas sejam detectadas mesmo que o campo de
+            // atualização tenha comportamento diferente.
+            // ====================================================
+
+            const pedidosNovos =
+                await buscarPedidos({
+
+                    "order.date_created.from":
+                        duasHorasAtras.toISOString(),
+
+                    "order.date_created.to":
+                        agora.toISOString()
+
+                });
+
+
+            // ====================================================
+            // 3️⃣ BUSCA EXCLUSIVA DE CANCELAMENTOS
+            // ====================================================
+            //
+            // Essa é a camada extra de segurança.
+            //
+            // Mesmo que o pedido tenha sido criado muito antes,
+            // se ele entrou em cancelled/pending_cancel recentemente
+            // ele pode aparecer aqui.
+            // ====================================================
+
+            const pedidosCancelados =
+                await buscarPedidos({
+
+                    "order.date_last_updated.from":
+                        duasHorasAtras.toISOString(),
+
+                    "order.date_last_updated.to":
+                        agora.toISOString(),
+
+                    "order.status":
+                        "cancelled"
+
+                });
+
+
+            // ====================================================
+            // 4️⃣ BUSCA DE PENDING_CANCEL
+            // ====================================================
+
+            const pedidosPendingCancel =
+                await buscarPedidos({
+
+                    "order.date_last_updated.from":
+                        duasHorasAtras.toISOString(),
+
+                    "order.date_last_updated.to":
+                        agora.toISOString(),
+
+                    "order.status":
+                        "pending_cancel"
+
+                });
+
+
+            // ====================================================
+            // JUNTAR TUDO
+            // ====================================================
+
+            const mapaPedidos =
+                new Map();
+
+
+            [
+                ...pedidosAlterados,
+                ...pedidosNovos,
+                ...pedidosCancelados,
+                ...pedidosPendingCancel
+            ].forEach(pedido => {
+
+                if (!pedido?.id) {
+                    return;
+                }
+
+                mapaPedidos.set(
+                    String(pedido.id),
+                    pedido
+                );
+
+            });
+
+
+            const pedidos =
+                Array.from(
+                    mapaPedidos.values()
+                );
+
+
+            // ====================================================
+            // NORMALIZAR PEDIDOS
+            // ====================================================
+
+            const resultado =
+                pedidos.map(pedido => {
+
+                    const status =
+                        String(
+                            pedido.status || ""
+                        )
+                            .trim()
+                            .toLowerCase();
+
+
+                    const tags =
+                        Array.isArray(
+                            pedido.tags
+                        )
+                            ? pedido.tags
+                            : [];
+
+
+                    const itens =
+                        Array.isArray(
+                            pedido.order_items
+                        )
+                            ? pedido.order_items
+                            : [];
+
+
+                    const produtos =
+                        itens.map(item => {
+
+                            const itemData =
+                                item.item || {};
+
+
+                            return {
+
+                                id:
+                                    itemData.id ||
+                                    null,
+
+                                title:
+                                    itemData.title ||
+                                    "Produto",
+
+                                seller_sku:
+                                    itemData.seller_sku ||
+                                    itemData.seller_custom_field ||
+                                    null,
+
+                                quantity:
+                                    Number(
+                                        item.quantity || 0
+                                    ),
+
+                                unit_price:
+                                    Number(
+                                        item.unit_price || 0
+                                    )
+
+                            };
+
+                        });
+
+
+                    const quantidade =
+                        produtos.reduce(
+                            (
+                                total,
+                                produto
+                            ) =>
+                                total +
+                                produto.quantity,
+                            0
+                        );
+
+
+                    const cancelado =
+                        [
+                            "cancelled",
+                            "canceled",
+                            "pending_cancel"
+                        ].includes(status);
+
+
+                    return {
+
+                        id:
+                            String(pedido.id),
+
+                        status,
+
+                        cancelado,
+
+                        tags,
+
+                        date_created:
+                            pedido.date_created ||
+                            null,
+
+                        date_last_updated:
+                            pedido.date_last_updated ||
+                            null,
+
+                        total_amount:
+                            Number(
+                                pedido.total_amount || 0
+                            ),
+
+                        currency_id:
+                            pedido.currency_id ||
+                            "BRL",
+
+                        quantidade,
+
+                        produtos
+
+                    };
+
+                });
+
+
+            // ====================================================
+            // RESPOSTA
+            // ====================================================
+
+            return res.json({
+
+                ok: true,
+
+                server_time:
+                    agora.toISOString(),
+
+                janela_horas:
+                    2,
+
+                vendedor: {
+
+                    id:
+                        sellerId,
+
+                    nickname:
+                        contaML.nickname ||
+                        null
+
+                },
+
+                pedidos: resultado,
+
+                total_pedidos:
+                    resultado.length,
+
+                total_cancelados:
+                    resultado.filter(
+                        pedido =>
+                            pedido.cancelado
+                    ).length
+
+            });
+
+
+        } catch (error) {
+
+            console.error(
+                "❌ Erro no monitor de vendas ML:",
+                error.response?.data ||
+                error.message ||
+                error
+            );
+
+
+            if (error.statusCode) {
+
+                return res.status(
+                    error.statusCode
+                ).json({
+
+                    ok: false,
+
+                    reason:
+                        error.reason,
+
+                    message:
+                        error.message
+
+                });
+
+            }
+
+
+            if (error.response) {
+
+                return res.status(
+                    error.response.status || 500
+                ).json({
+
+                    ok: false,
+
+                    reason:
+                        "mercadolivre_api_error",
+
+                    message:
+                        error.response.data?.message ||
+                        "Erro ao consultar Mercado Livre",
+
+                    details:
+                        error.response.data ||
+                        null
+
+                });
+
+            }
+
+
+            return res.status(500).json({
+
+                ok: false,
+
+                reason:
+                    "monitor_error",
+
+                message:
+                    error.message ||
+                    "Erro interno no monitor de vendas."
+
+            });
+
+        }
+
+    }
+);
+
 const server = app.listen(PORT, () => {
     console.log(`API rodando em http://localhost:${PORT}`);
 });
