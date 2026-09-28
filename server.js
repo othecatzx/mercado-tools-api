@@ -2832,9 +2832,7 @@ const ML_CLIENT_ID = process.env.ML_CLIENT_ID;
 const ML_CLIENT_SECRET = process.env.ML_CLIENT_SECRET;
 const ML_REDIRECT_URI = process.env.ML_REDIRECT_URI;
 
-// Guarda temporariamente os dados do OAuth.
-// Depois vamos substituir isso pelo armazenamento adequado
-// vinculado à empresa/usuário.
+// Estado temporário do OAuth
 const mlOAuthStates = new Map();
 
 function generateCodeVerifier() {
@@ -2848,182 +2846,630 @@ function generateCodeChallenge(codeVerifier) {
         .digest("base64url");
 }
 
-// Inicia OAuth
-app.get("/api/mercadolivre/auth", (req, res) => {
+
+// ============================================================
+// INICIAR AUTORIZAÇÃO
+// ============================================================
+
+app.get("/api/mercadolivre/auth", async (req, res) => {
+
     try {
-        if (!ML_CLIENT_ID || !ML_CLIENT_SECRET || !ML_REDIRECT_URI) {
-            return res.status(500).json({
-                error: "Mercado Livre OAuth não configurado no servidor"
+
+        const { chave, device_id } = req.query;
+
+        if (!chave || !device_id) {
+            return res.status(400).json({
+                ok: false,
+                reason: "missing_data",
+                message: "chave e device_id são obrigatórios"
             });
         }
 
-        const state = crypto.randomBytes(32).toString("hex");
-        const codeVerifier = generateCodeVerifier();
-        const codeChallenge = generateCodeChallenge(codeVerifier);
+        if (!ML_CLIENT_ID || !ML_CLIENT_SECRET || !ML_REDIRECT_URI) {
+            return res.status(500).json({
+                ok: false,
+                reason: "oauth_not_configured"
+            });
+        }
 
+
+        // ====================================================
+        // BUSCAR LICENÇA
+        // ====================================================
+
+        const { data: license, error: licenseError } = await supabase
+            .from("licenses")
+            .select("*")
+            .eq("chave", chave)
+            .maybeSingle();
+
+        if (licenseError) {
+            console.error(
+                "Erro ao buscar licença para OAuth:",
+                licenseError
+            );
+
+            return res.status(500).json({
+                ok: false,
+                reason: "database_error"
+            });
+        }
+
+        if (!license) {
+            return res.status(404).json({
+                ok: false,
+                reason: "invalid_license"
+            });
+        }
+
+
+        // ====================================================
+        // VALIDAR LICENÇA
+        // ====================================================
+
+        if (license.status !== "active") {
+            return res.status(403).json({
+                ok: false,
+                reason: "license_inactive"
+            });
+        }
+
+        if (
+            license.vencimento &&
+            new Date(license.vencimento).getTime() < Date.now()
+        ) {
+            return res.status(403).json({
+                ok: false,
+                reason: "license_expired"
+            });
+        }
+
+
+        // ====================================================
+        // BUSCAR EMPRESA
+        // ====================================================
+
+        const { data: company, error: companyError } = await supabase
+            .from("companies")
+            .select("id, nome, status")
+            .eq("id", license.company_id)
+            .maybeSingle();
+
+        if (companyError) {
+            console.error(
+                "Erro ao buscar empresa para OAuth:",
+                companyError
+            );
+
+            return res.status(500).json({
+                ok: false,
+                reason: "database_error"
+            });
+        }
+
+        if (!company) {
+            return res.status(404).json({
+                ok: false,
+                reason: "company_not_found"
+            });
+        }
+
+        if (company.status !== "active") {
+            return res.status(403).json({
+                ok: false,
+                reason: "company_inactive"
+            });
+        }
+
+
+        // ====================================================
+        // VALIDAR DISPOSITIVO
+        // ====================================================
+
+        const { data: device, error: deviceError } = await supabase
+            .from("devices")
+            .select("id, device_id, status, company_id")
+            .eq("company_id", company.id)
+            .eq("device_id", device_id)
+            .maybeSingle();
+
+        if (deviceError) {
+            console.error(
+                "Erro ao buscar dispositivo para OAuth:",
+                deviceError
+            );
+
+            return res.status(500).json({
+                ok: false,
+                reason: "database_error"
+            });
+        }
+
+        if (!device) {
+            return res.status(403).json({
+                ok: false,
+                reason: "device_not_registered",
+                message: "Dispositivo não está registrado nesta licença"
+            });
+        }
+
+        if (device.status !== "active") {
+            return res.status(403).json({
+                ok: false,
+                reason: "device_inactive",
+                message: "Dispositivo não está ativo"
+            });
+        }
+
+
+        // ====================================================
+        // GERAR PKCE
+        // ====================================================
+
+        const state = crypto.randomBytes(32).toString("hex");
+
+        const codeVerifier = generateCodeVerifier();
+
+        const codeChallenge =
+            generateCodeChallenge(codeVerifier);
+
+
+        // Guardamos temporariamente os dados necessários
         mlOAuthStates.set(state, {
+
             codeVerifier,
+
+            companyId: company.id,
+
+            companyName: company.nome,
+
+            licenseKey: chave,
+
+            deviceId: device_id,
+
             createdAt: Date.now()
+
         });
+
+
+        // ====================================================
+        // URL DO MERCADO LIVRE
+        // ====================================================
 
         const params = new URLSearchParams({
+
             response_type: "code",
+
             client_id: ML_CLIENT_ID,
+
             redirect_uri: ML_REDIRECT_URI,
+
             state,
+
             code_challenge: codeChallenge,
+
             code_challenge_method: "S256"
+
         });
+
 
         const authorizationUrl =
             `https://auth.mercadolivre.com.br/authorization?${params.toString()}`;
 
-        console.log("ML OAuth: iniciando autorização");
 
-        res.redirect(authorizationUrl);
+        console.log(
+            `🛒 ML OAuth iniciado | Empresa: ${company.nome} | Dispositivo: ${device_id}`
+        );
+
+
+        return res.redirect(authorizationUrl);
+
 
     } catch (error) {
-        console.error("ML OAuth auth error:", error);
 
-        res.status(500).json({
-            error: "Erro ao iniciar autorização do Mercado Livre"
+        console.error(
+            "Erro ao iniciar OAuth Mercado Livre:",
+            error
+        );
+
+        return res.status(500).json({
+            ok: false,
+            reason: "server_error"
         });
+
     }
+
 });
 
 
-// Callback do Mercado Livre
+// ============================================================
+// CALLBACK
+// ============================================================
+
 app.get("/api/mercadolivre/callback", async (req, res) => {
+
     try {
-        const { code, state, error, error_description } = req.query;
+
+        const {
+            code,
+            state,
+            error,
+            error_description
+        } = req.query;
+
+
+        // ====================================================
+        // USUÁRIO RECUSOU
+        // ====================================================
 
         if (error) {
-            console.error("ML OAuth recusado:", error, error_description);
+
+            console.error(
+                "Mercado Livre OAuth recusado:",
+                error,
+                error_description
+            );
 
             return res.status(400).send(`
                 <h2>Autorização não concluída</h2>
                 <p>${error_description || error}</p>
             `);
+
         }
 
+
         if (!code || !state) {
-            return res.status(400).send("Código ou state ausente.");
+
+            return res.status(400).send(
+                "Código ou state ausente."
+            );
+
         }
+
+
+        // ====================================================
+        // RECUPERAR ESTADO
+        // ====================================================
 
         const oauthData = mlOAuthStates.get(state);
 
+
         if (!oauthData) {
-            return res.status(400).send("State inválido ou expirado.");
+
+            return res.status(400).send(
+                "Sessão OAuth inválida ou expirada."
+            );
+
         }
+
 
         // State só pode ser usado uma vez
         mlOAuthStates.delete(state);
 
-        // Evita manter estados antigos na memória
-        if (Date.now() - oauthData.createdAt > 10 * 60 * 1000) {
-            return res.status(400).send("Sessão OAuth expirada.");
+
+        // ====================================================
+        // VALIDAR EXPIRAÇÃO DO STATE
+        // ====================================================
+
+        if (
+            Date.now() - oauthData.createdAt >
+            10 * 60 * 1000
+        ) {
+
+            return res.status(400).send(
+                "Sessão OAuth expirada."
+            );
+
         }
 
+
+        // ====================================================
+        // TROCAR CODE POR TOKEN
+        // ====================================================
+
         const tokenResponse = await axios.post(
+
             "https://api.mercadolibre.com/oauth/token",
+
             new URLSearchParams({
+
                 grant_type: "authorization_code",
+
                 client_id: ML_CLIENT_ID,
+
                 client_secret: ML_CLIENT_SECRET,
+
                 code,
+
                 redirect_uri: ML_REDIRECT_URI,
+
                 code_verifier: oauthData.codeVerifier
+
             }).toString(),
+
             {
+
                 headers: {
+
                     "accept": "application/json",
-                    "content-type": "application/x-www-form-urlencoded"
+
+                    "content-type":
+                        "application/x-www-form-urlencoded"
+
                 }
+
             }
+
         );
+
 
         const tokenData = tokenResponse.data;
 
-        console.log("ML OAuth: autorização concluída");
-        console.log("ML User ID:", tokenData.user_id);
-        console.log("ML Scope:", tokenData.scope);
-        console.log("ML Token recebido: SIM");
 
-        // Testa imediatamente o access token
-        const userResponse = await axios.get(
-            "https://api.mercadolibre.com/users/me",
-            {
-                headers: {
-                    Authorization: `Bearer ${tokenData.access_token}`
-                }
-            }
+        console.log(
+            "✅ ML OAuth concluído"
         );
 
-        console.log("ML /users/me:", {
-            id: userResponse.data.id,
-            nickname: userResponse.data.nickname
-        });
+        console.log(
+            "ML User ID:",
+            tokenData.user_id
+        );
 
-        // Por enquanto NÃO vamos salvar no banco.
-        // Primeiro queremos confirmar que o OAuth funciona.
+        console.log(
+            "ML Scope:",
+            tokenData.scope
+        );
+
+
+        // ====================================================
+        // CONSULTAR CONTA
+        // ====================================================
+
+        const userResponse = await axios.get(
+
+            "https://api.mercadolibre.com/users/me",
+
+            {
+
+                headers: {
+
+                    Authorization:
+                        `Bearer ${tokenData.access_token}`
+
+                }
+
+            }
+
+        );
+
+
+        const mlUser = userResponse.data;
+
+
+        console.log(
+            "ML Conta:",
+            mlUser.nickname
+        );
+
+
+        // ====================================================
+        // CALCULAR EXPIRAÇÃO
+        // ====================================================
+
+        const expiresIn =
+            Number(tokenData.expires_in || 0);
+
+        const tokenExpiresAt =
+            new Date(
+                Date.now() +
+                expiresIn * 1000
+            ).toISOString();
+
+
+        // ====================================================
+        // SALVAR NO SUPABASE
+        // ====================================================
+
+        const { data: account, error: accountError } =
+
+            await supabase
+
+                .from("mercadolivre_accounts")
+
+                .upsert({
+
+                    company_id:
+                        oauthData.companyId,
+
+                    ml_user_id:
+                        tokenData.user_id,
+
+                    nickname:
+                        mlUser.nickname || null,
+
+                    access_token:
+                        tokenData.access_token,
+
+                    refresh_token:
+                        tokenData.refresh_token,
+
+                    token_expires_at:
+                        tokenExpiresAt,
+
+                    scope:
+                        tokenData.scope || null,
+
+                    updated_at:
+                        new Date().toISOString()
+
+                }, {
+
+                    onConflict:
+                        "company_id"
+
+                })
+
+                .select()
+
+                .single();
+
+
+        if (accountError) {
+
+            console.error(
+                "❌ Erro ao salvar conta Mercado Livre:",
+                accountError
+            );
+
+            return res.status(500).send(`
+                <h2>Erro ao salvar conexão</h2>
+                <p>A autorização foi concluída, mas não foi possível salvar a conta.</p>
+            `);
+
+        }
+
+
+        console.log(
+            `✅ Conta ML salva | Empresa: ${oauthData.companyName} | ML: ${mlUser.nickname}`
+        );
+
+
+        // ====================================================
+        // REGISTRAR LOG
+        // ====================================================
+
+        await supabase
+            .from("logs")
+            .insert({
+
+                company_id:
+                    oauthData.companyId,
+
+                device_id:
+                    oauthData.deviceId,
+
+                acao:
+                    "mercadolivre_connected",
+
+                detalhes: {
+
+                    ml_user_id:
+                        tokenData.user_id,
+
+                    nickname:
+                        mlUser.nickname,
+
+                    scope:
+                        tokenData.scope,
+
+                    device_identifier:
+                        oauthData.deviceId
+
+                }
+
+            });
+
+
+        // ====================================================
+        // SUCESSO
+        // ====================================================
 
         res.send(`
+
             <!DOCTYPE html>
+
             <html lang="pt-BR">
+
             <head>
+
                 <meta charset="UTF-8">
+
                 <title>Mercado Livre conectado</title>
+
                 <style>
+
                     body {
+
                         font-family: Arial, sans-serif;
+
                         background: #f5f7fa;
+
                         display: flex;
+
                         justify-content: center;
+
                         align-items: center;
+
                         height: 100vh;
+
                         margin: 0;
+
                     }
 
                     .box {
+
                         background: white;
+
                         padding: 35px;
+
                         border-radius: 14px;
-                        box-shadow: 0 5px 25px rgba(0,0,0,.1);
+
+                        box-shadow:
+                            0 5px 25px rgba(0,0,0,.1);
+
                         text-align: center;
+
                         max-width: 450px;
+
                     }
 
                     h1 {
+
                         color: #16a34a;
+
                     }
 
                     .info {
+
                         margin-top: 20px;
+
                         padding: 15px;
+
                         background: #f5f7fa;
+
                         border-radius: 8px;
+
                     }
+
                 </style>
+
             </head>
 
             <body>
 
                 <div class="box">
 
-                    <h1>✓ Mercado Livre conectado!</h1>
+                    <h1>
+                        ✓ Mercado Livre conectado!
+                    </h1>
 
                     <p>
-                        A autorização da ML Support foi concluída
-                        com sucesso.
+                        Sua conta foi vinculada
+                        à sua empresa.
                     </p>
 
                     <div class="info">
-                        <strong>Usuário:</strong><br>
-                        ${userResponse.data.nickname || "N/A"}
+
+                        <strong>Conta:</strong><br>
+
+                        ${mlUser.nickname || "N/A"}
+
                         <br><br>
 
                         <strong>ID:</strong><br>
-                        ${userResponse.data.id}
+
+                        ${mlUser.id}
+
                     </div>
 
                     <p>
@@ -3033,37 +3479,188 @@ app.get("/api/mercadolivre/callback", async (req, res) => {
                 </div>
 
             </body>
+
             </html>
+
         `);
+
 
     } catch (error) {
 
         console.error(
-            "ML OAuth callback error:",
-            error.response?.data || error.message
+
+            "❌ ML OAuth callback error:",
+
+            error.response?.data ||
+            error.message
+
         );
 
+
         res.status(500).send(`
-            <h2>Erro ao conectar ao Mercado Livre</h2>
-            <p>Verifique os logs do servidor.</p>
+
+            <h2>
+                Erro ao conectar ao Mercado Livre
+            </h2>
+
+            <p>
+                Verifique os logs do servidor.
+            </p>
+
         `);
+
     }
+
 });
 
 
-// Endpoint simples para verificar se a rota existe
-app.get("/api/mercadolivre/status", (req, res) => {
-    res.json({
-        configured: !!(
-            ML_CLIENT_ID &&
-            ML_CLIENT_SECRET &&
-            ML_REDIRECT_URI
-        ),
-        client_id: ML_CLIENT_ID
-            ? `${ML_CLIENT_ID.substring(0, 4)}...`
-            : null,
-        redirect_uri: ML_REDIRECT_URI || null
-    });
+// ============================================================
+// STATUS DA CONFIGURAÇÃO
+// ============================================================
+
+app.get("/api/mercadolivre/status", async (req, res) => {
+
+    try {
+
+        const {
+            chave,
+            device_id
+        } = req.query;
+
+
+        if (!chave || !device_id) {
+
+            return res.json({
+
+                configured: !!(
+                    ML_CLIENT_ID &&
+                    ML_CLIENT_SECRET &&
+                    ML_REDIRECT_URI
+                ),
+
+                connected: false,
+
+                message:
+                    "chave e device_id são necessários"
+
+            });
+
+        }
+
+
+        // Buscar licença
+        const { data: license } =
+            await supabase
+
+                .from("licenses")
+
+                .select("company_id")
+
+                .eq("chave", chave)
+
+                .maybeSingle();
+
+
+        if (!license) {
+
+            return res.status(404).json({
+
+                connected: false,
+
+                reason:
+                    "invalid_license"
+
+            });
+
+        }
+
+
+        // Buscar conta ML
+        const { data: account, error } =
+            await supabase
+
+                .from("mercadolivre_accounts")
+
+                .select(
+                    "ml_user_id, nickname, token_expires_at, scope"
+                )
+
+                .eq(
+                    "company_id",
+                    license.company_id
+                )
+
+                .maybeSingle();
+
+
+        if (error) {
+
+            console.error(
+                "Erro ao consultar conta ML:",
+                error
+            );
+
+            return res.status(500).json({
+
+                connected: false,
+
+                reason:
+                    "database_error"
+
+            });
+
+        }
+
+
+        return res.json({
+
+            configured: !!(
+                ML_CLIENT_ID &&
+                ML_CLIENT_SECRET &&
+                ML_REDIRECT_URI
+            ),
+
+            connected: !!account,
+
+            account: account
+                ? {
+
+                    ml_user_id:
+                        account.ml_user_id,
+
+                    nickname:
+                        account.nickname,
+
+                    token_expires_at:
+                        account.token_expires_at,
+
+                    scope:
+                        account.scope
+
+                }
+                : null
+
+        });
+
+
+    } catch (error) {
+
+        console.error(
+            "Erro status ML:",
+            error
+        );
+
+        return res.status(500).json({
+
+            connected: false,
+
+            reason:
+                "server_error"
+
+        });
+
+    }
+
 });
 
 
