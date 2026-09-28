@@ -4287,15 +4287,9 @@ app.get("/api/mercadolivre/preco", async (req, res) => {
         if (!item_id) {
 
             return res.status(400).json({
-
                 ok: false,
-
-                reason:
-                    "missing_item_id",
-
-                message:
-                    "item_id é obrigatório"
-
+                reason: "missing_item_id",
+                message: "item_id é obrigatório"
             });
 
         }
@@ -4310,15 +4304,10 @@ app.get("/api/mercadolivre/preco", async (req, res) => {
         if (!/^MLB\d+$/i.test(itemId)) {
 
             return res.status(400).json({
-
                 ok: false,
-
-                reason:
-                    "invalid_item_id",
-
+                reason: "invalid_item_id",
                 message:
                     "Informe um item_id válido, exemplo: MLB123456789"
-
             });
 
         }
@@ -4347,11 +4336,36 @@ app.get("/api/mercadolivre/preco", async (req, res) => {
 
 
         const headers = {
-
             Authorization:
                 `Bearer ${accessToken}`
-
         };
+
+
+        // ====================================================
+        // BUSCAR DADOS DO ANÚNCIO
+        // ====================================================
+
+        const itemResponse =
+            await axios.get(
+                `https://api.mercadolibre.com/items/${itemId}`,
+                {
+                    headers
+                }
+            );
+
+
+        const item =
+            itemResponse.data;
+
+
+        const titulo =
+            item.title || null;
+
+        const categoria =
+            item.category_id || null;
+
+        const sellerId =
+            item.seller_id || null;
 
 
         // ====================================================
@@ -4360,13 +4374,10 @@ app.get("/api/mercadolivre/preco", async (req, res) => {
 
         const pricesResponse =
             await axios.get(
-
                 `https://api.mercadolibre.com/items/${itemId}/prices`,
-
                 {
                     headers
                 }
-
             );
 
 
@@ -4374,65 +4385,8 @@ app.get("/api/mercadolivre/preco", async (req, res) => {
             pricesResponse.data;
 
 
-        // ====================================================
-        // REFERÊNCIA DE PREÇO
-        // ====================================================
-
-        let reference = null;
-        let referenceError = null;
-
-
-        try {
-
-            const referenceResponse =
-                await axios.get(
-
-                    `https://api.mercadolibre.com/suggestions/items/${itemId}/details`,
-
-                    {
-                        headers
-                    }
-
-                );
-
-
-            reference =
-                referenceResponse.data;
-
-
-        } catch (error) {
-
-            referenceError = {
-
-                status:
-                    error.response?.status || 500,
-
-                message:
-                    error.response?.data?.message ||
-                    error.message
-
-            };
-
-
-            console.warn(
-
-                "⚠️ Referência de preço indisponível:",
-
-                referenceError
-
-            );
-
-        }
-
-
-        // ====================================================
-        // NORMALIZAR PREÇOS
-        // ====================================================
-
         const listaPrecos =
-            Array.isArray(
-                pricesData?.prices
-            )
+            Array.isArray(pricesData?.prices)
                 ? pricesData.prices
                 : [];
 
@@ -4451,6 +4405,291 @@ app.get("/api/mercadolivre/preco", async (req, res) => {
             ) || null;
 
 
+        const precoAtual =
+            precoPromocional?.amount ??
+            precoStandard?.amount ??
+            item.price ??
+            null;
+
+
+        // ====================================================
+        // SUGESTÃO OFICIAL DO MERCADO LIVRE
+        // ====================================================
+
+        let reference = null;
+
+        let referenceError = null;
+
+
+        try {
+
+            const referenceResponse =
+                await axios.get(
+                    `https://api.mercadolibre.com/suggestions/items/${itemId}/details`,
+                    {
+                        headers
+                    }
+                );
+
+
+            reference =
+                referenceResponse.data;
+
+
+        } catch (error) {
+
+            referenceError = {
+
+                status:
+                    error.response?.status ||
+                    500,
+
+                message:
+                    error.response?.data?.message ||
+                    error.message
+
+            };
+
+
+            console.warn(
+                "⚠️ Sugestão oficial indisponível:",
+                referenceError
+            );
+
+        }
+
+
+        // ====================================================
+        // BUSCAR CONCORRENTES
+        // ====================================================
+
+        let concorrentes = [];
+
+        let concorrentesError = null;
+
+
+        try {
+
+            if (titulo && categoria) {
+
+                const searchResponse =
+                    await axios.get(
+                        "https://api.mercadolibre.com/sites/MLB/search",
+                        {
+                            headers,
+
+                            params: {
+
+                                q: titulo,
+
+                                category: categoria,
+
+                                limit: 20,
+
+                                sort: "price_asc"
+
+                            }
+
+                        }
+                    );
+
+
+                const resultados =
+                    Array.isArray(
+                        searchResponse.data?.results
+                    )
+                        ? searchResponse.data.results
+                        : [];
+
+
+                concorrentes =
+                    resultados
+
+                        // Não considerar o próprio anúncio
+                        .filter(
+                            anuncio =>
+                                anuncio.id !== itemId
+                        )
+
+                        // Não considerar anúncios do próprio vendedor
+                        .filter(
+                            anuncio =>
+                                !sellerId ||
+                                anuncio.seller?.id !== sellerId
+                        )
+
+                        // Somente anúncios com preço válido
+                        .filter(
+                            anuncio =>
+                                Number.isFinite(
+                                    Number(anuncio.price)
+                                ) &&
+                                Number(anuncio.price) > 0
+                        )
+
+                        .slice(0, 15)
+
+                        .map(anuncio => ({
+
+                            id:
+                                anuncio.id,
+
+                            titulo:
+                                anuncio.title,
+
+                            preco:
+                                Number(anuncio.price),
+
+                            vendedor:
+                                anuncio.seller?.id ||
+                                null,
+
+                            link:
+                                anuncio.permalink ||
+                                null
+
+                        }));
+
+            }
+
+        } catch (error) {
+
+            concorrentesError = {
+
+                status:
+                    error.response?.status ||
+                    500,
+
+                message:
+                    error.response?.data?.message ||
+                    error.message
+
+            };
+
+
+            console.warn(
+                "⚠️ Erro ao buscar concorrentes:",
+                concorrentesError
+            );
+
+        }
+
+
+        // ====================================================
+        // CALCULAR REFERÊNCIA DOS CONCORRENTES
+        // ====================================================
+
+        const precosConcorrentes =
+            concorrentes
+                .map(
+                    concorrente =>
+                        Number(concorrente.preco)
+                )
+                .filter(
+                    preco =>
+                        Number.isFinite(preco) &&
+                        preco > 0
+                )
+                .sort(
+                    (a, b) =>
+                        a - b
+                );
+
+
+        let concorrenteMenor =
+            null;
+
+        let concorrenteMaior =
+            null;
+
+        let concorrenteMedia =
+            null;
+
+        let concorrenteMediana =
+            null;
+
+
+        if (precosConcorrentes.length > 0) {
+
+            concorrenteMenor =
+                precosConcorrentes[0];
+
+
+            concorrenteMaior =
+                precosConcorrentes[
+                    precosConcorrentes.length - 1
+                ];
+
+
+            const soma =
+                precosConcorrentes.reduce(
+                    (
+                        total,
+                        preco
+                    ) =>
+                        total + preco,
+                    0
+                );
+
+
+            concorrenteMedia =
+                soma /
+                precosConcorrentes.length;
+
+
+            const meio =
+                Math.floor(
+                    precosConcorrentes.length / 2
+                );
+
+
+            if (
+                precosConcorrentes.length % 2 === 0
+            ) {
+
+                concorrenteMediana =
+                    (
+                        precosConcorrentes[meio - 1] +
+                        precosConcorrentes[meio]
+                    ) / 2;
+
+            } else {
+
+                concorrenteMediana =
+                    precosConcorrentes[meio];
+
+            }
+
+        }
+
+
+        // ====================================================
+        // CALCULAR DIFERENÇA PARA A MEDIANA
+        // ====================================================
+
+        let diferencaPercentual =
+            null;
+
+
+        if (
+            precoAtual !== null &&
+            concorrenteMediana !== null &&
+            concorrenteMediana > 0
+        ) {
+
+            diferencaPercentual =
+                (
+                    (
+                        precoAtual -
+                        concorrenteMediana
+                    ) /
+                    concorrenteMediana
+                ) *
+                100;
+
+        }
+
+
         // ====================================================
         // RESPOSTA
         // ====================================================
@@ -4461,6 +4700,7 @@ app.get("/api/mercadolivre/preco", async (req, res) => {
 
             item_id:
                 itemId,
+
 
             atual: {
 
@@ -4483,6 +4723,7 @@ app.get("/api/mercadolivre/preco", async (req, res) => {
                         }
                         : null,
 
+
                 promotion:
                     precoPromocional
                         ? {
@@ -4500,9 +4741,13 @@ app.get("/api/mercadolivre/preco", async (req, res) => {
                                 precoPromocional.last_updated
 
                         }
-                        : null
+                        : null,
+
+                amount:
+                    precoAtual
 
             },
+
 
             referencia: reference
                 ? {
@@ -4554,20 +4799,57 @@ app.get("/api/mercadolivre/preco", async (req, res) => {
                 }
                 : null,
 
+
             referencia_error:
                 referenceError,
+
 
             informacoes: {
 
                 titulo:
-                    reference?.info?.title ||
-                    null,
+                    titulo,
 
                 vendas:
-                    reference?.info?.sold_quantity ??
-                    null
+                    item.sold_quantity ??
+                    null,
 
-            }
+                categoria:
+                    categoria,
+
+                vendedor:
+                    sellerId
+
+            },
+
+
+            concorrencia: {
+
+                quantidade:
+                    concorrentes.length,
+
+                menor_preco:
+                    concorrenteMenor,
+
+                maior_preco:
+                    concorrenteMaior,
+
+                media:
+                    concorrenteMedia,
+
+                mediana:
+                    concorrenteMediana,
+
+                diferenca_percentual:
+                    diferencaPercentual,
+
+                concorrentes:
+                    concorrentes
+
+            },
+
+
+            concorrentes_error:
+                concorrentesError
 
         });
 
@@ -4575,68 +4857,25 @@ app.get("/api/mercadolivre/preco", async (req, res) => {
     } catch (error) {
 
         console.error(
-
             "❌ Erro no Preço Ideal ML:",
-
             error.response?.data ||
-            error.message ||
-            error
-
+            error.message
         );
 
 
-        if (error.statusCode) {
-
-            return res.status(
-                error.statusCode
-            ).json({
-
-                ok: false,
-
-                reason:
-                    error.reason,
-
-                message:
-                    error.message
-
-            });
-
-        }
-
-
-        if (error.response) {
-
-            return res.status(
-                error.response.status || 500
-            ).json({
-
-                ok: false,
-
-                reason:
-                    "mercadolivre_api_error",
-
-                message:
-                    error.response.data?.message ||
-                    "Erro ao consultar Mercado Livre",
-
-                details:
-                    error.response.data || null
-
-            });
-
-        }
-
-
-        return res.status(500).json({
+        return res.status(
+            error.response?.status || 500
+        ).json({
 
             ok: false,
 
             reason:
-                "server_error",
+                "mercadolivre_api_error",
 
             message:
+                error.response?.data?.message ||
                 error.message ||
-                "Erro interno do servidor"
+                "Erro ao consultar preço"
 
         });
 
