@@ -3855,47 +3855,63 @@ app.get("/api/mercadolivre/rx", async (req, res) => {
 
 
         // ====================================================
-        // CONSULTAR PERFORMANCE
-        // ====================================================
+// CONSULTAR PERFORMANCE
+// ====================================================
 
-        let performance = null;
-        let performanceError = null;
+let performance = null;
+let performanceError = null;
 
+// Verifica se o anúncio está relacionado a catálogo
+const isCatalogItem =
+    item.catalog_listing === true ||
+    !!item.catalog_product_id;
 
-        try {
+// Só tenta consultar performance quando não for Product item
+if (!isCatalogItem) {
 
-            const performanceResponse =
-                await axios.get(
-                    `https://api.mercadolibre.com/item/${itemId}/performance`,
-                    {
-                        headers
-                    }
-                );
+    try {
 
-
-            performance =
-                performanceResponse.data;
-
-
-        } catch (error) {
-
-            performanceError = {
-                status:
-                    error.response?.status || 500,
-
-                message:
-                    error.response?.data?.message ||
-                    error.message
-            };
-
-
-            console.warn(
-                "⚠️ Não foi possível consultar performance ML:",
-                performanceError
+        const performanceResponse =
+            await axios.get(
+                `https://api.mercadolibre.com/item/${itemId}/performance`,
+                {
+                    headers
+                }
             );
 
-        }
+        performance =
+            performanceResponse.data;
 
+    } catch (error) {
+
+        performanceError = {
+            status:
+                error.response?.status || 500,
+
+            message:
+                error.response?.data?.message ||
+                error.message
+        };
+
+        console.warn(
+            "⚠️ Não foi possível consultar performance ML:",
+            performanceError
+        );
+    }
+
+} else {
+
+    performanceError = {
+        status: null,
+        reason: "product_item_not_supported",
+        message:
+            "Este anúncio é um Product item e não possui performance disponível neste endpoint."
+    };
+
+    console.log(
+        `ℹ️ Raio-X: ${itemId} é Product item; performance ignorada.`
+    );
+}
 
         // ====================================================
         // CONSULTAR DESCRIÇÃO
