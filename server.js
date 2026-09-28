@@ -2824,6 +2824,249 @@ app.post(
     }
 );
 
+// ============================================================
+// MERCADO LIVRE - OAuth 2.0 + PKCE
+// ============================================================
+
+const ML_CLIENT_ID = process.env.ML_CLIENT_ID;
+const ML_CLIENT_SECRET = process.env.ML_CLIENT_SECRET;
+const ML_REDIRECT_URI = process.env.ML_REDIRECT_URI;
+
+// Guarda temporariamente os dados do OAuth.
+// Depois vamos substituir isso pelo armazenamento adequado
+// vinculado à empresa/usuário.
+const mlOAuthStates = new Map();
+
+function generateCodeVerifier() {
+    return crypto.randomBytes(64).toString("base64url");
+}
+
+function generateCodeChallenge(codeVerifier) {
+    return crypto
+        .createHash("sha256")
+        .update(codeVerifier)
+        .digest("base64url");
+}
+
+// Inicia OAuth
+app.get("/api/mercadolivre/auth", (req, res) => {
+    try {
+        if (!ML_CLIENT_ID || !ML_CLIENT_SECRET || !ML_REDIRECT_URI) {
+            return res.status(500).json({
+                error: "Mercado Livre OAuth não configurado no servidor"
+            });
+        }
+
+        const state = crypto.randomBytes(32).toString("hex");
+        const codeVerifier = generateCodeVerifier();
+        const codeChallenge = generateCodeChallenge(codeVerifier);
+
+        mlOAuthStates.set(state, {
+            codeVerifier,
+            createdAt: Date.now()
+        });
+
+        const params = new URLSearchParams({
+            response_type: "code",
+            client_id: ML_CLIENT_ID,
+            redirect_uri: ML_REDIRECT_URI,
+            state,
+            code_challenge: codeChallenge,
+            code_challenge_method: "S256"
+        });
+
+        const authorizationUrl =
+            `https://auth.mercadolivre.com.br/authorization?${params.toString()}`;
+
+        console.log("ML OAuth: iniciando autorização");
+
+        res.redirect(authorizationUrl);
+
+    } catch (error) {
+        console.error("ML OAuth auth error:", error);
+
+        res.status(500).json({
+            error: "Erro ao iniciar autorização do Mercado Livre"
+        });
+    }
+});
+
+
+// Callback do Mercado Livre
+app.get("/api/mercadolivre/callback", async (req, res) => {
+    try {
+        const { code, state, error, error_description } = req.query;
+
+        if (error) {
+            console.error("ML OAuth recusado:", error, error_description);
+
+            return res.status(400).send(`
+                <h2>Autorização não concluída</h2>
+                <p>${error_description || error}</p>
+            `);
+        }
+
+        if (!code || !state) {
+            return res.status(400).send("Código ou state ausente.");
+        }
+
+        const oauthData = mlOAuthStates.get(state);
+
+        if (!oauthData) {
+            return res.status(400).send("State inválido ou expirado.");
+        }
+
+        // State só pode ser usado uma vez
+        mlOAuthStates.delete(state);
+
+        // Evita manter estados antigos na memória
+        if (Date.now() - oauthData.createdAt > 10 * 60 * 1000) {
+            return res.status(400).send("Sessão OAuth expirada.");
+        }
+
+        const tokenResponse = await axios.post(
+            "https://api.mercadolibre.com/oauth/token",
+            new URLSearchParams({
+                grant_type: "authorization_code",
+                client_id: ML_CLIENT_ID,
+                client_secret: ML_CLIENT_SECRET,
+                code,
+                redirect_uri: ML_REDIRECT_URI,
+                code_verifier: oauthData.codeVerifier
+            }).toString(),
+            {
+                headers: {
+                    "accept": "application/json",
+                    "content-type": "application/x-www-form-urlencoded"
+                }
+            }
+        );
+
+        const tokenData = tokenResponse.data;
+
+        console.log("ML OAuth: autorização concluída");
+        console.log("ML User ID:", tokenData.user_id);
+        console.log("ML Scope:", tokenData.scope);
+        console.log("ML Token recebido: SIM");
+
+        // Testa imediatamente o access token
+        const userResponse = await axios.get(
+            "https://api.mercadolibre.com/users/me",
+            {
+                headers: {
+                    Authorization: `Bearer ${tokenData.access_token}`
+                }
+            }
+        );
+
+        console.log("ML /users/me:", {
+            id: userResponse.data.id,
+            nickname: userResponse.data.nickname
+        });
+
+        // Por enquanto NÃO vamos salvar no banco.
+        // Primeiro queremos confirmar que o OAuth funciona.
+
+        res.send(`
+            <!DOCTYPE html>
+            <html lang="pt-BR">
+            <head>
+                <meta charset="UTF-8">
+                <title>Mercado Livre conectado</title>
+                <style>
+                    body {
+                        font-family: Arial, sans-serif;
+                        background: #f5f7fa;
+                        display: flex;
+                        justify-content: center;
+                        align-items: center;
+                        height: 100vh;
+                        margin: 0;
+                    }
+
+                    .box {
+                        background: white;
+                        padding: 35px;
+                        border-radius: 14px;
+                        box-shadow: 0 5px 25px rgba(0,0,0,.1);
+                        text-align: center;
+                        max-width: 450px;
+                    }
+
+                    h1 {
+                        color: #16a34a;
+                    }
+
+                    .info {
+                        margin-top: 20px;
+                        padding: 15px;
+                        background: #f5f7fa;
+                        border-radius: 8px;
+                    }
+                </style>
+            </head>
+
+            <body>
+
+                <div class="box">
+
+                    <h1>✓ Mercado Livre conectado!</h1>
+
+                    <p>
+                        A autorização da ML Support foi concluída
+                        com sucesso.
+                    </p>
+
+                    <div class="info">
+                        <strong>Usuário:</strong><br>
+                        ${userResponse.data.nickname || "N/A"}
+                        <br><br>
+
+                        <strong>ID:</strong><br>
+                        ${userResponse.data.id}
+                    </div>
+
+                    <p>
+                        Você pode fechar esta janela.
+                    </p>
+
+                </div>
+
+            </body>
+            </html>
+        `);
+
+    } catch (error) {
+
+        console.error(
+            "ML OAuth callback error:",
+            error.response?.data || error.message
+        );
+
+        res.status(500).send(`
+            <h2>Erro ao conectar ao Mercado Livre</h2>
+            <p>Verifique os logs do servidor.</p>
+        `);
+    }
+});
+
+
+// Endpoint simples para verificar se a rota existe
+app.get("/api/mercadolivre/status", (req, res) => {
+    res.json({
+        configured: !!(
+            ML_CLIENT_ID &&
+            ML_CLIENT_SECRET &&
+            ML_REDIRECT_URI
+        ),
+        client_id: ML_CLIENT_ID
+            ? `${ML_CLIENT_ID.substring(0, 4)}...`
+            : null,
+        redirect_uri: ML_REDIRECT_URI || null
+    });
+});
+
+
 const server = app.listen(PORT, () => {
     console.log(`API rodando em http://localhost:${PORT}`);
 });
