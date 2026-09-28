@@ -6414,23 +6414,6 @@ app.get("/api/mercadolivre/pos-venda", async (req, res) => {
                 ].includes(status);
 
 
-            if (pedidoCancelado) {
-
-    cancelados++;
-
-    console.log(
-        "❌ CANCELAMENTO:",
-        orderId,
-        "status:",
-        status
-    );
-
-    vendasPorStatus.cancelados.push(
-        venda
-    );
-
-}
-
 
             // =================================================
             // REEMBOLSO
@@ -6458,29 +6441,6 @@ app.get("/api/mercadolivre/pos-venda", async (req, res) => {
                 reembolsado = true;
 
             }
-
-
-            if (reembolsado) {
-
-    parcialmenteReembolsados++;
-
-    console.log(
-        "🔄 REEMBOLSO:",
-        orderId,
-        "status:",
-        status,
-        "payments:",
-        pagamentos.map(p => ({
-            id: p.id,
-            status: p.status
-        }))
-    );
-
-    vendasPorStatus.reembolsados.push(
-        venda
-    );
-
-}
 
 
             // =================================================
@@ -6590,9 +6550,7 @@ app.get("/api/mercadolivre/pos-venda", async (req, res) => {
             // ENTREGUE
             // =================================================
 
-            if (
-                shippingStatus === "delivered"
-            ) {
+            {
 
                 entregues++;
 
@@ -6615,16 +6573,7 @@ app.get("/api/mercadolivre/pos-venda", async (req, res) => {
             // EM TRANSPORTE
             // =================================================
 
-            else if (
-                [
-                    "pending",
-                    "handling",
-                    "ready_to_ship",
-                    "shipped"
-                ].includes(
-                    shippingStatus
-                )
-            ) {
+             {
 
                 emTransporte++;
 
@@ -6671,41 +6620,146 @@ app.get("/api/mercadolivre/pos-venda", async (req, res) => {
                 );
 
 
-            const problema =
-    problemaLogistico ||
-    problemaTag;
-
-
-            if (problema) {
-
-                pedidosComProblema++;
-
-                vendasPorStatus.problemas.push({
-
-                    ...venda,
-
-                    shipment_id:
-                        shipmentPrincipal?.id || null,
-
-                    shipment_status:
-                        shippingStatus,
-
-                    motivo:
-
-                        problemaLogistico
-                            ? shippingStatus
-                            : problemaTag
-                                ? "pós-venda / reclamação"
-                                : "reembolso"
-
-                });
-
-            }
-
 
             // =================================================
             // ITENS DO PEDIDO
             // =================================================
+
+            // =================================================
+// CLASSIFICAÇÃO DO PEDIDO
+// Cada pedido entra em apenas UMA categoria
+// =================================================
+
+let categoria = "outros";
+
+
+if (pedidoCancelado) {
+
+    categoria = "cancelados";
+
+} else if (reembolsado) {
+
+    categoria = "reembolsados";
+
+} else if (
+    problemaLogistico ||
+    problemaTag
+) {
+
+    categoria = "problemas";
+
+} else if (
+    shippingStatus === "delivered"
+) {
+
+    categoria = "entregues";
+
+} else if (
+    [
+        "pending",
+        "handling",
+        "ready_to_ship",
+        "shipped"
+    ].includes(
+        shippingStatus
+    )
+) {
+
+    categoria = "em_transporte";
+
+}
+
+
+// =================================================
+// CONTADORES E LISTAS
+// =================================================
+
+switch (categoria) {
+
+    case "cancelados":
+
+        cancelados++;
+
+        vendasPorStatus.cancelados.push(
+            venda
+        );
+
+        break;
+
+
+    case "reembolsados":
+
+        parcialmenteReembolsados++;
+
+        vendasPorStatus.reembolsados.push(
+            venda
+        );
+
+        break;
+
+
+    case "problemas":
+
+        pedidosComProblema++;
+
+        vendasPorStatus.problemas.push({
+
+            ...venda,
+
+            shipment_id:
+                shipmentPrincipal?.id || null,
+
+            shipment_status:
+                shippingStatus,
+
+            motivo:
+                problemaLogistico
+                    ? shippingStatus
+                    : "pós-venda / reclamação"
+
+        });
+
+        break;
+
+
+    case "entregues":
+
+        entregues++;
+
+        vendasPorStatus.entregues.push({
+
+            ...venda,
+
+            shipment_id:
+                shipmentPrincipal?.id || null,
+
+            shipment_status:
+                shippingStatus
+
+        });
+
+        break;
+
+
+    case "em_transporte":
+
+        emTransporte++;
+
+        vendasPorStatus.em_transporte.push({
+
+            ...venda,
+
+            shipment_id:
+                shipmentPrincipal?.id || null,
+
+            shipment_status:
+                shippingStatus
+
+        });
+
+        break;
+
+}
 
             const itens =
                 Array.isArray(
@@ -6972,30 +7026,6 @@ app.get("/api/mercadolivre/pos-venda", async (req, res) => {
         // ====================================================
         // RESPOSTA
         // ====================================================
-
-        const idsCancelados =
-    new Set(
-        vendasPorStatus.cancelados.map(v => v.id)
-    );
-
-const idsReembolsados =
-    new Set(
-        vendasPorStatus.reembolsados.map(v => v.id)
-    );
-
-const ambos = [
-    ...idsCancelados
-].filter(
-    id => idsReembolsados.has(id)
-);
-
-console.log("=================================");
-console.log("📊 COMPARAÇÃO CANCELAMENTO x REEMBOLSO");
-console.log("Cancelados:", idsCancelados.size);
-console.log("Reembolsados:", idsReembolsados.size);
-console.log("Nos dois:", ambos.length);
-console.log("IDs nos dois:", ambos);
-console.log("=================================");
 
         return res.json({
 
