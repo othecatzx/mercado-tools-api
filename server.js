@@ -4814,11 +4814,182 @@ app.get("/api/mercadolivre/auth", async (req, res) => {
 // ====================================================
 
 if (device.mercadolivre_admin !== true) {
-    return res.status(403).json({
-        ok: false,
-        reason: "mercadolivre_admin_required",
-        message: "Somente o dispositivo ADM pode conectar o Mercado Livre."
-    });
+    return res.status(403).send(`
+        <!DOCTYPE html>
+        <html lang="pt-BR">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+            <title>Mercado Livre — ML SH Support</title>
+
+            <style>
+                * {
+                    box-sizing: border-box;
+                    margin: 0;
+                    padding: 0;
+                }
+
+                body {
+                    min-height: 100vh;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    padding: 20px;
+                    font-family: Arial, Helvetica, sans-serif;
+                    background:
+                        radial-gradient(
+                            circle at top,
+                            #eef2ff 0%,
+                            #f8fafc 45%,
+                            #ffffff 100%
+                        );
+                    color: #111827;
+                }
+
+                .card {
+                    width: 100%;
+                    max-width: 470px;
+                    background: #ffffff;
+                    border: 1px solid #e5e7eb;
+                    border-radius: 20px;
+                    padding: 38px 32px;
+                    text-align: center;
+                    box-shadow:
+                        0 20px 50px rgba(15, 23, 42, .10);
+                }
+
+                .icon {
+                    width: 76px;
+                    height: 76px;
+                    margin: 0 auto 22px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    border-radius: 22px;
+                    background: #fff7ed;
+                    font-size: 38px;
+                }
+
+                .brand {
+                    font-size: 13px;
+                    font-weight: 700;
+                    color: #6b7280;
+                    letter-spacing: .5px;
+                    margin-bottom: 10px;
+                }
+
+                h1 {
+                    font-size: 24px;
+                    margin-bottom: 12px;
+                }
+
+                .description {
+                    color: #6b7280;
+                    font-size: 14px;
+                    line-height: 1.6;
+                    margin-bottom: 24px;
+                }
+
+                .notice {
+                    text-align: left;
+                    padding: 15px;
+                    border-radius: 12px;
+                    background: #f8fafc;
+                    border: 1px solid #e5e7eb;
+                    margin-bottom: 24px;
+                }
+
+                .notice-title {
+                    font-size: 13px;
+                    font-weight: 700;
+                    margin-bottom: 6px;
+                }
+
+                .notice-text {
+                    font-size: 12px;
+                    line-height: 1.5;
+                    color: #6b7280;
+                }
+
+                .button {
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                    width: 100%;
+                    padding: 13px 18px;
+                    border: 0;
+                    border-radius: 10px;
+                    background: #111827;
+                    color: white;
+                    text-decoration: none;
+                    font-size: 14px;
+                    font-weight: 700;
+                    cursor: pointer;
+                }
+
+                .button:hover {
+                    background: #1f2937;
+                }
+
+                .footer {
+                    margin-top: 20px;
+                    font-size: 11px;
+                    color: #9ca3af;
+                }
+            </style>
+        </head>
+
+        <body>
+
+            <div class="card">
+
+                <div class="icon">
+                    🛒
+                </div>
+
+                <div class="brand">
+                    ML SH SUPPORT
+                </div>
+
+                <h1>
+                    Acesso não autorizado
+                </h1>
+
+                <div class="description">
+                    Este dispositivo não possui permissão para
+                    conectar a conta do Mercado Livre da empresa.
+                </div>
+
+                <div class="notice">
+                    <div class="notice-title">
+                        🔐 Conexão restrita ao Administrador da empresa.
+                    </div>
+
+                    <div class="notice-text">
+                        A conexão da conta Mercado Livre deve ser
+                        realizada pelo dispositivo definido como
+                        <strong>Administrador do Mercado Livre</strong>
+                        no painel administrativo.
+                    </div>
+                </div>
+
+                <a
+                    href="javascript:history.back()"
+                    class="button"
+                >
+                    ← Voltar
+                </a>
+
+                <div class="footer">
+                    ML Support • Mercado Livre
+                </div>
+
+            </div>
+
+        </body>
+        </html>
+    `);
 }
 
         // ====================================================
