@@ -7088,6 +7088,302 @@ quantidade_itens_em_transporte: quantidadeItensEmTransporte,
 
 });
 
+// ============================================================
+// 🔔 MONITOR DE VENDAS - ML SUPPORT
+// ============================================================
+
+app.get("/api/mercadolivre/monitor-vendas", async (req, res) => {
+
+    try {
+
+        const {
+            chave,
+            device_id
+        } = req.query;
+
+
+        // ====================================================
+        // VALIDAR ACESSO
+        // ====================================================
+
+        const {
+            company
+        } = await validarAcessoMercadoLivre(
+            chave,
+            device_id
+        );
+
+
+        // ====================================================
+        // TOKEN
+        // ====================================================
+
+        const accessToken =
+            await getValidMercadoLivreToken(
+                company.id
+            );
+
+
+        const headers = {
+            Authorization:
+                `Bearer ${accessToken}`
+        };
+
+
+        // ====================================================
+        // ID DO VENDEDOR
+        // ====================================================
+
+        const {
+            data: contaML,
+            error: contaError
+        } = await supabase
+            .from("mercadolivre_accounts")
+            .select("ml_user_id")
+            .eq("company_id", company.id)
+            .maybeSingle();
+
+
+        if (contaError) {
+
+            console.error(
+                "Erro conta ML monitor:",
+                contaError
+            );
+
+            return res.status(500).json({
+                ok: false,
+                reason: "database_error"
+            });
+
+        }
+
+
+        if (!contaML) {
+
+            return res.status(400).json({
+                ok: false,
+                reason: "mercadolivre_not_connected"
+            });
+
+        }
+
+
+        const sellerId =
+            contaML.ml_user_id;
+
+
+        // ====================================================
+        // BUSCAR PEDIDOS RECENTES
+        // Últimos 30 minutos
+        // ====================================================
+
+        const agora =
+            new Date();
+
+        const inicio =
+            new Date(
+                agora.getTime() -
+                (30 * 60 * 1000)
+            );
+
+
+        const params =
+            new URLSearchParams({
+
+                seller:
+                    String(sellerId),
+
+                "order.date_created.from":
+                    inicio.toISOString(),
+
+                "order.date_created.to":
+                    agora.toISOString(),
+
+                sort:
+                    "date_desc",
+
+                offset:
+                    "0",
+
+                limit:
+                    "50"
+
+            });
+
+
+        const response =
+            await axios.get(
+                `https://api.mercadolibre.com/orders/search?${params.toString()}`,
+                {
+                    headers
+                }
+            );
+
+
+        const resultados =
+            Array.isArray(
+                response.data?.results
+            )
+                ? response.data.results
+                : [];
+
+
+        // ====================================================
+        // NORMALIZAR
+        // ====================================================
+
+        const pedidos =
+            resultados.map(
+                pedido => {
+
+                    const orderId =
+                        pedido.id;
+
+
+                    const status =
+                        String(
+                            pedido.status || ""
+                        ).toLowerCase();
+
+
+                    const cancelado =
+                        [
+                            "cancelled",
+                            "canceled",
+                            "pending_cancel"
+                        ].includes(status);
+
+
+                    const itens =
+                        Array.isArray(
+                            pedido.order_items
+                        )
+                            ? pedido.order_items
+                            : [];
+
+
+                    const quantidade =
+                        itens.reduce(
+                            (total, item) =>
+                                total +
+                                Number(
+                                    item.quantity || 0
+                                ),
+                            0
+                        );
+
+
+                    const titulo =
+                        itens
+                            .map(
+                                item =>
+                                    item.item?.title
+                            )
+                            .filter(Boolean)
+                            .join(" | ");
+
+
+                    const valor =
+                        Number(
+                            pedido.total_amount ||
+                            0
+                        );
+
+
+                    return {
+
+                        id:
+                            String(orderId),
+
+                        status,
+
+                        cancelado,
+
+                        data_criacao:
+                            pedido.date_created ||
+                            null,
+
+                        titulo:
+                            titulo ||
+                            "Venda Mercado Livre",
+
+                        quantidade,
+
+                        valor,
+
+                        marketplace:
+                            "Mercado Livre"
+
+                    };
+
+                }
+            );
+
+
+        // ====================================================
+        // RESPOSTA
+        // ====================================================
+
+        return res.json({
+
+            ok: true,
+
+            pedidos
+
+        });
+
+
+    } catch (error) {
+
+        console.error(
+            "❌ Erro monitor vendas ML:",
+            error.response?.data ||
+            error.message ||
+            error
+        );
+
+
+        if (error.statusCode) {
+
+            return res.status(
+                error.statusCode
+            ).json({
+
+                ok: false,
+
+                reason:
+                    error.reason,
+
+                message:
+                    error.message
+
+            });
+
+        }
+
+
+        return res.status(
+            error.response?.status ||
+            500
+        ).json({
+
+            ok: false,
+
+            reason:
+                "mercadolivre_api_error",
+
+            message:
+                error.response?.data?.message ||
+                error.message ||
+                "Erro ao monitorar vendas"
+
+        });
+
+    }
+
+});
+
 const server = app.listen(PORT, () => {
     console.log(`API rodando em http://localhost:${PORT}`);
 });
