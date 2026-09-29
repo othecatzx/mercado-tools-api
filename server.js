@@ -7115,6 +7115,10 @@ quantidade_itens_em_transporte: quantidadeItensEmTransporte,
 // A extensão fará a consulta a cada 1 minuto.
 // ============================================================
 
+// ============================================================
+// 🔔 MONITOR AUTOMÁTICO DE VENDAS E CANCELAMENTOS
+// ============================================================
+
 app.get(
     "/api/mercadolivre/monitor-vendas",
     async (req, res) => {
@@ -7220,27 +7224,30 @@ app.get(
 
 
             // ====================================================
-            // JANELA DE SEGURANÇA
-            // ====================================================
-            //
-            // Últimas 2 horas.
-            //
-            // Mesmo que o monitor fique alguns minutos sem
-            // consultar, conseguimos recuperar alterações recentes.
+            // DATA DE HOJE
             // ====================================================
 
             const agora =
                 new Date();
 
-            const inicioDoDia = new Date(agora);
-inicioDoDia.setHours(0, 0, 0, 0);
+            const inicioDoDia =
+                new Date(agora);
+
+            inicioDoDia.setHours(
+                0,
+                0,
+                0,
+                0
+            );
 
 
             // ====================================================
-            // FUNÇÃO DE CONSULTA
+            // FUNÇÃO PARA BUSCAR PEDIDOS
             // ====================================================
 
-            async function buscarPedidos(paramsExtras) {
+            async function buscarPedidos(
+                paramsExtras
+            ) {
 
                 const params =
                     new URLSearchParams({
@@ -7281,7 +7288,7 @@ inicioDoDia.setHours(0, 0, 0, 0);
 
 
             // ====================================================
-            // 1️⃣ PEDIDOS ALTERADOS NAS ÚLTIMAS 2 HORAS
+            // 1️⃣ PEDIDOS ALTERADOS HOJE
             // ====================================================
 
             const pedidosAlterados =
@@ -7297,12 +7304,7 @@ inicioDoDia.setHours(0, 0, 0, 0);
 
 
             // ====================================================
-            // 2️⃣ PEDIDOS CRIADOS NAS ÚLTIMAS 2 HORAS
-            // ====================================================
-            //
-            // Mantemos essa consulta separada para garantir que
-            // vendas novas sejam detectadas mesmo que o campo de
-            // atualização tenha comportamento diferente.
+            // 2️⃣ PEDIDOS CRIADOS HOJE
             // ====================================================
 
             const pedidosNovos =
@@ -7318,14 +7320,7 @@ inicioDoDia.setHours(0, 0, 0, 0);
 
 
             // ====================================================
-            // 3️⃣ BUSCA EXCLUSIVA DE CANCELAMENTOS
-            // ====================================================
-            //
-            // Essa é a camada extra de segurança.
-            //
-            // Mesmo que o pedido tenha sido criado muito antes,
-            // se ele entrou em cancelled/pending_cancel recentemente
-            // ele pode aparecer aqui.
+            // 3️⃣ CANCELAMENTOS DE HOJE
             // ====================================================
 
             const pedidosCancelados =
@@ -7344,14 +7339,7 @@ inicioDoDia.setHours(0, 0, 0, 0);
 
 
             // ====================================================
-            // 4️⃣ BUSCA DE PENDING_CANCEL
-            // ====================================================
-
-            
-
-
-            // ====================================================
-            // JUNTAR TUDO
+            // JUNTAR PEDIDOS
             // ====================================================
 
             const mapaPedidos =
@@ -7361,7 +7349,7 @@ inicioDoDia.setHours(0, 0, 0, 0);
             [
                 ...pedidosAlterados,
                 ...pedidosNovos,
-                ...pedidosCancelados,
+                ...pedidosCancelados
             ].forEach(pedido => {
 
                 if (!pedido?.id) {
@@ -7383,128 +7371,335 @@ inicioDoDia.setHours(0, 0, 0, 0);
 
 
             // ====================================================
-            // NORMALIZAR PEDIDOS
+            // BUSCAR SHIPMENTS
             // ====================================================
 
-            const resultado =
-                pedidos.map(pedido => {
+            async function buscarShipmentsPedido(
+                orderId
+            ) {
 
-                    const status =
-                        String(
-                            pedido.status || ""
-                        )
-                            .trim()
-                            .toLowerCase();
+                try {
 
-
-                    const tags =
-                        Array.isArray(
-                            pedido.tags
-                        )
-                            ? pedido.tags
-                            : [];
-
-
-                    const itens =
-                        Array.isArray(
-                            pedido.order_items
-                        )
-                            ? pedido.order_items
-                            : [];
-
-
-                    const produtos =
-                        itens.map(item => {
-
-                            const itemData =
-                                item.item || {};
-
-
-                            return {
-
-                                id:
-                                    itemData.id ||
-                                    null,
-
-                                title:
-                                    itemData.title ||
-                                    "Produto",
-
-                                seller_sku:
-                                    itemData.seller_sku ||
-                                    itemData.seller_custom_field ||
-                                    null,
-
-                                quantity:
-                                    Number(
-                                        item.quantity || 0
-                                    ),
-
-                                unit_price:
-                                    Number(
-                                        item.unit_price || 0
-                                    )
-
-                            };
-
-                        });
-
-
-                    const quantidade =
-                        produtos.reduce(
-                            (
-                                total,
-                                produto
-                            ) =>
-                                total +
-                                produto.quantity,
-                            0
+                    const response =
+                        await axios.get(
+                            `https://api.mercadolibre.com/orders/${orderId}/shipments?list_all=true`,
+                            {
+                                headers: {
+                                    ...headers,
+                                    "X-New-Domain": "true"
+                                }
+                            }
                         );
 
 
-                    const cancelado =
-                        [
-                            "cancelled",
-                            "canceled",
-                            "pending_cancel"
-                        ].includes(status);
+                    const data =
+                        response.data;
 
 
-                    return {
+                    if (Array.isArray(data)) {
+                        return data;
+                    }
 
-                        id:
-                            String(pedido.id),
 
-                        status,
+                    if (
+                        data &&
+                        typeof data === "object"
+                    ) {
 
-                        cancelado,
+                        return [data];
 
-                        tags,
+                    }
 
-                        date_created:
-                            pedido.date_created ||
-                            null,
 
-                        date_last_updated:
-                            pedido.date_last_updated ||
-                            null,
+                    return [];
 
-                        total_amount:
-                            Number(
-                                pedido.total_amount || 0
-                            ),
+                } catch (error) {
 
-                        currency_id:
-                            pedido.currency_id ||
-                            "BRL",
+                    console.warn(
+                        `Não foi possível consultar shipments da venda ${orderId}:`,
+                        error.response?.data ||
+                        error.message
+                    );
 
-                        quantidade,
+                    return [];
 
-                        produtos
+                }
 
-                    };
+            }
 
-                });
+
+            // ====================================================
+            // CONSULTAR SHIPMENTS
+            // ====================================================
+
+            const CONCORRENCIA =
+                8;
+
+
+            for (
+                let i = 0;
+                i < pedidos.length;
+                i += CONCORRENCIA
+            ) {
+
+                const bloco =
+                    pedidos.slice(
+                        i,
+                        i + CONCORRENCIA
+                    );
+
+
+                await Promise.all(
+
+                    bloco.map(
+                        async (pedido) => {
+
+                            const status =
+                                String(
+                                    pedido.status || ""
+                                )
+                                    .trim()
+                                    .toLowerCase();
+
+
+                            // Cancelado não precisa consultar shipment
+                            if (
+                                status === "cancelled" ||
+                                status === "canceled"
+                            ) {
+
+                                pedido._shipments =
+                                    [];
+
+                                return;
+
+                            }
+
+
+                            pedido._shipments =
+                                await buscarShipmentsPedido(
+                                    pedido.id
+                                );
+
+                        }
+                    )
+
+                );
+
+            }
+
+
+            // ====================================================
+            // NORMALIZAR E FILTRAR
+            // ====================================================
+
+            const resultado =
+                pedidos
+                    .map(pedido => {
+
+                        const status =
+                            String(
+                                pedido.status || ""
+                            )
+                                .trim()
+                                .toLowerCase();
+
+
+                        const tags =
+                            Array.isArray(
+                                pedido.tags
+                            )
+                                ? pedido.tags
+                                : [];
+
+
+                        const itens =
+                            Array.isArray(
+                                pedido.order_items
+                            )
+                                ? pedido.order_items
+                                : [];
+
+
+                        const produtos =
+                            itens.map(item => {
+
+                                const itemData =
+                                    item.item || {};
+
+
+                                return {
+
+                                    id:
+                                        itemData.id ||
+                                        null,
+
+                                    title:
+                                        itemData.title ||
+                                        "Produto",
+
+                                    seller_sku:
+                                        itemData.seller_sku ||
+                                        itemData.seller_custom_field ||
+                                        null,
+
+                                    quantity:
+                                        Number(
+                                            item.quantity || 0
+                                        ),
+
+                                    unit_price:
+                                        Number(
+                                            item.unit_price || 0
+                                        )
+
+                                };
+
+                            });
+
+
+                        const quantidade =
+                            produtos.reduce(
+                                (
+                                    total,
+                                    produto
+                                ) =>
+                                    total +
+                                    produto.quantity,
+                                0
+                            );
+
+
+                        // ========================================
+                        // CANCELAMENTO
+                        // ========================================
+
+                        const cancelado =
+                            [
+                                "cancelled",
+                                "canceled"
+                            ].includes(status);
+
+
+                        // ========================================
+                        // SHIPMENTS
+                        // ========================================
+
+                        const shipments =
+                            Array.isArray(
+                                pedido._shipments
+                            )
+                                ? pedido._shipments
+                                : [];
+
+
+                        /*
+                         * Somente shipment de envio.
+                         *
+                         * Shipment "return" é devolução
+                         * e não deve gerar notificação.
+                         */
+
+                        const shipmentsForward =
+                            shipments.filter(
+                                shipment =>
+                                    !shipment.type ||
+                                    shipment.type === "forward"
+                            );
+
+
+                        /*
+                         * ETIQUETA PRONTA
+                         *
+                         * É exatamente:
+                         *
+                         * status:
+                         * ready_to_ship
+                         *
+                         * substatus:
+                         * ready_to_print
+                         */
+
+                        const shipmentEtiqueta =
+                            shipmentsForward.find(
+                                shipment =>
+                                    String(
+                                        shipment.status || ""
+                                    ).toLowerCase() ===
+                                        "ready_to_ship"
+                                    &&
+                                    String(
+                                        shipment.substatus || ""
+                                    ).toLowerCase() ===
+                                        "ready_to_print"
+                            );
+
+
+                        const etiquetaPronta =
+                            !!shipmentEtiqueta;
+
+
+                        // ========================================
+                        // FILTRO FINAL
+                        // ========================================
+
+                        if (
+                            !cancelado &&
+                            !etiquetaPronta
+                        ) {
+
+                            return null;
+
+                        }
+
+
+                        return {
+
+                            id:
+                                String(pedido.id),
+
+                            status,
+
+                            cancelado,
+
+                            etiqueta_pronta:
+                                etiquetaPronta,
+
+                            shipment_status:
+                                shipmentEtiqueta?.status ||
+                                null,
+
+                            shipment_substatus:
+                                shipmentEtiqueta?.substatus ||
+                                null,
+
+                            tags,
+
+                            date_created:
+                                pedido.date_created ||
+                                null,
+
+                            date_last_updated:
+                                pedido.date_last_updated ||
+                                null,
+
+                            total_amount:
+                                Number(
+                                    pedido.total_amount || 0
+                                ),
+
+                            currency_id:
+                                pedido.currency_id ||
+                                "BRL",
+
+                            quantidade,
+
+                            produtos
+
+                        };
+
+                    })
+                    .filter(Boolean);
 
 
             // ====================================================
@@ -7518,9 +7713,6 @@ inicioDoDia.setHours(0, 0, 0, 0);
                 server_time:
                     agora.toISOString(),
 
-                janela_horas:
-                    2,
-
                 vendedor: {
 
                     id:
@@ -7532,7 +7724,8 @@ inicioDoDia.setHours(0, 0, 0, 0);
 
                 },
 
-                pedidos: resultado,
+                pedidos:
+                    resultado,
 
                 total_pedidos:
                     resultado.length,
@@ -7541,6 +7734,12 @@ inicioDoDia.setHours(0, 0, 0, 0);
                     resultado.filter(
                         pedido =>
                             pedido.cancelado
+                    ).length,
+
+                total_etiquetas_prontas:
+                    resultado.filter(
+                        pedido =>
+                            pedido.etiqueta_pronta
                     ).length
 
             });
