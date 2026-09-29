@@ -7350,19 +7350,7 @@ app.get(
             // 4️⃣ BUSCA DE PENDING_CANCEL
             // ====================================================
 
-            const pedidosPendingCancel =
-                await buscarPedidos({
-
-                    "order.date_last_updated.from":
-                        duasHorasAtras.toISOString(),
-
-                    "order.date_last_updated.to":
-                        agora.toISOString(),
-
-                    "order.status":
-                        "pending_cancel"
-
-                });
+            
 
 
             // ====================================================
@@ -7377,7 +7365,6 @@ app.get(
                 ...pedidosAlterados,
                 ...pedidosNovos,
                 ...pedidosCancelados,
-                ...pedidosPendingCancel
             ].forEach(pedido => {
 
                 if (!pedido?.id) {
