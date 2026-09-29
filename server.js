@@ -7232,11 +7232,8 @@ app.get(
             const agora =
                 new Date();
 
-            const duasHorasAtras =
-                new Date(
-                    agora.getTime() -
-                    (2 * 60 * 60 * 1000)
-                );
+            const inicioDoDia = new Date(agora);
+inicioDoDia.setHours(0, 0, 0, 0);
 
 
             // ====================================================
@@ -7291,7 +7288,7 @@ app.get(
                 await buscarPedidos({
 
                     "order.date_last_updated.from":
-                        duasHorasAtras.toISOString(),
+                        inicioDoDia.toISOString(),
 
                     "order.date_last_updated.to":
                         agora.toISOString()
@@ -7312,7 +7309,7 @@ app.get(
                 await buscarPedidos({
 
                     "order.date_created.from":
-                        duasHorasAtras.toISOString(),
+                        inicioDoDia.toISOString(),
 
                     "order.date_created.to":
                         agora.toISOString()
@@ -7335,7 +7332,7 @@ app.get(
                 await buscarPedidos({
 
                     "order.date_last_updated.from":
-                        duasHorasAtras.toISOString(),
+                        inicioDoDia.toISOString(),
 
                     "order.date_last_updated.to":
                         agora.toISOString(),
