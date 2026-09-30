@@ -7415,15 +7415,23 @@ app.get(
 
                 } catch (error) {
 
-                    console.warn(
-                        `Não foi possível consultar shipments da venda ${orderId}:`,
-                        error.response?.data ||
-                        error.message
-                    );
+    const status = error.response?.status;
 
-                    return [];
+    // 404 = essa venda não possui shipment
+    // É esperado em alguns pedidos, então não poluir o log.
+    if (status === 404) {
+        return [];
+    }
 
-                }
+    console.warn(
+        `Não foi possível consultar shipments da venda ${orderId}:`,
+        error.response?.data ||
+        error.message
+    );
+
+    return [];
+
+}
 
             }
 
