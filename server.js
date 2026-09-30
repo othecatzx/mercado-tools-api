@@ -6251,47 +6251,33 @@ app.get("/api/mercadolivre/pos-venda", async (req, res) => {
          * Trabalhamos em blocos para evitar excesso de requisições.
          */
 
-        const CONCORRENCIA =
-            8;
+       const CONCORRENCIA = 4;
 
+for (
+    let i = 0;
+    i < pedidos.length;
+    i += CONCORRENCIA
+) {
 
-        for (
-            let i = 0;
-            i < pedidosProcessados.length;
-            i += CONCORRENCIA
-        ) {
-
-            const bloco =
-                pedidosProcessados.slice(
-                    i,
-                    i + CONCORRENCIA
-                );
-
-
-            await Promise.all(
-
-                bloco.map(
-                    async (pedido) => {
-
-                        if (status === "cancelled" || status === "canceled") {
-
-    pedido._shipments = [];
-
-} else {
-
-    pedido._shipments =
-        await buscarShipmentsPedido(
-            pedido.id
+    const bloco =
+        pedidos.slice(
+            i,
+            i + CONCORRENCIA
         );
 
+    await Promise.all(
+        bloco.map(
+            async (pedido) => {
+
+                pedido._shipments =
+                    await buscarShipmentsPedido(
+                        pedido.id
+                    );
+
+            }
+        )
+    );
 }
-
-                    }
-                )
-
-            );
-
-        }
 
 
         // ====================================================
@@ -7445,7 +7431,7 @@ app.get(
             // ====================================================
 
             const CONCORRENCIA =
-                8;
+                3;
 
 
             for (
