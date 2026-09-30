@@ -7656,11 +7656,11 @@ const cancelado =
                         // FILTRO FINAL
                         // ========================================
 
-                        if (
-    !cancelado &&
-    !etiquetaPronta &&
-    pedido._shipments !== null
-) {
+                       if (cancelado) {
+    return pedido;
+}
+
+if (!etiquetaPronta) {
     return null;
 }
 
