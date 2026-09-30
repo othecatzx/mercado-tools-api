@@ -6628,8 +6628,8 @@ if (pedidoCancelado) {
 ) {
     categoria = "em_transporte";
 
-    quantidadeItensEmTransporte += order.order_items.reduce(
-        (total, item) => total + Number(item.quantity || 0),
+    quantidadeItensEmTransporte += pedido.order_items.reduce(
+    (total, item) => total + Number(item.quantity || 0),
         0
     );
 }
