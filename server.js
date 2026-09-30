@@ -6273,10 +6273,18 @@ app.get("/api/mercadolivre/pos-venda", async (req, res) => {
                 bloco.map(
                     async (pedido) => {
 
-                        pedido._shipments =
-                            await buscarShipmentsPedido(
-                                pedido.id
-                            );
+                        if (status === "cancelled" || status === "canceled") {
+
+    pedido._shipments = [];
+
+} else {
+
+    pedido._shipments =
+        await buscarShipmentsPedido(
+            pedido.id
+        );
+
+}
 
                     }
                 )
