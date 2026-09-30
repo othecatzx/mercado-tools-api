@@ -7425,11 +7425,7 @@ app.get(
     // 404 = essa venda não possui shipment
     // É esperado em alguns pedidos, então não poluir o log.
     if (status === 404) {
-    console.log(
-        `Shipment ainda não disponível para a venda ${orderId}.`
-    );
-
-    return null;
+    return [];
 }
     console.warn(
         `Não foi possível consultar shipments da venda ${orderId}:`,
@@ -7485,16 +7481,24 @@ app.get(
         // Venda cancelada não precisa consultar shipment.
         // O próprio status da venda já informa o cancelamento.
 
-        if (
-            status === "cancelled" ||
-            status === "canceled"
-        ) {
+       bloco.map(
+    async (pedido) => {
 
-            pedido._shipments = [];
+        const status =
+            String(
+                pedido.status || ""
+            )
+                .trim()
+                .toLowerCase();
 
-            return;
 
-        }
+        pedido._shipments =
+            await buscarShipmentsPedido(
+                pedido.id
+            );
+
+    }
+)
 
 
         pedido._shipments =
@@ -7660,10 +7664,10 @@ app.get(
     );
 
 const cancelado =
-    [
-        "cancelled",
-        "canceled"
-    ].includes(status)
+    (
+        status === "cancelled" ||
+        status === "canceled"
+    )
     &&
     !temDevolucao;
 
