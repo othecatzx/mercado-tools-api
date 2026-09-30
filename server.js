@@ -7565,29 +7565,7 @@ pedido._shipments =
                                 0
                             );
 
-
-                        // ========================================
-                        // CANCELAMENTO
-                        // ========================================
-
-                        const temDevolucao =
-    shipments.some(
-        shipment =>
-            String(
-                shipment.type || ""
-            ).toLowerCase() === "return"
-    );
-
-const cancelado =
-    [
-        "cancelled",
-        "canceled"
-    ].includes(status)
-    &&
-    !temDevolucao;
-
-
-                        // ========================================
+// ========================================
                         // SHIPMENTS
                         // ========================================
 
@@ -7645,6 +7623,28 @@ const cancelado =
                             !!shipmentEtiqueta;
 
 
+                        // ========================================
+                        // CANCELAMENTO
+                        // ========================================
+
+                        const temDevolucao =
+    shipments.some(
+        shipment =>
+            String(
+                shipment.type || ""
+            ).toLowerCase() === "return"
+    );
+
+const cancelado =
+    [
+        "cancelled",
+        "canceled"
+    ].includes(status)
+    &&
+    !temDevolucao;
+
+
+                        
                         // ========================================
                         // FILTRO FINAL
                         // ========================================
