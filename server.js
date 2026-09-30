@@ -7467,34 +7467,43 @@ app.get(
 
                 await Promise.all(
 
-                    bloco.map(
-                        async (pedido) => {
+                   bloco.map(
+    async (pedido) => {
 
-                            const status =
-                                String(
-                                    pedido.status || ""
-                                )
-                                    .trim()
-                                    .toLowerCase();
+        const status =
+            String(
+                pedido.status || ""
+            )
+                .trim()
+                .toLowerCase();
 
 
-                          // ====================================================
-// CONSULTAR SHIPMENTS
-// ====================================================
+        // ====================================================
+        // CONSULTAR SHIPMENTS
+        // ====================================================
 
-// Mesmo pedidos cancelados precisam ser consultados,
-// pois o Mercado Livre pode usar "cancelled" em fluxos
-// relacionados a devolução/reembolso.
-//
-// Precisamos verificar se existe shipment do tipo "return".
+        // Venda cancelada não precisa consultar shipment.
+        // O próprio status da venda já informa o cancelamento.
 
-pedido._shipments =
-    await buscarShipmentsPedido(
-        pedido.id
-    );
+        if (
+            status === "cancelled" ||
+            status === "canceled"
+        ) {
 
-                        }
-                    )
+            pedido._shipments = [];
+
+            return;
+
+        }
+
+
+        pedido._shipments =
+            await buscarShipmentsPedido(
+                pedido.id
+            );
+
+    }
+)
 
                 );
 
