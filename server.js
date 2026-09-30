@@ -7462,24 +7462,20 @@ app.get(
                                     .toLowerCase();
 
 
-                            // Cancelado não precisa consultar shipment
-                            if (
-                                status === "cancelled" ||
-                                status === "canceled"
-                            ) {
+                          // ====================================================
+// CONSULTAR SHIPMENTS
+// ====================================================
 
-                                pedido._shipments =
-                                    [];
+// Mesmo pedidos cancelados precisam ser consultados,
+// pois o Mercado Livre pode usar "cancelled" em fluxos
+// relacionados a devolução/reembolso.
+//
+// Precisamos verificar se existe shipment do tipo "return".
 
-                                return;
-
-                            }
-
-
-                            pedido._shipments =
-                                await buscarShipmentsPedido(
-                                    pedido.id
-                                );
+pedido._shipments =
+    await buscarShipmentsPedido(
+        pedido.id
+    );
 
                         }
                     )
@@ -7574,11 +7570,21 @@ app.get(
                         // CANCELAMENTO
                         // ========================================
 
-                        const cancelado =
-                            [
-                                "cancelled",
-                                "canceled"
-                            ].includes(status);
+                        const temDevolucao =
+    shipments.some(
+        shipment =>
+            String(
+                shipment.type || ""
+            ).toLowerCase() === "return"
+    );
+
+const cancelado =
+    [
+        "cancelled",
+        "canceled"
+    ].includes(status)
+    &&
+    !temDevolucao;
 
 
                         // ========================================
