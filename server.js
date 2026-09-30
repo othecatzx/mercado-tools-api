@@ -7124,8 +7124,7 @@ app.get(
     async (req, res) => {
 
         try {
-
-            const {
+                const {
                 chave,
                 device_id
             } = req.query;
@@ -7317,7 +7316,7 @@ app.get(
                         agora.toISOString()
 
                 });
-
+    
 
             // ====================================================
             // 3️⃣ CANCELAMENTOS DE HOJE
@@ -7363,12 +7362,10 @@ app.get(
 
             });
 
-
             const pedidos =
                 Array.from(
                     mapaPedidos.values()
-                );
-
+                               );  
 
             // ====================================================
             // BUSCAR SHIPMENTS
@@ -7491,7 +7488,6 @@ pedido._shipments =
                 );
 
             }
-
 
             // ====================================================
             // NORMALIZAR E FILTRAR
