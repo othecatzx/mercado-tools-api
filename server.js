@@ -3071,11 +3071,11 @@ async function getValidMercadoLivreToken(companyId) {
         );
     }
 
-    if (!account.account) {
-        throw new Error(
-            "Conta do Mercado Livre não conectada"
-        );
-    }
+    if (!account || !account.account) {
+    throw new Error(
+        "Conta do Mercado Livre não conectada"
+    );
+}
 
 
     if (!account.access_token) {
