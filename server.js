@@ -7637,9 +7637,17 @@ app.get(
                             !!shipmentEtiqueta;
 
 
-                        // ========================================
+                     // ========================================
 // CANCELAMENTO
 // ========================================
+
+const tagsDevolucao = [
+    "return",
+    "returned",
+    "returning",
+    "refund",
+    "refunded"
+];
 
 const temDevolucao =
     shipments.some(
@@ -7647,10 +7655,13 @@ const temDevolucao =
             String(
                 shipment.type || ""
             ).toLowerCase() === "return"
+    ) ||
+    tags.some(tag =>
+        tagsDevolucao.includes(
+            String(tag).toLowerCase()
+        )
     );
 
-// Só considera cancelamento quando o pedido
-// está realmente cancelado E não é uma devolução.
 const cancelado =
     (
         status === "cancelled" ||
