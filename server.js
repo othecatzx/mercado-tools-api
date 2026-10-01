@@ -7667,10 +7667,6 @@ const cancelado =
     return pedido;
 }
 
-if (!etiquetaPronta) {
-    return null;
-}
-
 
                         return {
 
