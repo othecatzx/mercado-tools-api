@@ -7639,12 +7639,16 @@ const cancelado =
 }
 
 
-                        return {
+                       return {
+    id:
+        String(pedido.id),
 
-                            id:
-                                String(pedido.id),
+    pack_id:
+        pedido.pack_id
+            ? String(pedido.pack_id)
+            : null,
 
-                            status,
+    status,
 
                             cancelado,
 
