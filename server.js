@@ -7426,78 +7426,38 @@ app.get(
             }
 
 
-            // ====================================================
-            // CONSULTAR SHIPMENTS
-            // ====================================================
+// ====================================================
+// CONSULTAR SHIPMENTS
+// ====================================================
 
-            const CONCORRENCIA =
-                3;
+const CONCORRENCIA = 3;
 
+for (
+    let i = 0;
+    i < pedidos.length;
+    i += CONCORRENCIA
+) {
 
-            for (
-                let i = 0;
-                i < pedidos.length;
-                i += CONCORRENCIA
-            ) {
+    const bloco =
+        pedidos.slice(
+            i,
+            i + CONCORRENCIA
+        );
 
-                const bloco =
-                    pedidos.slice(
-                        i,
-                        i + CONCORRENCIA
+    await Promise.all(
+        bloco.map(
+            async (pedido) => {
+
+                pedido._shipments =
+                    await buscarShipmentsPedido(
+                        pedido.id
                     );
 
-
-                await Promise.all(
-
-                   bloco.map(
-    async (pedido) => {
-
-        const status =
-            String(
-                pedido.status || ""
-            )
-                .trim()
-                .toLowerCase();
-
-
-        // ====================================================
-        // CONSULTAR SHIPMENTS
-        // ====================================================
-
-        // Venda cancelada não precisa consultar shipment.
-        // O próprio status da venda já informa o cancelamento.
-
-       bloco.map(
-    async (pedido) => {
-
-        const status =
-            String(
-                pedido.status || ""
-            )
-                .trim()
-                .toLowerCase();
-
-
-        pedido._shipments =
-            await buscarShipmentsPedido(
-                pedido.id
-            );
-
-    }
-)
-
-
-        pedido._shipments =
-            await buscarShipmentsPedido(
-                pedido.id
-            );
-
-    }
-)
-
-                );
-
             }
+        )
+    );
+
+}
 
             // ====================================================
             // NORMALIZAR E FILTRAR
