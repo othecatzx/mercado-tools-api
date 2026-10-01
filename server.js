@@ -3071,8 +3071,8 @@ async function getValidMercadoLivreToken(companyId) {
         );
     }
 
-    if (!account || !account.account) {
-    throw new Error(
+if (!account) {
+        throw new Error(
         "Conta do Mercado Livre não conectada"
     );
 }
