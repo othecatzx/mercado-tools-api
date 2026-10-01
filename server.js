@@ -7638,10 +7638,10 @@ app.get(
 
 
                         // ========================================
-                        // CANCELAMENTO
-                        // ========================================
+// CANCELAMENTO
+// ========================================
 
-                        const temDevolucao =
+const temDevolucao =
     shipments.some(
         shipment =>
             String(
@@ -7649,14 +7649,14 @@ app.get(
             ).toLowerCase() === "return"
     );
 
+// Só considera cancelamento quando o pedido
+// está realmente cancelado E não é uma devolução.
 const cancelado =
     (
         status === "cancelled" ||
         status === "canceled"
-    )
-    &&
+    ) &&
     !temDevolucao;
-
 
                         
                         // ========================================
