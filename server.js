@@ -3604,6 +3604,7 @@ app.get("/api/mercadolivre/rx", async (req, res) => {
             itemResponse.data;
 
 
+            
         // ====================================================
 // CONSULTAR PERFORMANCE
 // ====================================================
@@ -7802,6 +7803,53 @@ itemResponse =
         `https://api.mercadolibre.com/items/${itemId}?include_attributes=all`,
         { headers }
     );
+
+    const item = itemResponse.data;
+
+console.log(
+    "✅ Anúncio de origem encontrado:",
+    item.id,
+    "|",
+    item.title
+);
+
+// ==========================================
+// ATRIBUTOS DO ANÚNCIO
+// ==========================================
+
+const attributes =
+    Array.isArray(item.attributes)
+        ? item.attributes
+            .filter(
+                attribute =>
+                    attribute &&
+                    attribute.id &&
+                    (
+                        attribute.value_id ||
+                        attribute.value_name
+                    )
+            )
+            .map(attribute => {
+                const resultado = {
+                    id: attribute.id
+                };
+
+                if (attribute.value_id) {
+                    resultado.value_id = attribute.value_id;
+                }
+
+                if (attribute.value_name) {
+                    resultado.value_name = attribute.value_name;
+                }
+
+                return resultado;
+            })
+        : [];
+
+console.log(
+    "🏷️ Atributos encontrados:",
+    attributes.length
+);
 
             } catch (itemError) {
 
