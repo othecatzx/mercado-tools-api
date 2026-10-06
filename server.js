@@ -8281,6 +8281,38 @@ app.post(
 
             try {
 
+                console.log("🔐 TESTANDO TOKEN ML...");
+
+try {
+    const meResponse = await axios.get(
+        "https://api.mercadolibre.com/users/me",
+        {
+            headers
+        }
+    );
+
+    console.log(
+        "✅ TOKEN OK:",
+        JSON.stringify({
+            id: meResponse.data?.id,
+            nickname: meResponse.data?.nickname
+        }, null, 2)
+    );
+
+} catch (tokenError) {
+
+    console.error(
+        "❌ TOKEN NÃO TEM ACESSO:",
+        JSON.stringify(
+            tokenError.response?.data ||
+            tokenError.message,
+            null,
+            2
+        )
+    );
+
+    throw tokenError;
+}
                 const createResponse =
                     await axios.post(
                         "https://api.mercadolibre.com/items",
@@ -8656,6 +8688,11 @@ app.post(
 
     }
 );
+
+app.post("/api/mercadolivre/notificacoes", async (req, res) => {
+    console.log("📩 Notificação Mercado Livre:", req.body);
+    return res.status(200).send("OK");
+});
 
 const server = app.listen(PORT, () => {
     console.log(`API rodando em http://localhost:${PORT}`);
