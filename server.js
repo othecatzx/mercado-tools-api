@@ -8158,6 +8158,35 @@ console.log(
                     // ====================================================
 // VERIFICAR ATRIBUTOS OBRIGATÓRIOS DA CATEGORIA
 // ====================================================
+const attributes =
+    Array.isArray(item.attributes)
+        ? item.attributes
+            .filter(
+                attribute =>
+                    attribute &&
+                    attribute.id &&
+                    (
+                        attribute.value_id ||
+                        attribute.value_name
+                    )
+            )
+            .map(attribute => {
+                const resultado = {
+                    id: attribute.id
+                };
+
+                if (attribute.value_id) {
+                    resultado.value_id = attribute.value_id;
+                }
+
+                if (attribute.value_name) {
+                    resultado.value_name = attribute.value_name;
+                }
+
+                return resultado;
+            })
+        : [];
+
 
 let atributosObrigatorios = [];
 let atributosObrigatoriosFaltando = [];
@@ -8191,12 +8220,8 @@ try {
 
             })
             .map(attribute => ({
-                id:
-                    attribute.id,
-
-                name:
-                    attribute.name,
-
+                id: attribute.id,
+                name: attribute.name,
                 value_type:
                     attribute.value_type || null
             }));
@@ -8251,62 +8276,6 @@ try {
 
 
             // ====================================================
-            // ATRIBUTOS
-            // ====================================================
-
-            const attributes =
-                Array.isArray(item.attributes)
-
-                    ? item.attributes
-                        .filter(
-                            attribute =>
-                                attribute &&
-                                attribute.id &&
-                                (
-                                    attribute.value_id ||
-                                    attribute.value_name
-                                )
-                        )
-                        .map(
-                            attribute => {
-
-                                const resultado = {
-
-                                    id:
-                                        attribute.id
-
-                                };
-
-
-                                if (
-                                    attribute.value_id
-                                ) {
-
-                                    resultado.value_id =
-                                        attribute.value_id;
-
-                                }
-
-
-                                if (
-                                    attribute.value_name
-                                ) {
-
-                                    resultado.value_name =
-                                        attribute.value_name;
-
-                                }
-
-
-                                return resultado;
-
-                            }
-                        )
-
-                    : [];
-
-
-            // ====================================================
             // OBJETO BASE DO NOVO ANÚNCIO
             // ====================================================
             //
@@ -8346,7 +8315,6 @@ console.log(
 );
 
             const novoItem = {
-    title: String(item.title || "").trim(),
     category_id: item.category_id,
     price: Number(item.price || 0),
     currency_id: item.currency_id || "BRL",
