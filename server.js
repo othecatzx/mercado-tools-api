@@ -8335,8 +8335,19 @@ try {
     }, null, 2)
 );
 
+const familyName =
+    item.family_name ||
+    item.familyName ||
+    null;
+
+console.log(
+    "👨‍👩‍👧 family_name:",
+    familyName
+);
+
             const novoItem = {
     title: item.title,
+    family_name: familyName,
     category_id: item.category_id,
     price: Number(item.price || 0),
     currency_id: item.currency_id || "BRL",
