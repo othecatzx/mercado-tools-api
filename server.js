@@ -7715,6 +7715,70 @@ app.post(
             };
 
 
+// ====================================================
+// TESTAR TOKEN
+// ====================================================
+
+console.log("🔐 TESTANDO TOKEN ML...");
+
+try {
+
+    const meResponse =
+        await axios.get(
+            "https://api.mercadolibre.com/users/me",
+            {
+                headers
+            }
+        );
+
+    console.log(
+        "✅ TOKEN OK:",
+        JSON.stringify(
+            {
+                id:
+                    meResponse.data?.id,
+
+                nickname:
+                    meResponse.data?.nickname
+            },
+            null,
+            2
+        )
+    );
+
+} catch (tokenError) {
+
+    console.error(
+        "❌ TOKEN NÃO TEM ACESSO:",
+        JSON.stringify(
+            tokenError.response?.data ||
+            tokenError.message,
+            null,
+            2
+        )
+    );
+
+    return res.status(
+        tokenError.response?.status || 500
+    ).json({
+
+        ok: false,
+
+        reason:
+            "token_test_error",
+
+        message:
+            tokenError.response?.data?.message ||
+            tokenError.message,
+
+        details:
+            tokenError.response?.data ||
+            null
+
+    });
+
+}
+
             // ====================================================
             // BUSCAR ANÚNCIO DE ORIGEM
             // ====================================================
@@ -7731,16 +7795,15 @@ app.post(
 
             try {
 
-                itemResponse =
-                    await axios.get(
-                        `https://api.mercadolibre.com/items/${itemId}`,
-                        {
-                            headers: {
-                                Accept:
-                                    "application/json"
-                            }
-                        }
-                    );
+                console.log("🔐 Buscando anúncio de origem com token da conta conectada...");
+
+itemResponse =
+    await axios.get(
+        `https://api.mercadolibre.com/items/${itemId}`,
+        {
+            headers
+        }
+    );
 
             } catch (itemError) {
 
