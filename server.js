@@ -7635,9 +7635,9 @@ app.post(
             //
 
             const match =
-                itemId.match(
-                    /MLB[-_]?(\d+)/i
-                );
+    itemId.match(
+        /MLB(?:U)?[-_]?(\d+)/i
+    );
 
 
             if (match) {
@@ -7703,12 +7703,14 @@ app.post(
             // ====================================================
 
             const itemResponse =
-                await axios.get(
-                    `https://api.mercadolibre.com/items/${itemId}`,
-                    {
-                        headers
-                    }
-                );
+    await axios.get(
+        `https://api.mercadolibre.com/items/${itemId}`,
+        {
+            headers: {
+                Accept: "application/json"
+            }
+        }
+    );
 
 
             const item =
@@ -7771,12 +7773,14 @@ app.post(
             try {
 
                 const descriptionResponse =
-                    await axios.get(
-                        `https://api.mercadolibre.com/items/${itemId}/description`,
-                        {
-                            headers
-                        }
-                    );
+    await axios.get(
+        `https://api.mercadolibre.com/items/${itemId}/description`,
+        {
+            headers: {
+                Accept: "application/json"
+            }
+        }
+    );
 
 
                 descricao =
