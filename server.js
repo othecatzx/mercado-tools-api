@@ -8119,41 +8119,16 @@ app.post(
             // ====================================================
 
             const novoItem = {
-
-                title:
-                    item.title,
-
-                category_id:
-                    item.category_id,
-
-                price:
-                    Number(
-                        item.price || 0
-                    ),
-
-                currency_id:
-                    item.currency_id ||
-                    "BRL",
-
-                buying_mode:
-                    item.buying_mode ||
-                    "buy_it_now",
-
-                listing_type_id:
-                    listingTypeId,
-
-                condition:
-                    item.condition ||
-                    "new",
-
-                available_quantity:
-                    0,
-
-                pictures,
-
-                attributes
-
-            };
+    title: item.title,
+    category_id: item.category_id,
+    price: Number(item.price || 0),
+    currency_id: item.currency_id || "BRL",
+    buying_mode: "buy_it_now",
+    listing_type_id: "gold_special",
+    condition: item.condition || "new",
+    available_quantity: 1,
+    pictures: pictures
+};
 
 
             // ====================================================
