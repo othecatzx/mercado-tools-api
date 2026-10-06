@@ -7799,10 +7799,8 @@ try {
 
 itemResponse =
     await axios.get(
-        `https://api.mercadolibre.com/items/${itemId}`,
-        {
-            headers
-        }
+        `https://api.mercadolibre.com/items/${itemId}?include_attributes=all`,
+        { headers }
     );
 
             } catch (itemError) {
@@ -8190,7 +8188,8 @@ itemResponse =
     listing_type_id: "gold_special",
     condition: item.condition || "new",
     available_quantity: 1,
-    pictures: pictures
+    pictures: pictures,
+    attributes: attributes
 };
 
 
