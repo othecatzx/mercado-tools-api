@@ -8591,6 +8591,19 @@ try {
 
     throw tokenError;
 }
+
+
+console.log(
+    "🧪 TESTE CAMPOS DE PUBLICAÇÃO:",
+    JSON.stringify({
+        title: novoItem.title,
+        family_name: novoItem.family_name,
+        category_id: novoItem.category_id,
+        listing_type_id: novoItem.listing_type_id,
+        condition: novoItem.condition,
+        attributes_count: novoItem.attributes?.length || 0
+    }, null, 2)
+);
                 const createResponse =
                     await axios.post(
                         "https://api.mercadolibre.com/items",
