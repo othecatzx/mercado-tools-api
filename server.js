@@ -8183,6 +8183,7 @@ const attributes =
                 attribute =>
                     attribute &&
                     attribute.id &&
+                    attribute.id !== "ITEM_CONDITION" &&
                     (
                         attribute.value_id ||
                         attribute.value_name
