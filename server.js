@@ -8173,41 +8173,82 @@ try {
 
                     : [];
 
-                    // ====================================================
-// VERIFICAR ATRIBUTOS OBRIGATÓRIOS DA CATEGORIA
+                // ====================================================
+// ATRIBUTOS DO ANÚNCIO + ATRIBUTOS OBRIGATÓRIOS
 // ====================================================
-const attributes =
+
+// Mantém somente atributos que podem ser enviados.
+// ITEM_CONDITION fica de fora porque o anúncio será criado
+// explicitamente com condition: "not_specified".
+
+const attributes = [];
+
+const atributosOriginais =
     Array.isArray(item.attributes)
         ? item.attributes
-            .filter(
-                attribute =>
-                    attribute &&
-                    attribute.id &&
-                    attribute.id !== "ITEM_CONDITION" &&
-                    (
-                        attribute.value_id ||
-                        attribute.value_name
-                    )
-            )
-            .map(attribute => {
-                const resultado = {
-                    id: attribute.id
-                };
-
-                if (attribute.value_id) {
-                    resultado.value_id = attribute.value_id;
-                }
-
-                if (attribute.value_name) {
-                    resultado.value_name = attribute.value_name;
-                }
-
-                return resultado;
-            })
         : [];
 
+// ----------------------------------------------------
+// COPIAR ATRIBUTOS ORIGINAIS
+// ----------------------------------------------------
+
+for (const attribute of atributosOriginais) {
+
+    if (
+        !attribute ||
+        !attribute.id
+    ) {
+        continue;
+    }
+
+    const id =
+        String(attribute.id).toUpperCase();
+
+    // Não enviar ITEM_CONDITION junto com condition
+    if (
+        id === "ITEM_CONDITION"
+    ) {
+        continue;
+    }
+
+    if (
+        !attribute.value_id &&
+        !attribute.value_name
+    ) {
+        continue;
+    }
+
+    const novoAtributo = {
+        id: attribute.id
+    };
+
+    if (attribute.value_id) {
+        novoAtributo.value_id =
+            attribute.value_id;
+    }
+
+    if (attribute.value_name) {
+        novoAtributo.value_name =
+            attribute.value_name;
+    }
+
+    attributes.push(
+        novoAtributo
+    );
+}
+
+console.log(
+    "🏷️ Atributos copiados do anúncio:",
+    attributes.length
+);
+
+
+// ====================================================
+// BUSCAR ATRIBUTOS OBRIGATÓRIOS DA CATEGORIA
+// ====================================================
 
 let atributosObrigatorios = [];
+
 let atributosObrigatoriosFaltando = [];
 
 try {
@@ -8221,20 +8262,35 @@ try {
         );
 
     const categoryAttributes =
-        Array.isArray(categoryAttributesResponse.data)
+        Array.isArray(
+            categoryAttributesResponse.data
+        )
             ? categoryAttributesResponse.data
             : [];
+
 
     atributosObrigatorios =
         categoryAttributes
             .filter(attribute => {
 
+                if (
+                    !attribute ||
+                    !attribute.id
+                ) {
+                    return false;
+                }
+
+                // ITEM_CONDITION já é tratado pelo campo condition
+                if (
+                    String(attribute.id).toUpperCase() ===
+                    "ITEM_CONDITION"
+                ) {
+                    return false;
+                }
+
                 return (
-                    attribute &&
-                    (
-                        attribute.tags?.required === true ||
-                        attribute.required === true
-                    )
+                    attribute.tags?.required === true ||
+                    attribute.required === true
                 );
 
             })
@@ -8246,38 +8302,10 @@ try {
             }));
 
 
-    const idsDosAtributos =
-        new Set(
-            attributes.map(
-                attribute =>
-                    String(attribute.id)
-            )
-        );
-
-
-    atributosObrigatoriosFaltando =
-        atributosObrigatorios.filter(
-            attribute =>
-                !idsDosAtributos.has(
-                    String(attribute.id)
-                )
-        );
-
-
     console.log(
         "📋 Atributos obrigatórios da categoria:",
         JSON.stringify(
             atributosObrigatorios,
-            null,
-            2
-        )
-    );
-
-
-    console.log(
-        "⚠️ Atributos obrigatórios faltando:",
-        JSON.stringify(
-            atributosObrigatoriosFaltando,
             null,
             2
         )
@@ -8294,63 +8322,570 @@ try {
 }
 
 
-            // ====================================================
-            // OBJETO BASE DO NOVO ANÚNCIO
-            // ====================================================
-            //
-            // NÃO copiamos:
-            //
-            // - sale_terms
-            // - shipping
-            // - policy da conta original
-            //
-            // Esses campos podem carregar configurações
-            // específicas/autorizadas apenas para o vendedor
-            // original.
-            // ====================================================
+// ====================================================
+// FUNÇÕES AUXILIARES
+// ====================================================
+
+function normalizarTexto(valor) {
+
+    return String(
+        valor || ""
+    )
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .trim()
+        .toLowerCase();
+
+}
+
+
+function encontrarAtributo(
+    lista,
+    ids
+) {
+
+    const idsNormalizados =
+        ids.map(
+            id =>
+                normalizarTexto(id)
+        );
+
+    return lista.find(
+        atributo =>
+            idsNormalizados.includes(
+                normalizarTexto(
+                    atributo.id
+                )
+            )
+    );
+
+}
+
+
+// ====================================================
+// RECUPERAR AUTOMATICAMENTE OBRIGATÓRIOS
+// ====================================================
+
+for (
+    const obrigatorio
+    of atributosObrigatorios
+) {
+
+    const idObrigatorio =
+        String(
+            obrigatorio.id
+        ).toUpperCase();
+
+
+    // ------------------------------------------------
+    // JÁ EXISTE
+    // ------------------------------------------------
+
+    const jaExiste =
+        attributes.some(
+            atributo =>
+                String(
+                    atributo.id
+                ).toUpperCase() ===
+                idObrigatorio
+        );
+
+
+    if (jaExiste) {
+
+        console.log(
+            `✅ Obrigatório já encontrado: ${idObrigatorio}`
+        );
+
+        continue;
+    }
+
+
+    // ------------------------------------------------
+    // PROCURAR NOVAMENTE NO ORIGINAL
+    // ------------------------------------------------
+
+    const original =
+        atributosOriginais.find(
+            atributo =>
+                atributo &&
+                String(
+                    atributo.id
+                ).toUpperCase() ===
+                idObrigatorio &&
+                (
+                    atributo.value_id ||
+                    atributo.value_name
+                )
+        );
+
+
+    if (original) {
+
+        const novoAtributo = {
+            id: original.id
+        };
+
+        if (original.value_id) {
+            novoAtributo.value_id =
+                original.value_id;
+        }
+
+        if (original.value_name) {
+            novoAtributo.value_name =
+                original.value_name;
+        }
+
+        attributes.push(
+            novoAtributo
+        );
+
+        console.log(
+            `✅ Obrigatório recuperado do original: ${idObrigatorio}`
+        );
+
+        continue;
+    }
+
+
+    // =================================================
+    // MANUFACTURER
+    // =================================================
+
+    if (
+        idObrigatorio ===
+        "MANUFACTURER"
+    ) {
+
+        const brand =
+            encontrarAtributo(
+                atributosOriginais,
+                [
+                    "BRAND",
+                    "MARCA"
+                ]
+            );
+
+
+        if (
+            brand &&
+            (
+                brand.value_id ||
+                brand.value_name
+            )
+        ) {
+
+            const novoAtributo = {
+                id: "MANUFACTURER"
+            };
+
+            if (brand.value_id) {
+
+                novoAtributo.value_id =
+                    brand.value_id;
+
+            }
+
+            if (brand.value_name) {
+
+                novoAtributo.value_name =
+                    brand.value_name;
+
+            }
+
+            attributes.push(
+                novoAtributo
+            );
 
             console.log(
-    "🔎 CAMPOS IMPORTANTES DO ANÚNCIO:",
-    JSON.stringify({
-        id: item.id,
-        title: item.title,
-        family_name: item.family_name,
-        familyName: item.familyName,
-        category_id: item.category_id,
-        seller_id: item.seller_id,
-        listing_type_id: item.listing_type_id,
-        attributes_count: attributes.length
-    }, null, 2)
+                "✅ MANUFACTURER recuperado através de BRAND:",
+                brand.value_name
+            );
+
+            continue;
+        }
+
+    }
+
+
+    // =================================================
+    // ALPHANUMERIC_MODELS
+    // =================================================
+
+    if (
+        idObrigatorio ===
+        "ALPHANUMERIC_MODELS"
+    ) {
+
+        const possiveisModelos =
+            [
+                "MODEL",
+                "MODEL_NUMBER",
+                "MODEL_NAME",
+                "MODEL_ALPHANUMERIC",
+                "MPN",
+                "PART_NUMBER"
+            ];
+
+
+        const modelo =
+            encontrarAtributo(
+                atributosOriginais,
+                possiveisModelos
+            );
+
+
+        if (
+            modelo &&
+            (
+                modelo.value_id ||
+                modelo.value_name
+            )
+        ) {
+
+            const novoAtributo = {
+                id: "ALPHANUMERIC_MODELS"
+            };
+
+
+            if (
+                modelo.value_id
+            ) {
+
+                novoAtributo.value_id =
+                    modelo.value_id;
+
+            }
+
+
+            if (
+                modelo.value_name
+            ) {
+
+                novoAtributo.value_name =
+                    modelo.value_name;
+
+            }
+
+
+            attributes.push(
+                novoAtributo
+            );
+
+
+            console.log(
+                "✅ ALPHANUMERIC_MODELS recuperado através do modelo:",
+                modelo.value_name
+            );
+
+            continue;
+        }
+
+    }
+
+
+    // =================================================
+    // COLOR
+    // =================================================
+
+    if (
+        idObrigatorio ===
+        "COLOR"
+    ) {
+
+        const cor =
+            encontrarAtributo(
+                atributosOriginais,
+                [
+                    "COLOR",
+                    "COLOUR",
+                    "COR",
+                    "COLOR_NAME",
+                    "COLOR_SECONDARY"
+                ]
+            );
+
+
+        if (
+            cor &&
+            (
+                cor.value_id ||
+                cor.value_name
+            )
+        ) {
+
+            const novoAtributo = {
+                id: "COLOR"
+            };
+
+
+            if (
+                cor.value_id
+            ) {
+
+                novoAtributo.value_id =
+                    cor.value_id;
+
+            }
+
+
+            if (
+                cor.value_name
+            ) {
+
+                novoAtributo.value_name =
+                    cor.value_name;
+
+            }
+
+
+            attributes.push(
+                novoAtributo
+            );
+
+
+            console.log(
+                "✅ COLOR recuperado automaticamente:",
+                cor.value_name
+            );
+
+            continue;
+        }
+
+    }
+
+
+    // =================================================
+    // PROCURAR ATRIBUTO EQUIVALENTE PELO NOME
+    // =================================================
+
+    const nomeObrigatorio =
+        normalizarTexto(
+            obrigatorio.name
+        );
+
+
+    const equivalente =
+        atributosOriginais.find(
+            atributo => {
+
+                if (
+                    !atributo ||
+                    !atributo.id
+                ) {
+                    return false;
+                }
+
+
+                if (
+                    !atributo.value_id &&
+                    !atributo.value_name
+                ) {
+                    return false;
+                }
+
+
+                const id =
+                    normalizarTexto(
+                        atributo.id
+                    );
+
+
+                const nome =
+                    normalizarTexto(
+                        atributo.name
+                    );
+
+
+                return (
+                    id ===
+                    nomeObrigatorio ||
+                    nome ===
+                    nomeObrigatorio
+                );
+
+            }
+        );
+
+
+    if (
+        equivalente
+    ) {
+
+        const novoAtributo = {
+            id:
+                obrigatorio.id
+        };
+
+
+        if (
+            equivalente.value_id
+        ) {
+
+            novoAtributo.value_id =
+                equivalente.value_id;
+
+        }
+
+
+        if (
+            equivalente.value_name
+        ) {
+
+            novoAtributo.value_name =
+                equivalente.value_name;
+
+        }
+
+
+        attributes.push(
+            novoAtributo
+        );
+
+
+        console.log(
+            `✅ Obrigatório recuperado por equivalência: ${idObrigatorio}`
+        );
+
+        continue;
+    }
+
+
+    // ------------------------------------------------
+    // SE CHEGOU AQUI, NÃO FOI POSSÍVEL RECUPERAR
+    // ------------------------------------------------
+
+    console.warn(
+        `⚠️ Não foi possível determinar automaticamente: ${idObrigatorio}`
+    );
+
+}
+
+
+// ====================================================
+// VERIFICAR O QUE REALMENTE CONTINUA FALTANDO
+// ====================================================
+
+const idsDosAtributos =
+    new Set(
+        attributes.map(
+            attribute =>
+                String(
+                    attribute.id
+                ).toUpperCase()
+        )
+    );
+
+
+atributosObrigatoriosFaltando =
+    atributosObrigatorios.filter(
+        attribute =>
+            !idsDosAtributos.has(
+                String(
+                    attribute.id
+                ).toUpperCase()
+            )
+    );
+
+
+console.log(
+    "🏷️ Total de atributos finais:",
+    attributes.length
 );
+
+
+console.log(
+    "⚠️ Atributos obrigatórios ainda faltando:",
+    JSON.stringify(
+        atributosObrigatoriosFaltando,
+        null,
+        2
+    )
+);
+
+
+// ====================================================
+// OBJETO BASE DO NOVO ANÚNCIO
+// ====================================================
+
+console.log(
+    "🔎 CAMPOS IMPORTANTES DO ANÚNCIO:",
+    JSON.stringify(
+        {
+            id: item.id,
+            title: item.title,
+            family_name: item.family_name,
+            familyName: item.familyName,
+            category_id: item.category_id,
+            seller_id: item.seller_id,
+            listing_type_id:
+                item.listing_type_id,
+            attributes_count:
+                attributes.length
+        },
+        null,
+        2
+    )
+);
+
 
 const familyName =
     item.family_name ||
     item.familyName ||
     null;
 
+
 console.log(
     "👨‍👩‍👧 family_name:",
     familyName
 );
 
-            const novoItem = {
-    category_id: item.category_id,
-    price: Number(item.price || 0),
-    currency_id: item.currency_id || "BRL",
-    buying_mode: "buy_it_now",
-    listing_type_id: "gold_special",
-condition: "not_specified",
-    available_quantity: 1,
-    pictures: pictures,
-    attributes: attributes
+
+const novoItem = {
+
+    category_id:
+        item.category_id,
+
+    price:
+        Number(
+            item.price || 0
+        ),
+
+    currency_id:
+        item.currency_id ||
+        "BRL",
+
+    buying_mode:
+        "buy_it_now",
+
+    listing_type_id:
+        "gold_special",
+
+    condition:
+        "not_specified",
+
+    available_quantity:
+        1,
+
+    pictures:
+        pictures,
+
+    attributes:
+        attributes
+
 };
 
+
 if (familyName) {
-    novoItem.family_name = familyName;
+
+    novoItem.family_name =
+        familyName;
+
 }
 
+
 // ====================================================
-// IMPEDIR CLONAGEM SE FALTAR ATRIBUTO OBRIGATÓRIO
+// NÃO DEIXAR O MERCADO LIVRE RECEBER VALOR INVENTADO
 // ====================================================
 
 if (
@@ -8358,20 +8893,23 @@ if (
 ) {
 
     console.warn(
-        "❌ Não é possível criar o anúncio.",
-        "Atributos obrigatórios ausentes:",
+        "❌ Ainda existem atributos obrigatórios que não podem ser determinados com segurança:",
         atributosObrigatoriosFaltando
     );
 
-    return res.status(400).json({
 
-        ok: false,
+    return res.status(
+        400
+    ).json({
+
+        ok:
+            false,
 
         reason:
             "missing_required_attributes",
 
         message:
-            "O anúncio possui atributos obrigatórios que não puderam ser copiados.",
+            "Não foi possível determinar automaticamente todos os atributos obrigatórios do anúncio original.",
 
         required_fields:
             atributosObrigatoriosFaltando,
@@ -8392,7 +8930,6 @@ if (
     });
 
 }
-
 
             // ====================================================
             // VARIAÇÕES
