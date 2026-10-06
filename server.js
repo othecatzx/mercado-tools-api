@@ -8321,18 +8321,37 @@ try {
             // original.
             // ====================================================
 
+            console.log(
+    "🔎 CAMPOS IMPORTANTES DO ANÚNCIO:",
+    JSON.stringify({
+        id: item.id,
+        title: item.title,
+        family_name: item.family_name,
+        familyName: item.familyName,
+        category_id: item.category_id,
+        seller_id: item.seller_id,
+        listing_type_id: item.listing_type_id,
+        attributes_count: attributes.length
+    }, null, 2)
+);
+
             const novoItem = {
     title: item.title,
     category_id: item.category_id,
     price: Number(item.price || 0),
     currency_id: item.currency_id || "BRL",
     buying_mode: "buy_it_now",
-    listing_type_id: "gold_special",
+    listing_type_id:
+        item.listing_type_id || "gold_special",
     condition: item.condition || "new",
     available_quantity: 1,
     pictures: pictures,
     attributes: attributes
 };
+
+if (familyName) {
+    novoItem.family_name = familyName;
+}
 
 // ====================================================
 // IMPEDIR CLONAGEM SE FALTAR ATRIBUTO OBRIGATÓRIO
