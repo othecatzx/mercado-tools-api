@@ -9070,115 +9070,103 @@ if (
 
 }
 
-            // ====================================================
-            // VARIAÇÕES
-            // ====================================================
+           // =================================================
+// VARIAÇÕES
+// =================================================
 
-            if (
-                Array.isArray(item.variations) &&
-                item.variations.length > 0
-            ) {
+// IMPORTANTE:
+// O Mercado Livre não permite enviar "variations"
+// junto com "family_name".
 
-                const variations =
-                    item.variations
-                        .map(
-                            variation => {
+if (
+    !familyName &&
+    Array.isArray(item.variations) &&
+    item.variations.length > 0
+) {
 
-                                const attributeCombinations =
-                                    Array.isArray(
-                                        variation.attribute_combinations
+    const variations =
+        item.variations
+            .map(variation => {
+
+                const attributeCombinations =
+                    Array.isArray(
+                        variation.attribute_combinations
+                    )
+                        ? variation.attribute_combinations
+                            .filter(
+                                attribute =>
+                                    attribute &&
+                                    attribute.id &&
+                                    (
+                                        attribute.value_id ||
+                                        attribute.value_name
                                     )
-                                        ? variation.attribute_combinations
-                                            .filter(
-                                                attribute =>
-                                                    attribute &&
-                                                    attribute.id &&
-                                                    (
-                                                        attribute.value_id ||
-                                                        attribute.value_name
-                                                    )
-                                            )
-                                            .map(
-                                                attribute => {
+                            )
+                            .map(attribute => {
 
-                                                    const resultado = {
-
-                                                        id:
-                                                            attribute.id
-
-                                                    };
-
-
-                                                    if (
-                                                        attribute.value_id
-                                                    ) {
-
-                                                        resultado.value_id =
-                                                            attribute.value_id;
-
-                                                    }
-
-
-                                                    if (
-                                                        attribute.value_name
-                                                    ) {
-
-                                                        resultado.value_name =
-                                                            attribute.value_name;
-
-                                                    }
-
-
-                                                    return resultado;
-
-                                                }
-                                            )
-
-                                        : [];
-
-
-                                return {
-
-                                    attribute_combinations:
-                                        attributeCombinations,
-
-                                    price:
-                                        Number(
-                                            variation.price ||
-                                            item.price ||
-                                            0
-                                        ),
-
-                                    available_quantity:
-                                        0,
-
-                                    picture_ids:
-                                        Array.isArray(
-                                            variation.picture_ids
-                                        )
-                                            ? variation.picture_ids
-                                            : []
-
+                                const resultado = {
+                                    id: attribute.id
                                 };
 
-                            }
+                                if (attribute.value_id) {
+                                    resultado.value_id =
+                                        attribute.value_id;
+                                }
+
+                                if (attribute.value_name) {
+                                    resultado.value_name =
+                                        attribute.value_name;
+                                }
+
+                                return resultado;
+                            })
+                        : [];
+
+                return {
+                    attribute_combinations:
+                        attributeCombinations,
+
+                    price:
+                        Number(
+                            variation.price ||
+                            item.price ||
+                            0
+                        ),
+
+                    available_quantity: 0,
+
+                    picture_ids:
+                        Array.isArray(
+                            variation.picture_ids
                         )
-                        .filter(
-                            variation =>
-                                variation.attribute_combinations.length > 0
-                        );
+                            ? variation.picture_ids
+                            : []
+                };
+            })
+            .filter(
+                variation =>
+                    variation.attribute_combinations.length > 0
+            );
 
+    if (variations.length > 0) {
 
-                if (
-                    variations.length > 0
-                ) {
+        novoItem.variations =
+            variations;
 
-                    novoItem.variations =
-                        variations;
+        console.log(
+            "🔄 Variações copiadas:",
+            variations.length
+        );
+    }
 
-                }
+} else if (familyName) {
 
-            }
+    console.log(
+        "👨‍👩‍👧 family_name detectado:",
+        familyName,
+        "→ variações não serão enviadas."
+    );
+}
 
 
             // ====================================================
