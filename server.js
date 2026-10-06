@@ -8968,14 +8968,51 @@ console.log(
 );
 
 
-const familyName =
+// ====================================================
+// FAMILY NAME
+// ====================================================
+
+let familyName =
     item.family_name ||
     item.familyName ||
     null;
 
+// Se o anúncio original não possuir family_name,
+// usamos um nome baseado no produto.
+// Isso é necessário para categorias que exigem
+// family_name na criação.
+if (!familyName) {
+
+    const marca =
+        attributes.find(
+            attribute =>
+                String(attribute.id).toUpperCase() === "BRAND"
+        )?.value_name ||
+        "";
+
+    const modelo =
+        attributes.find(
+            attribute =>
+                String(attribute.id).toUpperCase() === "MODEL"
+        )?.value_name ||
+        "";
+
+    if (marca && modelo) {
+
+        familyName =
+            `${marca} ${modelo}`.trim();
+
+    } else if (item.title) {
+
+        familyName =
+            String(item.title).trim();
+
+    }
+
+}
 
 console.log(
-    "👨‍👩‍👧 family_name:",
+    "👨‍👩‍👧 family_name final:",
     familyName
 );
 
