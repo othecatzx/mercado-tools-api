@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -11,57 +12,164 @@
 
 <body class="login-page">
 
-    <div class="login-container">
+    <div class="login-background"></div>
 
-        <div class="login-card">
+    <main class="login-container">
 
-            <div class="logo">
-                ML SH SUPPORT
+        <section class="login-card">
+
+            <!-- LOGO -->
+            <div class="login-brand">
+
+                <div class="login-logo">
+                    ML
+                </div>
+
+                <div>
+                    <strong>ML SH Support</strong>
+                    <span>ADMIN PANEL</span>
+                </div>
+
             </div>
 
-            <h1>Painel Administrativo</h1>
 
-            <p class="subtitle">
-                Entre com sua conta de administrador
-            </p>
+            <!-- HEADER -->
+            <div class="login-header">
 
+                <h1>Bem-vindo de volta</h1>
+
+                <p>
+                    Entre na sua conta para acessar o painel administrativo.
+                </p>
+
+            </div>
+
+
+            <!-- FORM -->
             <form id="loginForm">
 
                 <div class="input-group">
-                    <label for="email">E-mail</label>
 
-                    <input
-                        type="email"
-                        id="email"
-                        placeholder="admin@mercadotools.local"
-                        required
-                    >
+                    <label for="email">
+                        E-mail
+                    </label>
+
+                    <div class="input-wrapper">
+
+                        <span class="input-icon">
+                            @
+                        </span>
+
+                        <input
+                            type="email"
+                            id="email"
+                            placeholder="admin@mercadotools.local"
+                            autocomplete="username"
+                            required
+                        >
+
+                    </div>
+
                 </div>
+
 
                 <div class="input-group">
-                    <label for="senha">Senha</label>
 
-                    <input
-                        type="password"
-                        id="senha"
-                        placeholder="Digite sua senha"
-                        required
-                    >
+                    <div class="password-label">
+
+                        <label for="senha">
+                            Senha
+                        </label>
+
+                    </div>
+
+                    <div class="input-wrapper">
+
+                        <span class="input-icon">
+                            •
+                        </span>
+
+                        <input
+                            type="password"
+                            id="senha"
+                            placeholder="Digite sua senha"
+                            autocomplete="current-password"
+                            required
+                        >
+
+                        <button
+                            type="button"
+                            class="password-toggle"
+                            id="togglePassword"
+                            aria-label="Mostrar senha"
+                        >
+                            ◉
+                        </button>
+
+                    </div>
+
                 </div>
 
-                <button type="submit" id="loginButton">
-                    Entrar
+
+                <button
+                    type="submit"
+                    id="loginButton"
+                    class="login-button"
+                >
+                    <span>Entrar no painel</span>
+                    <span class="login-arrow">→</span>
                 </button>
+
 
                 <div id="loginStatus"></div>
 
             </form>
 
-        </div>
 
-    </div>
+            <!-- FOOTER -->
+
+            <div class="login-footer">
+
+                <span class="security-dot"></span>
+
+                Conexão segura · ML SH Support
+
+            </div>
+
+        </section>
+
+    </main>
+
 
     <script src="js/login.js"></script>
 
+    <script>
+
+        const togglePassword =
+            document.getElementById("togglePassword");
+
+        const passwordInput =
+            document.getElementById("senha");
+
+        if (togglePassword && passwordInput) {
+
+            togglePassword.addEventListener("click", () => {
+
+                const isPassword =
+                    passwordInput.type === "password";
+
+                passwordInput.type =
+                    isPassword ? "text" : "password";
+
+                togglePassword.textContent =
+                    isPassword ? "◉" : "○";
+
+            });
+
+        }
+
+    </script>
+
 </body>
+
 </html>
