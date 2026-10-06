@@ -8107,6 +8107,100 @@ itemResponse =
 
                     : [];
 
+                    // ====================================================
+// VERIFICAR ATRIBUTOS OBRIGATÓRIOS DA CATEGORIA
+// ====================================================
+
+let atributosObrigatorios = [];
+let atributosObrigatoriosFaltando = [];
+
+try {
+
+    const categoryAttributesResponse =
+        await axios.get(
+            `https://api.mercadolibre.com/categories/${item.category_id}/attributes`,
+            {
+                headers
+            }
+        );
+
+    const categoryAttributes =
+        Array.isArray(categoryAttributesResponse.data)
+            ? categoryAttributesResponse.data
+            : [];
+
+    atributosObrigatorios =
+        categoryAttributes
+            .filter(attribute => {
+
+                return (
+                    attribute &&
+                    (
+                        attribute.tags?.required === true ||
+                        attribute.required === true
+                    )
+                );
+
+            })
+            .map(attribute => ({
+                id:
+                    attribute.id,
+
+                name:
+                    attribute.name,
+
+                value_type:
+                    attribute.value_type || null
+            }));
+
+
+    const idsDosAtributos =
+        new Set(
+            attributes.map(
+                attribute =>
+                    String(attribute.id)
+            )
+        );
+
+
+    atributosObrigatoriosFaltando =
+        atributosObrigatorios.filter(
+            attribute =>
+                !idsDosAtributos.has(
+                    String(attribute.id)
+                )
+        );
+
+
+    console.log(
+        "📋 Atributos obrigatórios da categoria:",
+        JSON.stringify(
+            atributosObrigatorios,
+            null,
+            2
+        )
+    );
+
+
+    console.log(
+        "⚠️ Atributos obrigatórios faltando:",
+        JSON.stringify(
+            atributosObrigatoriosFaltando,
+            null,
+            2
+        )
+    );
+
+} catch (attributeError) {
+
+    console.warn(
+        "⚠️ Não foi possível consultar atributos da categoria:",
+        attributeError.response?.data ||
+        attributeError.message
+    );
+
+}
+
 
             // ====================================================
             // ATRIBUTOS
@@ -8191,6 +8285,50 @@ itemResponse =
     pictures: pictures,
     attributes: attributes
 };
+
+// ====================================================
+// IMPEDIR CLONAGEM SE FALTAR ATRIBUTO OBRIGATÓRIO
+// ====================================================
+
+if (
+    atributosObrigatoriosFaltando.length > 0
+) {
+
+    console.warn(
+        "❌ Não é possível criar o anúncio.",
+        "Atributos obrigatórios ausentes:",
+        atributosObrigatoriosFaltando
+    );
+
+    return res.status(400).json({
+
+        ok: false,
+
+        reason:
+            "missing_required_attributes",
+
+        message:
+            "O anúncio possui atributos obrigatórios que não puderam ser copiados.",
+
+        required_fields:
+            atributosObrigatoriosFaltando,
+
+        required_field_names:
+            atributosObrigatoriosFaltando.map(
+                attribute =>
+                    attribute.name ||
+                    attribute.id
+            ),
+
+        item_origem:
+            item.id,
+
+        category_id:
+            item.category_id
+
+    });
+
+}
 
 
             // ====================================================
