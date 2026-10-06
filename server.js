@@ -7555,7 +7555,6 @@ const cancelado =
 
     }
 );
-
 // ============================================================
 // 🔄 CLONAR ANÚNCIO MERCADO LIVRE
 // ============================================================
@@ -7627,17 +7626,25 @@ app.post(
                     .toUpperCase();
 
 
-            // Aceita:
-            // MLB123456789
-            // MLB-123456789
-            // https://produto.mercadolivre.com.br/MLB-123456789
-            // https://www.mercadolivre.com.br/...
-            //
+            /*
+             * Aceita:
+             *
+             * MLB123456789
+             * MLB-123456789
+             * MLB_123456789
+             * MLBU123456789
+             * MLBU-123456789
+             *
+             * URLs:
+             *
+             * https://produto.mercadolivre.com.br/MLB-123456789
+             * https://www.mercadolivre.com.br/...
+             */
 
             const match =
-    itemId.match(
-        /MLB(?:U)?[-_]?(\d+)/i
-    );
+                itemId.match(
+                    /MLB(?:U)?[-_]?(\d+)/i
+                );
 
 
             if (match) {
@@ -7664,8 +7671,13 @@ app.post(
                 itemId.toUpperCase();
 
 
+            console.log(
+                `🔄 Iniciando clonagem do anúncio ${itemId}`
+            );
+
+
             // ====================================================
-            // VALIDAR LICENÇA / DISPOSITIVO
+            // VALIDAR LICENÇA / EMPRESA
             // ====================================================
 
             const {
@@ -7678,7 +7690,7 @@ app.post(
 
 
             // ====================================================
-            // TOKEN DA EMPRESA
+            // TOKEN DA CONTA CONECTADA
             // ====================================================
 
             const accessToken =
@@ -7686,6 +7698,11 @@ app.post(
                     company.id
                 );
 
+
+            /*
+             * Este token é usado somente para operações
+             * na conta conectada.
+             */
 
             const headers = {
 
@@ -7699,18 +7716,61 @@ app.post(
 
 
             // ====================================================
-            // BUSCAR ANÚNCIO PÚBLICO
+            // BUSCAR ANÚNCIO DE ORIGEM
+            // ====================================================
+            //
+            // IMPORTANTE:
+            // Não usamos o token da conta conectada para buscar
+            // o anúncio público de origem.
+            //
+            // Isso permite clonar anúncios públicos de outros
+            // vendedores.
             // ====================================================
 
-            const itemResponse =
-    await axios.get(
-        `https://api.mercadolibre.com/items/${itemId}`,
-        {
-            headers: {
-                Accept: "application/json"
+            let itemResponse;
+
+            try {
+
+                itemResponse =
+                    await axios.get(
+                        `https://api.mercadolibre.com/items/${itemId}`,
+                        {
+                            headers: {
+                                Accept:
+                                    "application/json"
+                            }
+                        }
+                    );
+
+            } catch (itemError) {
+
+                console.error(
+                    "❌ Erro ao buscar anúncio de origem:",
+                    itemError.response?.data ||
+                    itemError.message
+                );
+
+
+                return res.status(
+                    itemError.response?.status || 404
+                ).json({
+
+                    ok: false,
+
+                    reason:
+                        "source_item_error",
+
+                    message:
+                        itemError.response?.data?.message ||
+                        `Não foi possível encontrar o anúncio ${itemId}.`,
+
+                    details:
+                        itemError.response?.data ||
+                        null
+
+                });
+
             }
-        }
-    );
 
 
             const item =
@@ -7720,17 +7780,22 @@ app.post(
             if (!item) {
 
                 return res.status(404).json({
+
                     ok: false,
-                    reason: "item_not_found",
+
+                    reason:
+                        "item_not_found",
+
                     message:
                         "Anúncio não encontrado."
+
                 });
 
             }
 
 
             // ====================================================
-            // NÃO PERMITIR ANÚNCIO INATIVO/REMOVIDO
+            // VALIDAR STATUS
             // ====================================================
 
             if (
@@ -7739,10 +7804,15 @@ app.post(
             ) {
 
                 return res.status(400).json({
+
                     ok: false,
-                    reason: "item_unavailable",
+
+                    reason:
+                        "item_unavailable",
+
                     message:
                         "Este anúncio não está disponível para clonagem."
+
                 });
 
             }
@@ -7752,41 +7822,56 @@ app.post(
             // CATÁLOGO
             // ====================================================
 
-            if (item.catalog_listing === true) {
+            if (
+                item.catalog_listing === true
+            ) {
 
                 return res.status(400).json({
+
                     ok: false,
-                    reason: "catalog_listing",
+
+                    reason:
+                        "catalog_listing",
+
                     message:
                         "Este anúncio pertence ao catálogo do Mercado Livre e não pode ser clonado desta forma."
+
                 });
 
             }
 
 
+            console.log(
+                `✅ Anúncio de origem encontrado: ${item.id} | ${item.title}`
+            );
+
+
             // ====================================================
-            // BUSCAR DESCRIÇÃO
+            // DESCRIÇÃO
             // ====================================================
 
             let descricao = "";
 
+
             try {
 
                 const descriptionResponse =
-    await axios.get(
-        `https://api.mercadolibre.com/items/${itemId}/description`,
-        {
-            headers: {
-                Accept: "application/json"
-            }
-        }
-    );
+                    await axios.get(
+                        `https://api.mercadolibre.com/items/${itemId}/description`,
+                        {
+                            headers: {
+                                Accept:
+                                    "application/json"
+                            }
+                        }
+                    );
 
 
                 descricao =
                     descriptionResponse.data?.plain_text ||
                     descriptionResponse.data?.text ||
                     "";
+
 
             } catch (descriptionError) {
 
@@ -7800,7 +7885,7 @@ app.post(
 
 
             // ====================================================
-            // INFORMAÇÕES PARA PREVIEW
+            // PREVIEW
             // ====================================================
 
             if (!confirmar) {
@@ -7862,7 +7947,10 @@ app.post(
                                 : 0,
 
                         catalog_listing:
-                            !!item.catalog_listing
+                            !!item.catalog_listing,
+
+                        descricao:
+                            !!descricao
 
                     }
 
@@ -7872,7 +7960,162 @@ app.post(
 
 
             // ====================================================
-            // MONTAR NOVO ANÚNCIO
+            // TIPO DE ANÚNCIO
+            // ====================================================
+            //
+            // NÃO copiar o listing_type_id da conta de origem.
+            //
+            // A conta conectada pode não possuir autorização
+            // para o mesmo tipo de anúncio.
+            //
+            // gold_special é o tipo padrão usado no MLB.
+            // ====================================================
+
+            let listingTypeId =
+                "gold_special";
+
+
+            try {
+
+                const listingTypesResponse =
+                    await axios.get(
+                        "https://api.mercadolibre.com/sites/MLB/listing_types",
+                        {
+                            headers
+                        }
+                    );
+
+
+                const listingTypes =
+                    Array.isArray(
+                        listingTypesResponse.data
+                    )
+                        ? listingTypesResponse.data
+                        : [];
+
+
+                const goldSpecial =
+                    listingTypes.find(
+                        type =>
+                            type.id ===
+                            "gold_special"
+                    );
+
+
+                if (goldSpecial) {
+
+                    listingTypeId =
+                        goldSpecial.id;
+
+                }
+
+            } catch (listingTypeError) {
+
+                console.warn(
+                    "⚠️ Não foi possível consultar tipos de anúncio. Usando gold_special:",
+                    listingTypeError.response?.data ||
+                    listingTypeError.message
+                );
+
+            }
+
+
+            // ====================================================
+            // FOTOS
+            // ====================================================
+
+            const pictures =
+                Array.isArray(item.pictures)
+
+                    ? item.pictures
+                        .filter(
+                            picture =>
+                                picture &&
+                                (
+                                    picture.source ||
+                                    picture.url
+                                )
+                        )
+                        .map(
+                            picture => ({
+                                source:
+                                    picture.source ||
+                                    picture.url
+                            })
+                        )
+
+                    : [];
+
+
+            // ====================================================
+            // ATRIBUTOS
+            // ====================================================
+
+            const attributes =
+                Array.isArray(item.attributes)
+
+                    ? item.attributes
+                        .filter(
+                            attribute =>
+                                attribute &&
+                                attribute.id &&
+                                (
+                                    attribute.value_id ||
+                                    attribute.value_name
+                                )
+                        )
+                        .map(
+                            attribute => {
+
+                                const resultado = {
+
+                                    id:
+                                        attribute.id
+
+                                };
+
+
+                                if (
+                                    attribute.value_id
+                                ) {
+
+                                    resultado.value_id =
+                                        attribute.value_id;
+
+                                }
+
+
+                                if (
+                                    attribute.value_name
+                                ) {
+
+                                    resultado.value_name =
+                                        attribute.value_name;
+
+                                }
+
+
+                                return resultado;
+
+                            }
+                        )
+
+                    : [];
+
+
+            // ====================================================
+            // OBJETO BASE DO NOVO ANÚNCIO
+            // ====================================================
+            //
+            // NÃO copiamos:
+            //
+            // - sale_terms
+            // - shipping
+            // - policy da conta original
+            //
+            // Esses campos podem carregar configurações
+            // específicas/autorizadas apenas para o vendedor
+            // original.
             // ====================================================
 
             const novoItem = {
@@ -7884,7 +8127,9 @@ app.post(
                     item.category_id,
 
                 price:
-                    Number(item.price || 0),
+                    Number(
+                        item.price || 0
+                    ),
 
                 currency_id:
                     item.currency_id ||
@@ -7895,103 +8140,18 @@ app.post(
                     "buy_it_now",
 
                 listing_type_id:
-                    item.listing_type_id,
+                    listingTypeId,
 
                 condition:
                     item.condition ||
                     "new",
 
-                // =================================================
-                // ESTOQUE ZERO
-                // =================================================
-
                 available_quantity:
                     0,
 
-                // =================================================
-                // IMAGENS
-                // =================================================
+                pictures,
 
-                pictures:
-                    Array.isArray(item.pictures)
-                        ? item.pictures
-                            .filter(
-                                picture =>
-                                    picture &&
-                                    (
-                                        picture.source ||
-                                        picture.url
-                                    )
-                            )
-                            .map(
-                                picture => ({
-                                    source:
-                                        picture.source ||
-                                        picture.url
-                                })
-                            )
-                        : [],
-
-                // =================================================
-                // ATRIBUTOS
-                // =================================================
-
-                attributes:
-                    Array.isArray(item.attributes)
-                        ? item.attributes.map(
-                            attribute => ({
-                                id:
-                                    attribute.id,
-
-                                value_id:
-                                    attribute.value_id,
-
-                                value_name:
-                                    attribute.value_name
-                            })
-                        )
-                        : [],
-
-                // =================================================
-                // SALE TERMS
-                // =================================================
-
-                sale_terms:
-                    Array.isArray(item.sale_terms)
-                        ? item.sale_terms.map(
-                            term => ({
-                                id:
-                                    term.id,
-
-                                value_id:
-                                    term.value_id,
-
-                                value_name:
-                                    term.value_name
-                            })
-                        )
-                        : [],
-
-                // =================================================
-                // SHIPPING
-                // =================================================
-
-                shipping:
-                    item.shipping
-                        ? {
-                            mode:
-                                item.shipping.mode,
-
-                            local_pick_up:
-                                item.shipping.local_pick_up,
-
-                            free_shipping:
-                                item.shipping.free_shipping,
-
-                            logistic_type:
-                                item.shipping.logistic_type
-                        }
-                        : undefined
+                attributes
 
             };
 
@@ -8005,53 +8165,110 @@ app.post(
                 item.variations.length > 0
             ) {
 
-                novoItem.variations =
-                    item.variations.map(
-                        variation => ({
+                const variations =
+                    item.variations
+                        .map(
+                            variation => {
 
-                            attribute_combinations:
-                                Array.isArray(
-                                    variation.attribute_combinations
-                                )
-                                    ? variation.attribute_combinations.map(
-                                        attribute => ({
-                                            id:
-                                                attribute.id,
-
-                                            value_id:
-                                                attribute.value_id,
-
-                                            value_name:
-                                                attribute.value_name
-                                        })
+                                const attributeCombinations =
+                                    Array.isArray(
+                                        variation.attribute_combinations
                                     )
-                                    : [],
+                                        ? variation.attribute_combinations
+                                            .filter(
+                                                attribute =>
+                                                    attribute &&
+                                                    attribute.id &&
+                                                    (
+                                                        attribute.value_id ||
+                                                        attribute.value_name
+                                                    )
+                                            )
+                                            .map(
+                                                attribute => {
 
-                            price:
-                                Number(
-                                    variation.price ||
-                                    item.price ||
-                                    0
-                                ),
+                                                    const resultado = {
 
-                            available_quantity:
-                                0,
+                                                        id:
+                                                            attribute.id
 
-                            picture_ids:
-                                Array.isArray(
-                                    variation.picture_ids
-                                )
-                                    ? variation.picture_ids
-                                    : []
+                                                    };
 
-                        })
-                    );
+
+                                                    if (
+                                                        attribute.value_id
+                                                    ) {
+
+                                                        resultado.value_id =
+                                                            attribute.value_id;
+
+                                                    }
+
+
+                                                    if (
+                                                        attribute.value_name
+                                                    ) {
+
+                                                        resultado.value_name =
+                                                            attribute.value_name;
+
+                                                    }
+
+
+                                                    return resultado;
+
+                                                }
+                                            )
+
+                                        : [];
+
+
+                                return {
+
+                                    attribute_combinations:
+                                        attributeCombinations,
+
+                                    price:
+                                        Number(
+                                            variation.price ||
+                                            item.price ||
+                                            0
+                                        ),
+
+                                    available_quantity:
+                                        0,
+
+                                    picture_ids:
+                                        Array.isArray(
+                                            variation.picture_ids
+                                        )
+                                            ? variation.picture_ids
+                                            : []
+
+                                };
+
+                            }
+                        )
+                        .filter(
+                            variation =>
+                                variation.attribute_combinations.length > 0
+                        );
+
+
+                if (
+                    variations.length > 0
+                ) {
+
+                    novoItem.variations =
+                        variations;
+
+                }
 
             }
 
 
             // ====================================================
-            // REMOVER CAMPOS INDEFINIDOS
+            // REMOVER VALORES VAZIOS
             // ====================================================
 
             Object.keys(novoItem).forEach(
@@ -8070,8 +8287,18 @@ app.post(
             );
 
 
+            console.log(
+                "📦 Dados enviados para criação:",
+                JSON.stringify(
+                    novoItem,
+                    null,
+                    2
+                )
+            );
+
+
             // ====================================================
-            // CRIAR ANÚNCIO
+            // CRIAR NOVO ANÚNCIO
             // ====================================================
 
             let novoAnuncio;
@@ -8085,9 +8312,12 @@ app.post(
                         novoItem,
                         {
                             headers: {
+
                                 ...headers,
+
                                 "Content-Type":
                                     "application/json"
+
                             }
                         }
                     );
@@ -8099,15 +8329,25 @@ app.post(
 
             } catch (createError) {
 
-                console.error(
-                    "❌ Erro ao criar anúncio ML:",
+                const erroML =
                     createError.response?.data ||
-                    createError.message
+                    null;
+
+
+                console.error(
+                    "❌ Mercado Livre recusou criação:",
+                    JSON.stringify(
+                        erroML ||
+                        createError.message,
+                        null,
+                        2
+                    )
                 );
 
 
                 return res.status(
-                    createError.response?.status || 500
+                    createError.response?.status ||
+                    500
                 ).json({
 
                     ok: false,
@@ -8116,13 +8356,47 @@ app.post(
                         "create_item_error",
 
                     message:
-                        createError.response?.data?.message ||
-                        createError.response?.data?.error ||
+                        erroML?.message ||
+                        erroML?.error ||
+                        createError.message ||
                         "Mercado Livre recusou a criação do anúncio.",
 
                     details:
-                        createError.response?.data ||
-                        null
+                        erroML,
+
+                    item_origem:
+                        item.id,
+
+                    dados_enviados: {
+
+                        title:
+                            novoItem.title,
+
+                        category_id:
+                            novoItem.category_id,
+
+                        price:
+                            novoItem.price,
+
+                        condition:
+                            novoItem.condition,
+
+                        listing_type_id:
+                            novoItem.listing_type_id,
+
+                        pictures:
+                            novoItem.pictures?.length ||
+                            0,
+
+                        attributes:
+                            novoItem.attributes?.length ||
+                            0,
+
+                        variations:
+                            novoItem.variations?.length ||
+                            0
+
+                    }
 
                 });
 
@@ -8130,16 +8404,11 @@ app.post(
 
 
             // ====================================================
-            // GARANTIR ESTOQUE ZERO
-            // ====================================================
-            //
-            // Algumas categorias/listagens podem aceitar o POST
-            // somente com quantidade positiva.
-            //
-            // Então fazemos PATCH depois da criação.
+            // ESTOQUE ZERO
             // ====================================================
 
-            let estoqueAtualizado = false;
+            let estoqueAtualizado =
+                false;
 
 
             try {
@@ -8148,13 +8417,17 @@ app.post(
                     await axios.put(
                         `https://api.mercadolibre.com/items/${novoAnuncio.id}`,
                         {
-                            available_quantity: 0
+                            available_quantity:
+                                0
                         },
                         {
                             headers: {
+
                                 ...headers,
+
                                 "Content-Type":
                                     "application/json"
+
                             }
                         }
                     );
@@ -8163,11 +8436,13 @@ app.post(
                 if (
                     updateResponse.data &&
                     Number(
-                        updateResponse.data.available_quantity
+                        updateResponse.data
+                            .available_quantity
                     ) === 0
                 ) {
 
-                    estoqueAtualizado = true;
+                    estoqueAtualizado =
+                        true;
 
                 }
 
@@ -8183,10 +8458,11 @@ app.post(
 
 
             // ====================================================
-            // ADICIONAR DESCRIÇÃO
+            // COPIAR DESCRIÇÃO
             // ====================================================
 
-            let descricaoCriada = false;
+            let descricaoCriada =
+                false;
 
 
             if (
@@ -8197,26 +8473,26 @@ app.post(
                 try {
 
                     await axios.post(
-
                         `https://api.mercadolibre.com/items/${novoAnuncio.id}/description`,
-
                         {
                             plain_text:
                                 descricao
                         },
-
                         {
                             headers: {
+
                                 ...headers,
+
                                 "Content-Type":
                                     "application/json"
+
                             }
                         }
-
                     );
 
 
-                    descricaoCriada = true;
+                    descricaoCriada =
+                        true;
 
 
                 } catch (descriptionCreateError) {
@@ -8324,7 +8600,7 @@ app.post(
         } catch (error) {
 
             console.error(
-                "❌ Erro ao clonar anúncio:",
+                "❌ Erro geral ao clonar anúncio:",
                 error.response?.data ||
                 error.message ||
                 error
@@ -8350,6 +8626,31 @@ app.post(
             }
 
 
+            if (error.response) {
+
+                return res.status(
+                    error.response.status ||
+                    500
+                ).json({
+
+                    ok: false,
+
+                    reason:
+                        "mercadolivre_api_error",
+
+                    message:
+                        error.response.data?.message ||
+                        "Erro ao consultar Mercado Livre",
+
+                    details:
+                        error.response.data ||
+                        null
+
+                });
+
+            }
+
+
             return res.status(500).json({
 
                 ok: false,
@@ -8358,7 +8659,6 @@ app.post(
                     "clone_error",
 
                 message:
-                    error.response?.data?.message ||
                     error.message ||
                     "Erro interno ao clonar anúncio.",
 
