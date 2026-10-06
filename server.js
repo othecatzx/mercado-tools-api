@@ -7961,37 +7961,55 @@ console.log(
 
             let descricao = "";
 
+try {
 
-            try {
+    console.log("📝 Buscando descrição do anúncio...");
 
-                const descriptionResponse =
-                    await axios.get(
-                        `https://api.mercadolibre.com/items/${itemId}/description`,
-                        {
-                            headers: {
-                                Accept:
-                                    "application/json"
-                            }
-                        }
-                    );
+    // Primeiro tenta pela API autenticada
+    try {
 
+        const descriptionResponse =
+            await axios.get(
+                `https://api.mercadolibre.com/items/${itemId}/description`,
+                {
+                    headers: {
+                        ...headers,
+                        Accept: "application/json"
+                    }
+                }
+            );
 
-                descricao =
-                    descriptionResponse.data?.plain_text ||
-                    descriptionResponse.data?.text ||
-                    "";
+        descricao =
+            descriptionResponse.data?.plain_text ||
+            descriptionResponse.data?.text ||
+            "";
 
+        console.log(
+            "✅ Descrição obtida pela API:",
+            descricao.length,
+            "caracteres"
+        );
 
-            } catch (descriptionError) {
+    } catch (apiDescriptionError) {
 
-                console.warn(
-                    "⚠️ Não foi possível obter descrição:",
-                    descriptionError.response?.data ||
-                    descriptionError.message
-                );
+        console.warn(
+            "⚠️ API não retornou a descrição:",
+            apiDescriptionError.response?.data ||
+            apiDescriptionError.message
+        );
 
-            }
+        // Aqui entraremos no fallback da página pública
+    }
 
+} catch (descriptionError) {
+
+    console.warn(
+        "⚠️ Não foi possível obter descrição:",
+        descriptionError.response?.data ||
+        descriptionError.message
+    );
+
+}
 
             // ====================================================
             // PREVIEW
@@ -8320,7 +8338,7 @@ console.log(
     currency_id: item.currency_id || "BRL",
     buying_mode: "buy_it_now",
     listing_type_id: "gold_special",
-    condition: "new",
+condition: "not_specified",
     available_quantity: 1,
     pictures: pictures,
     attributes: attributes
