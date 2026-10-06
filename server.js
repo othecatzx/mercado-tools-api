@@ -8329,6 +8329,15 @@ app.post(
 
             } catch (createError) {
 
+                console.error(
+    "🚨 ERRO COMPLETO DO MERCADO LIVRE:",
+    JSON.stringify(
+        createError.response?.data,
+        null,
+        2
+    )
+);
+
                 const erroML =
                     createError.response?.data ||
                     null;
