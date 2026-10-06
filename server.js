@@ -8584,75 +8584,214 @@ for (
     }
 
 
-    // =================================================
-    // COLOR
-    // =================================================
+   // =================================================
+// COLOR
+// =================================================
+
+if (
+    idObrigatorio ===
+    "COLOR"
+) {
+
+    let corEncontrada = null;
+
+
+    // -------------------------------------------------
+    // 1. PROCURAR NOS ATRIBUTOS ORIGINAIS
+    // -------------------------------------------------
+
+    const corAtributo =
+        encontrarAtributo(
+            atributosOriginais,
+            [
+                "COLOR",
+                "COLOUR",
+                "COR",
+                "COLOR_NAME",
+                "COLOR_SECONDARY"
+            ]
+        );
+
 
     if (
-        idObrigatorio ===
-        "COLOR"
+        corAtributo &&
+        (
+            corAtributo.value_id ||
+            corAtributo.value_name
+        )
     ) {
 
-        const cor =
-            encontrarAtributo(
-                atributosOriginais,
-                [
-                    "COLOR",
-                    "COLOUR",
-                    "COR",
-                    "COLOR_NAME",
-                    "COLOR_SECONDARY"
-                ]
+        corEncontrada =
+            corAtributo.value_name ||
+            corAtributo.value_id;
+
+    }
+
+
+    // -------------------------------------------------
+    // 2. PROCURAR NAS VARIAÇÕES
+    // -------------------------------------------------
+
+    if (
+        !corEncontrada &&
+        Array.isArray(item.variations)
+    ) {
+
+        for (
+            const variation
+            of item.variations
+        ) {
+
+            const combinacoes =
+                Array.isArray(
+                    variation.attribute_combinations
+                )
+                    ? variation.attribute_combinations
+                    : [];
+
+
+            const corVariacao =
+                encontrarAtributo(
+                    combinacoes,
+                    [
+                        "COLOR",
+                        "COLOUR",
+                        "COR",
+                        "COLOR_NAME"
+                    ]
+                );
+
+
+            if (
+                corVariacao &&
+                (
+                    corVariacao.value_name ||
+                    corVariacao.value_id
+                )
+            ) {
+
+                corEncontrada =
+                    corVariacao.value_name ||
+                    corVariacao.value_id;
+
+                break;
+
+            }
+
+        }
+
+    }
+
+
+    // -------------------------------------------------
+    // 3. PROCURAR NO TÍTULO
+    // -------------------------------------------------
+
+    if (
+        !corEncontrada &&
+        item.title
+    ) {
+
+        const titulo =
+            normalizarTexto(
+                item.title
+            );
+
+
+        const coresConhecidas = [
+            "preto",
+            "preta",
+            "branco",
+            "branca",
+            "azul",
+            "vermelho",
+            "vermelha",
+            "verde",
+            "amarelo",
+            "amarela",
+            "rosa",
+            "roxo",
+            "roxa",
+            "lilas",
+            "cinza",
+            "prata",
+            "dourado",
+            "dourada",
+            "grafite",
+            "marrom",
+            "bege",
+            "laranja",
+            "violeta",
+            "turquesa"
+        ];
+
+
+        const corTitulo =
+            coresConhecidas.find(
+                cor =>
+                    titulo.includes(
+                        ` ${cor} `
+                    ) ||
+                    titulo.startsWith(
+                        `${cor} `
+                    ) ||
+                    titulo.endsWith(
+                        ` ${cor}`
+                    )
             );
 
 
         if (
-            cor &&
-            (
-                cor.value_id ||
-                cor.value_name
-            )
+            corTitulo
         ) {
 
-            const novoAtributo = {
-                id: "COLOR"
-            };
+            corEncontrada =
+                corTitulo;
 
-
-            if (
-                cor.value_id
-            ) {
-
-                novoAtributo.value_id =
-                    cor.value_id;
-
-            }
-
-
-            if (
-                cor.value_name
-            ) {
-
-                novoAtributo.value_name =
-                    cor.value_name;
-
-            }
-
-
-            attributes.push(
-                novoAtributo
-            );
-
-
-            console.log(
-                "✅ COLOR recuperado automaticamente:",
-                cor.value_name
-            );
-
-            continue;
         }
 
     }
+
+
+    // -------------------------------------------------
+    // 4. SE ENCONTROU
+    // -------------------------------------------------
+
+    if (
+        corEncontrada
+    ) {
+
+        attributes.push({
+
+            id:
+                "COLOR",
+
+            value_name:
+                corEncontrada
+
+        });
+
+
+        console.log(
+            "✅ COLOR recuperado automaticamente:",
+            corEncontrada
+        );
+
+
+        continue;
+
+    }
+
+
+    // -------------------------------------------------
+    // 5. NÃO INVENTAR COR
+    // -------------------------------------------------
+
+    console.warn(
+        "⚠️ COLOR não encontrado no anúncio original."
+    );
+
+}
 
 
     // =================================================
