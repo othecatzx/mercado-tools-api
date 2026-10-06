@@ -8346,15 +8346,13 @@ console.log(
 );
 
             const novoItem = {
-    title: item.title,
-    family_name: familyName,
+    title: String(item.title || "").trim(),
     category_id: item.category_id,
     price: Number(item.price || 0),
     currency_id: item.currency_id || "BRL",
     buying_mode: "buy_it_now",
-    listing_type_id:
-        item.listing_type_id || "gold_special",
-    condition: item.condition || "new",
+    listing_type_id: "gold_special",
+    condition: "new",
     available_quantity: 1,
     pictures: pictures,
     attributes: attributes
