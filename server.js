@@ -8968,7 +8968,6 @@ console.log(
     )
 );
 
-
 // ====================================================
 // FAMILY NAME
 // ====================================================
@@ -8978,11 +8977,19 @@ let familyName =
     item.familyName ||
     null;
 
-// Se o anúncio original não possuir family_name,
-// usamos um nome baseado no produto.
-// Isso é necessário para categorias que exigem
-// family_name na criação.
-if (!familyName) {
+// Se o anúncio possui variações, NÃO inventamos
+// family_name, pois o Mercado Livre não permite
+// family_name junto com variations.
+const possuiVariacoes =
+    Array.isArray(item.variations) &&
+    item.variations.length > 0;
+
+// Só cria family_name automaticamente quando
+// o anúncio NÃO possui variações.
+if (
+    !familyName &&
+    !possuiVariacoes
+) {
 
     const marca =
         attributes.find(
@@ -9014,9 +9021,12 @@ if (!familyName) {
 
 console.log(
     "👨‍👩‍👧 family_name final:",
-    familyName
+    familyName,
+    "| possui variações:",
+    possuiVariacoes,
+    "| quantidade:",
+    item.variations?.length || 0
 );
-
 
 const novoItem = {
 
@@ -9274,6 +9284,28 @@ if (
 
     if (variations.length > 0) {
 
+
+        console.log(
+    "🔄 VARIAÇÕES ORIGINAIS:",
+    JSON.stringify(
+        item.variations,
+        null,
+        2
+    )
+);
+
+console.log(
+    "🔄 VARIAÇÕES PREPARADAS PARA CÓPIA:",
+    JSON.stringify(
+        variations,
+        null,
+        2
+    )
+);
+
+novoItem.variations =
+    variations;
+    
         novoItem.variations =
             variations;
 
