@@ -7800,13 +7800,22 @@ try {
 
                 console.log("🔐 Buscando anúncio de origem com token da conta conectada...");
 
-const itemResponse = await axios.get(
+console.log("🌐 Buscando anúncio público de origem SEM token da conta conectada...");
+
+itemResponse = await axios.get(
     `https://api.mercadolibre.com/items/${itemId}?include_attributes=all`,
     {
         headers: {
             Accept: "application/json"
         }
     }
+);
+
+console.log(
+    "✅ Anúncio de origem encontrado:",
+    itemResponse.data?.id,
+    "|",
+    itemResponse.data?.title
 );
 
     const item = itemResponse.data;
@@ -7909,7 +7918,7 @@ console.log(
                 `🔎 Buscando variação individual ${variacaoBasica.id}...`
             );
 
-            const variacaoResponse = await axios.get(
+           const variacaoResponse = await axios.get(
     `https://api.mercadolibre.com/items/${itemId}/variations/${variacaoBasica.id}?include_attributes=all`,
     {
         headers: {
