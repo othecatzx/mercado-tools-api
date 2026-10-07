@@ -7590,7 +7590,7 @@ app.post(
     dimensoes
 } = req.body;
 
-
+let tituloNovo = "";
             // ====================================================
             // VALIDAR DADOS
             // ====================================================
@@ -7813,7 +7813,6 @@ itemResponse =
 // SOMENTE NA CONFIRMAÇÃO DA CLONAGEM
 // ====================================================
 
-let tituloNovo = "";
 
 if (confirmar === true) {
 
@@ -9314,6 +9313,9 @@ const novoItem = {
 
     pictures:
         pictures,
+
+        title:
+    tituloNovo,
 
     attributes:
         attributes
