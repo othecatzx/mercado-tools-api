@@ -9782,39 +9782,41 @@ if (
 
                 const itemVariacao = {
 
-                    category_id:
-                        item.category_id,
+    category_id:
+        item.category_id,
 
-                    price:
-                        Number(
-                            variation.price ||
-                            item.price ||
-                            0
-                        ),
+    title:
+        tituloNovo,
 
-                    currency_id:
-                        item.currency_id ||
-                        "BRL",
+    price:
+        Number(
+            variation.price ||
+            item.price ||
+            0
+        ),
 
-                    buying_mode:
-                        "buy_it_now",
+    currency_id:
+        item.currency_id ||
+        "BRL",
 
-                    listing_type_id:
-                        "gold_pro",
+    buying_mode:
+        "buy_it_now",
 
-                    condition:
-                        "not_specified",
+    listing_type_id:
+        "gold_pro",
 
-                    available_quantity:
-                        0,
+    condition:
+        "not_specified",
 
-                    pictures:
-                        fotosVariacao,
+    available_quantity:
+        0,
 
-                    attributes:
-                        novosAtributos
+    pictures:
+        fotosVariacao,
 
-                };
+    attributes:
+        novosAtributos
+};
 
 
                 // ==========================================
@@ -9867,6 +9869,10 @@ if (
                     )
                 );
 
+console.log(
+    `📝 TÍTULO DA VARIAÇÃO ${index + 1}:`,
+    tituloNovo
+);
 
                 return itemVariacao;
 
