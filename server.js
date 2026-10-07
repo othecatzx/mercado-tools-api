@@ -7591,6 +7591,77 @@ app.post(
     anuncio_publico
 } = req.body;
 
+chrome.runtime.onMessage.addListener(
+    (mensagem, sender, sendResponse) => {
+
+        if (
+            mensagem?.acao ===
+            "mlsupport_abrir_aba_clonagem"
+        ) {
+
+            chrome.tabs.create(
+                {
+                    url: mensagem.url,
+                    active: false
+                },
+                tab => {
+
+                    if (
+                        chrome.runtime.lastError ||
+                        !tab
+                    ) {
+
+                        sendResponse({
+                            ok: false,
+                            message:
+                                chrome.runtime.lastError?.message ||
+                                "Não foi possível abrir a aba."
+                        });
+
+                        return;
+                    }
+
+
+                    sendResponse({
+                        ok: true,
+                        tabId: tab.id
+                    });
+
+                }
+            );
+
+
+            return true;
+        }
+
+
+        if (
+            mensagem?.acao ===
+            "mlsupport_fechar_aba"
+        ) {
+
+            const tabId =
+                Number(mensagem.tabId);
+
+
+            if (
+                Number.isInteger(tabId) &&
+                tabId > 0
+            ) {
+
+                chrome.tabs.remove(
+                    tabId,
+                    () => {}
+                );
+
+            }
+
+            return false;
+        }
+
+    }
+);
+
 let tituloNovo = "";
             // ====================================================
             // VALIDAR DADOS
@@ -7852,7 +7923,7 @@ item.variations =
     )
         ? anuncio_publico.variations
         : [];
-        
+
 try {
 
     const paginaUrl =
