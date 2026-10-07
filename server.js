@@ -9929,6 +9929,24 @@ else if (familyName) {
                     2
                 )
             );
+            // ====================================================
+// FAMILY_NAME x VARIAÇÕES
+// ====================================================
+// O Mercado Livre não aceita family_name junto com
+// variations neste tipo de anúncio.
+
+if (
+    Array.isArray(novoItem.variations) &&
+    novoItem.variations.length > 0
+) {
+    console.log(
+        "🧹 REMOVENDO family_name POR HAVER VARIAÇÕES:",
+        novoItem.family_name
+    );
+
+    delete novoItem.family_name;
+}
+
 
 
             // ====================================================
