@@ -7587,7 +7587,8 @@ app.post(
     link,
     confirmar,
     titulo,
-    dimensoes
+    dimensoes,
+    anuncio_publico
 } = req.body;
 
 let tituloNovo = "";
@@ -7803,8 +7804,55 @@ try {
     itemId
 );
 
-let item;
+let item =
+    anuncio_publico;
 
+
+    item.id =
+    anuncio_publico.id ||
+    item.id;
+
+item.title =
+    anuncio_publico.title ||
+    item.title;
+
+item.description =
+    anuncio_publico.description ||
+    "";
+
+item.category_id =
+    anuncio_publico.category_id ||
+    item.category_id;
+
+item.price =
+    anuncio_publico.price ||
+    0;
+
+item.currency_id =
+    anuncio_publico.currency_id ||
+    "BRL";
+
+item.pictures =
+    Array.isArray(
+        anuncio_publico.pictures
+    )
+        ? anuncio_publico.pictures
+        : [];
+
+item.attributes =
+    Array.isArray(
+        anuncio_publico.attributes
+    )
+        ? anuncio_publico.attributes
+        : [];
+
+item.variations =
+    Array.isArray(
+        anuncio_publico.variations
+    )
+        ? anuncio_publico.variations
+        : [];
+        
 try {
 
     const paginaUrl =
@@ -8052,6 +8100,45 @@ try {
 
 
 if (confirmar === true) {
+
+    if (
+    !anuncio_publico ||
+    typeof anuncio_publico !== "object"
+) {
+
+    return res.status(400).json({
+        ok: false,
+        reason: "missing_public_data",
+        message:
+            "Os dados públicos do anúncio não foram enviados pela extensão."
+    });
+
+}
+
+console.log(
+    "📦 Usando dados públicos enviados pela extensão:",
+    {
+        id:
+            anuncio_publico.id,
+
+        title:
+            anuncio_publico.title,
+
+        pictures:
+            Array.isArray(
+                anuncio_publico.pictures
+            )
+                ? anuncio_publico.pictures.length
+                : 0,
+
+        variations:
+            Array.isArray(
+                anuncio_publico.variations
+            )
+                ? anuncio_publico.variations.length
+                : 0
+    }
+);
 
     tituloNovo =
         String(titulo || "").trim();
@@ -10565,32 +10652,28 @@ console.log(
 
 
         } catch (error) {
-
     console.error(
         "❌ ERRO AO BUSCAR ANÚNCIO DE ORIGEM:",
         JSON.stringify(
             {
                 status: error?.response?.status || null,
-data: error?.response?.data || null,
-message: error?.message || null,
-url: error?.config?.url || null
+                data: error?.response?.data || null,
+                message: error?.message || null,
+                url: error?.config?.url || null
             },
             null,
             2
         )
     );
 
-    return res.status(
-        error.response?.status || 500
-    ).json({
+    return res.status(error?.response?.status || 500).json({
         ok: false,
         reason: "erro_buscar_anuncio_origem",
         message:
-            error.response?.data?.message ||
-            error.message ||
+            error?.response?.data?.message ||
+            error?.message ||
             "Não foi possível consultar o anúncio de origem.",
-        details:
-            error.response?.data || null
+        details: error?.response?.data || null
     });
 }
 
