@@ -9456,20 +9456,19 @@ if (
     });
 
 }
+// =================================================
+// VARIAÇÕES — NOVO MODELO USER PRODUCTS
+// =================================================
+//
+// No novo modelo do Mercado Livre:
+// - NÃO enviar novoItem.variations
+// - Cada variação vira um anúncio separado
+// - Todos usam o mesmo family_name
+// - Estoque inicial = 0
+//
+// =================================================
 
-// =================================================
-// VARIAÇÕES
-// =================================================
-//
-// Copiar TODAS as variações do anúncio original.
-// Preserva:
-// - todas as variações
-// - todas as combinações de atributos
-// - SKU de cada variação
-// - preço
-// - estoque inicial 0
-//
-// =================================================
+let itensParaCriar = [];
 
 if (
     Array.isArray(item.variations) &&
@@ -9477,26 +9476,17 @@ if (
 ) {
 
     console.log(
-        "🔄 TOTAL DE VARIAÇÕES ORIGINAIS:",
+        "🔄 ANÚNCIO COM VARIAÇÕES:",
         item.variations.length
     );
 
-    console.log(
-        "🔎 VARIAÇÕES ORIGINAIS COMPLETAS:",
-        JSON.stringify(
-            item.variations,
-            null,
-            2
-        )
-    );
-
-    const variations =
+    itensParaCriar =
         item.variations
             .map((variation, index) => {
 
-                // =================================================
+                // ==========================================
                 // SKU DA VARIAÇÃO
-                // =================================================
+                // ==========================================
 
                 const skuVariacao =
                     variation.seller_custom_field ||
@@ -9517,39 +9507,19 @@ if (
                     null;
 
 
-                console.log(
-                    `🏷️ VARIAÇÃO ${index + 1} | ID ${variation.id} | SKU:`,
-                    skuVariacao || "SEM SKU"
-                );
+                // ==========================================
+                // COMBINAÇÃO DA VARIAÇÃO
+                // ==========================================
 
-
-                // =================================================
-                // COMBINAÇÕES DE ATRIBUTOS
-                // =================================================
-
-                let combinacoes = [];
-
-
-                // Primeiro tenta o campo oficial
-                if (
+                let combinacoes =
                     Array.isArray(
                         variation.attribute_combinations
                     )
-                ) {
-
-                    combinacoes =
-                        variation.attribute_combinations;
-
-                }
+                        ? variation.attribute_combinations
+                        : [];
 
 
-                // =================================================
-                // FALLBACK
-                // =================================================
-                // Alguns anúncios podem trazer os atributos
-                // dentro de variation.attributes.
-                // =================================================
-
+                // Fallback para attributes
                 if (
                     combinacoes.length === 0 &&
                     Array.isArray(
@@ -9561,7 +9531,6 @@ if (
                         variation.attributes.filter(
                             attribute =>
                                 attribute &&
-                                attribute.id &&
                                 (
                                     attribute.value_id ||
                                     attribute.value_name
@@ -9569,10 +9538,11 @@ if (
                                 ![
                                     "SELLER_CUSTOM_FIELD",
                                     "SELLER_SKU",
-                                    "SKU"
+                                    "SKU",
+                                    "EMPTY_GTIN_REASON"
                                 ].includes(
                                     String(
-                                        attribute.id
+                                        attribute.id || ""
                                     ).toUpperCase()
                                 )
                         );
@@ -9580,84 +9550,195 @@ if (
                 }
 
 
-                // =================================================
-                // NORMALIZAR ATRIBUTOS
-                // =================================================
+                // ==========================================
+                // ATRIBUTOS DO NOVO ANÚNCIO
+                // ==========================================
 
-const attributeCombinations =
-    combinacoes
-        .filter(
-            attribute =>
-                attribute &&
-                (
-                    attribute.value_id ||
-                    attribute.value_name
-                )
-        )
-        .map(
-            attribute => {
-
-                const resultado = {};
-
-                if (
-                    attribute.id !== undefined &&
-                    attribute.id !== null &&
-                    String(attribute.id).trim() !== ""
-                ) {
-                    resultado.id =
-                        String(attribute.id);
-                }
-
-                if (
-                    attribute.name !== undefined &&
-                    attribute.name !== null &&
-                    String(attribute.name).trim() !== ""
-                ) {
-                    resultado.name =
-                        String(attribute.name).trim();
-                }
-
-                if (
-                    attribute.value_id !== undefined &&
-                    attribute.value_id !== null &&
-                    String(attribute.value_id).trim() !== ""
-                ) {
-                    resultado.value_id =
-                        attribute.value_id;
-                }
-
-                if (
-                    attribute.value_name !== undefined &&
-                    attribute.value_name !== null &&
-                    String(attribute.value_name).trim() !== ""
-                ) {
-                    resultado.value_name =
-                        String(attribute.value_name).trim();
-                }
-
-                return resultado;
-            }
-        );
+                const novosAtributos =
+                    novoItem.attributes
+                        .filter(
+                            attribute =>
+                                attribute &&
+                                attribute.id
+                        )
+                        .map(
+                            attribute => ({
+                                ...attribute
+                            })
+                        );
 
 
-                console.log(
-                    `🎨 VARIAÇÃO ${index + 1} | COMBINAÇÕES:`,
-                    JSON.stringify(
-                        attributeCombinations,
-                        null,
-                        2
-                    )
+                // ==========================================
+                // ADICIONAR ATRIBUTOS DA VARIAÇÃO
+                // ==========================================
+
+                combinacoes.forEach(
+                    combinacao => {
+
+                        if (
+                            !combinacao ||
+                            (
+                                !combinacao.value_id &&
+                                !combinacao.value_name
+                            )
+                        ) {
+                            return;
+                        }
+
+
+                        const id =
+                            combinacao.id ||
+                            null;
+
+
+                        const nome =
+                            combinacao.name ||
+                            null;
+
+
+                        const valor =
+                            combinacao.value_name ||
+                            null;
+
+
+                        // Se já existir pelo ID,
+                        // atualiza o valor.
+                        if (id) {
+
+                            const existente =
+                                novosAtributos.find(
+                                    attribute =>
+                                        String(
+                                            attribute.id
+                                        ).toUpperCase() ===
+                                        String(id).toUpperCase()
+                                );
+
+
+                            if (existente) {
+
+                                if (
+                                    combinacao.value_id
+                                ) {
+                                    existente.value_id =
+                                        combinacao.value_id;
+                                }
+
+                                if (
+                                    valor
+                                ) {
+                                    existente.value_name =
+                                        valor;
+                                }
+
+                                return;
+
+                            }
+
+                        }
+
+
+                        // Se não temos ID, usamos
+                        // atributo customizado pelo nome.
+                        if (
+                            !id &&
+                            nome &&
+                            valor
+                        ) {
+
+                            novosAtributos.push({
+                                name:
+                                    String(nome).trim(),
+                                value_name:
+                                    String(valor).trim()
+                            });
+
+                        }
+
+                    }
                 );
 
 
-                // =================================================
-                // MONTAR VARIAÇÃO
-                // =================================================
+                // ==========================================
+                // SKU
+                // ==========================================
 
-                const novaVariacao = {
+                if (
+                    skuVariacao &&
+                    String(skuVariacao).trim()
+                ) {
 
-                    attribute_combinations:
-                        attributeCombinations,
+                    const skuExistente =
+                        novosAtributos.find(
+                            attribute =>
+                                String(
+                                    attribute.id || ""
+                                ).toUpperCase() ===
+                                "SELLER_SKU"
+                        );
+
+
+                    if (skuExistente) {
+
+                        skuExistente.value_name =
+                            String(
+                                skuVariacao
+                            ).trim();
+
+                    } else {
+
+                        novosAtributos.push({
+                            id:
+                                "SELLER_SKU",
+                            value_name:
+                                String(
+                                    skuVariacao
+                                ).trim()
+                        });
+
+                    }
+
+                }
+
+
+                // ==========================================
+                // FOTOS
+                // ==========================================
+
+                let fotosVariacao =
+                    pictures;
+
+
+                if (
+                    Array.isArray(
+                        variation.picture_ids
+                    ) &&
+                    variation.picture_ids.length > 0
+                ) {
+
+                    fotosVariacao =
+                        variation.picture_ids
+                            .filter(
+                                id =>
+                                    id
+                            )
+                            .map(
+                                id => ({
+                                    id: String(id)
+                                })
+                            );
+
+                }
+
+
+                // ==========================================
+                // NOVO ITEM
+                // ==========================================
+
+                const itemVariacao = {
+
+                    category_id:
+                        item.category_id,
 
                     price:
                         Number(
@@ -9666,241 +9747,110 @@ const attributeCombinations =
                             0
                         ),
 
+                    currency_id:
+                        item.currency_id ||
+                        "BRL",
+
+                    buying_mode:
+                        "buy_it_now",
+
+                    listing_type_id:
+                        "gold_special",
+
+                    condition:
+                        "not_specified",
+
                     available_quantity:
                         0,
 
-                    picture_ids:
-                        Array.isArray(
-                            variation.picture_ids
-                        )
-                            ? variation.picture_ids
-                            : []
+                    pictures:
+                        fotosVariacao,
+
+                    attributes:
+                        novosAtributos
 
                 };
 
 
-                // =================================================
-                // SKU
-                // =================================================
+                // ==========================================
+                // FAMILY NAME
+                // ==========================================
 
                 if (
-    skuVariacao &&
-    String(
-        skuVariacao
-    ).trim()
-) {
+                    familyName
+                ) {
 
-   // =================================================
-// ATRIBUTOS DA VARIAÇÃO / SKU
-// =================================================
+                    itemVariacao.family_name =
+                        familyName;
 
-const atributosVariacao =
-    Array.isArray(
-        variation.attributes
-    )
-        ? variation.attributes
-            .filter(
-                attribute =>
-                    attribute &&
-                    attribute.id
-            )
-            .map(
-                attribute => {
-
-                    const resultado = {
-                        id:
-                            String(
-                                attribute.id
-                            )
-                    };
-
-                    if (
-                        attribute.value_id !==
-                            undefined &&
-                        attribute.value_id !==
-                            null &&
-                        String(
-                            attribute.value_id
-                        ).trim() !== ""
-                    ) {
-                        resultado.value_id =
-                            attribute.value_id;
-                    }
-
-                    if (
-                        attribute.value_name !==
-                            undefined &&
-                        attribute.value_name !==
-                            null &&
-                        String(
-                            attribute.value_name
-                        ).trim() !== ""
-                    ) {
-                        resultado.value_name =
-                            String(
-                                attribute.value_name
-                            ).trim();
-                    }
-
-                    return resultado;
                 }
-            )
-        : [];
 
 
-// =================================================
-// GARANTIR SELLER_SKU
-// =================================================
+                // ==========================================
+                // SKU DO ANÚNCIO
+                // ==========================================
 
-if (
-    skuVariacao &&
-    String(
-        skuVariacao
-    ).trim()
-) {
+                if (
+                    skuVariacao &&
+                    String(
+                        skuVariacao
+                    ).trim()
+                ) {
 
-    const skuExistente =
-        atributosVariacao.find(
-            attribute =>
-                String(
-                    attribute.id
-                ).toUpperCase() ===
-                "SELLER_SKU"
-        );
+                    itemVariacao.seller_custom_field =
+                        String(
+                            skuVariacao
+                        ).trim();
 
-    if (skuExistente) {
-
-        skuExistente.value_name =
-            String(
-                skuVariacao
-            ).trim();
-
-    } else {
-
-        atributosVariacao.push({
-            id: "SELLER_SKU",
-            value_name:
-                String(
-                    skuVariacao
-                ).trim()
-        });
-
-    }
-
-}
+                }
 
 
-// =================================================
-// ENVIAR ATRIBUTOS
-// =================================================
-
-if (
-    atributosVariacao.length > 0
-) {
-
-    novaVariacao.attributes =
-        atributosVariacao;
-
-}
-
-}
-
-
-                return novaVariacao;
-
-            });
-
-    
-    // =================================================
-    // NÃO DESCARTAR SILENCIOSAMENTE
-    // =================================================
-
-    const variacoesValidas =
-        variations.filter(
-            variation =>
-                Array.isArray(
-                    variation.attribute_combinations
-                ) &&
-                variation.attribute_combinations.length > 0
-        );
+                console.log(
+                    `📦 VARIAÇÃO ${index + 1} PREPARADA:`,
+                    JSON.stringify(
+                        {
+                            sku:
+                                skuVariacao,
+                            combinacoes,
+                            family_name:
+                                itemVariacao.family_name,
+                            atributos:
+                                itemVariacao.attributes
+                        },
+                        null,
+                        2
+                    )
+                );
 
 
-    console.log(
-        "🔄 VARIAÇÕES VÁLIDAS PARA ENVIO:",
-        variacoesValidas.length,
-        "/",
-        item.variations.length
-    );
+                return itemVariacao;
+
+            })
+            .filter(
+                itemVariacao =>
+                    itemVariacao &&
+                    itemVariacao.attributes
+            );
 
 
-    // =================================================
-    // MOSTRAR SE ALGUMA FOI PERDIDA
-    // =================================================
+} else {
 
-    if (
-        variacoesValidas.length !==
-        item.variations.length
-    ) {
+    // ==============================================
+    // ANÚNCIO SEM VARIAÇÃO
+    // ==============================================
 
-        console.warn(
-            "⚠️ ALGUMAS VARIAÇÕES NÃO POSSUEM COMBINAÇÕES DE ATRIBUTOS:",
-            JSON.stringify(
-                item.variations
-                    .filter(
-                        (original, index) =>
-                            !variacoesValidas[index]
-                    ),
-                null,
-                2
-            )
-        );
-
-    }
-
-
-    // =================================================
-    // ENVIAR VARIAÇÕES
-    // =================================================
-
-    if (
-        variacoesValidas.length > 0
-    ) {
-
-        novoItem.variations =
-            variacoesValidas;
-
-        console.log(
-            "✅ VARIAÇÕES COPIADAS:",
-            variacoesValidas.length
-        );
-
-        console.log(
-            "📦 VARIAÇÕES QUE SERÃO ENVIADAS AO ML:",
-            JSON.stringify(
-                novoItem.variations,
-                null,
-                2
-            )
-        );
-
-    } else {
-
-        console.warn(
-            "⚠️ O anúncio possui variações, mas nenhuma possui combinações de atributos válidas."
-        );
-
-    }
+    itensParaCriar = [
+        novoItem
+    ];
 
 }
-else if (familyName) {
 
-    console.log(
-        "👨‍👩‍👧 family_name detectado:",
-        familyName,
-        "→ anúncio sem variações."
-    );
 
-}
+console.log(
+    "🚀 TOTAL DE ANÚNCIOS QUE SERÃO CRIADOS:",
+    itensParaCriar.length
+);
+
             // ====================================================
             // REMOVER VALORES VAZIOS
             // ====================================================
@@ -9950,270 +9900,291 @@ if (
 
 
             // ====================================================
-            // CRIAR NOVO ANÚNCIO
-            // ====================================================
+// CRIAR NOVO(S) ANÚNCIO(S)
+// ====================================================
 
-            let novoAnuncio;
+let novosAnuncios = [];
 
+try {
+
+    console.log(
+        "🔐 TESTANDO TOKEN ML..."
+    );
+
+
+    try {
+
+        const meResponse =
+            await axios.get(
+                "https://api.mercadolibre.com/users/me",
+                {
+                    headers
+                }
+            );
+
+
+        console.log(
+            "✅ TOKEN OK:",
+            JSON.stringify(
+                {
+                    id:
+                        meResponse.data?.id,
+                    nickname:
+                        meResponse.data?.nickname
+                },
+                null,
+                2
+            )
+        );
+
+    } catch (tokenError) {
+
+        console.error(
+            "❌ TOKEN NÃO TEM ACESSO:",
+            JSON.stringify(
+                tokenError.response?.data ||
+                tokenError.message,
+                null,
+                2
+            )
+        );
+
+        throw tokenError;
+
+    }
+
+
+    // ==============================================
+    // CRIAR CADA VARIAÇÃO COMO UM ITEM SEPARADO
+    // ==============================================
+
+    for (
+        let index = 0;
+        index < itensParaCriar.length;
+        index++
+    ) {
+
+        const itemParaCriar =
+            itensParaCriar[index];
+
+
+        console.log(
+            `🚀 CRIANDO ANÚNCIO ${index + 1}/${itensParaCriar.length}:`,
+            JSON.stringify(
+                itemParaCriar,
+                null,
+                2
+            )
+        );
+
+
+        const createResponse =
+            await axios.post(
+                "https://api.mercadolibre.com/items",
+                itemParaCriar,
+                {
+                    headers: {
+
+                        ...headers,
+
+                        "Content-Type":
+                            "application/json"
+
+                    }
+                }
+            );
+
+
+        const novo =
+            createResponse.data;
+
+
+        novosAnuncios.push(
+            novo
+        );
+
+
+        console.log(
+            `✅ ANÚNCIO ${index + 1} CRIADO:`,
+            novo.id
+        );
+
+
+        // ==========================================
+        // GARANTIR ESTOQUE ZERO
+        // ==========================================
+
+        try {
+
+            await axios.put(
+                `https://api.mercadolibre.com/items/${novo.id}`,
+                {
+                    available_quantity:
+                        0
+                },
+                {
+                    headers: {
+
+                        ...headers,
+
+                        "Content-Type":
+                            "application/json"
+
+                    }
+                }
+            );
+
+
+            console.log(
+                `📦 ESTOQUE ZERO DEFINIDO: ${novo.id}`
+            );
+
+        } catch (stockError) {
+
+            console.warn(
+                `⚠️ Não foi possível colocar estoque zero em ${novo.id}:`,
+                stockError.response?.data ||
+                stockError.message
+            );
+
+        }
+
+
+        // ==========================================
+        // COPIAR DESCRIÇÃO
+        // ==========================================
+
+        if (
+            descricao &&
+            descricao.trim()
+        ) {
 
             try {
 
-                console.log("🔐 TESTANDO TOKEN ML...");
+                await axios.post(
+                    `https://api.mercadolibre.com/items/${novo.id}/description`,
+                    {
+                        plain_text:
+                            descricao
+                    },
+                    {
+                        headers: {
 
-try {
-    const meResponse = await axios.get(
-        "https://api.mercadolibre.com/users/me",
-        {
-            headers
+                            ...headers,
+
+                            "Content-Type":
+                                "application/json"
+
+                        }
+                    }
+                );
+
+
+                console.log(
+                    `📝 DESCRIÇÃO COPIADA: ${novo.id}`
+                );
+
+            } catch (
+                descriptionError
+            ) {
+
+                console.warn(
+                    `⚠️ Erro ao copiar descrição de ${novo.id}:`,
+                    descriptionError.response?.data ||
+                    descriptionError.message
+                );
+
+            }
+
         }
-    );
 
-    console.log(
-        "✅ TOKEN OK:",
-        JSON.stringify({
-            id: meResponse.data?.id,
-            nickname: meResponse.data?.nickname
-        }, null, 2)
-    );
+    }
 
-} catch (tokenError) {
+
+} catch (createError) {
 
     console.error(
-        "❌ TOKEN NÃO TEM ACESSO:",
+        "🚨 ERRO COMPLETO DO MERCADO LIVRE:",
         JSON.stringify(
-            tokenError.response?.data ||
-            tokenError.message,
+            createError.response?.data,
             null,
             2
         )
     );
 
-    throw tokenError;
+
+    const erroML =
+        createError.response?.data ||
+        null;
+
+
+    console.error(
+        "❌ Mercado Livre recusou criação:",
+        JSON.stringify(
+            erroML ||
+            createError.message,
+            null,
+            2
+        )
+    );
+
+
+    return res.status(
+        createError.response?.status ||
+        500
+    ).json({
+
+        ok:
+            false,
+
+        reason:
+            "create_item_error",
+
+        message:
+            erroML?.message ||
+            erroML?.error ||
+            createError.message ||
+            "Mercado Livre recusou a criação do anúncio.",
+
+        details:
+            erroML,
+
+        item_origem:
+            item.id,
+
+        anuncios_criados_antes_do_erro:
+            novosAnuncios.map(
+                anuncio => ({
+                    id:
+                        anuncio.id,
+                    permalink:
+                        anuncio.permalink
+                })
+            )
+
+    });
+
 }
 
 
+// ====================================================
+// ANÚNCIO PRINCIPAL PARA O RESTANTE DO CÓDIGO
+// ====================================================
+
+const novoAnuncio =
+    novosAnuncios[0];
+
+
 console.log(
-    "🧪 TESTE CAMPOS DE PUBLICAÇÃO:",
-    JSON.stringify({
-        title: novoItem.title,
-        family_name: novoItem.family_name,
-        category_id: novoItem.category_id,
-        listing_type_id: novoItem.listing_type_id,
-        condition: novoItem.condition,
-        attributes_count: novoItem.attributes?.length || 0
-    }, null, 2)
-);
-                const createResponse =
-                    await axios.post(
-                        "https://api.mercadolibre.com/items",
-                        novoItem,
-                        {
-                            headers: {
-
-                                ...headers,
-
-                                "Content-Type":
-                                    "application/json"
-
-                            }
-                        }
-                    );
-
-
-                novoAnuncio =
-                    createResponse.data;
-
-
-            } catch (createError) {
-
-                console.error(
-    "🚨 ERRO COMPLETO DO MERCADO LIVRE:",
-    JSON.stringify(
-        createError.response?.data,
-        null,
-        2
+    "✅ TODOS OS ANÚNCIOS CRIADOS:",
+    novosAnuncios.map(
+        anuncio => anuncio.id
     )
 );
 
-                const erroML =
-                    createError.response?.data ||
-                    null;
+           
 
-
-                console.error(
-                    "❌ Mercado Livre recusou criação:",
-                    JSON.stringify(
-                        erroML ||
-                        createError.message,
-                        null,
-                        2
-                    )
-                );
-
-
-                return res.status(
-                    createError.response?.status ||
-                    500
-                ).json({
-
-                    ok: false,
-
-                    reason:
-                        "create_item_error",
-
-                    message:
-                        erroML?.message ||
-                        erroML?.error ||
-                        createError.message ||
-                        "Mercado Livre recusou a criação do anúncio.",
-
-                    details:
-                        erroML,
-
-                    item_origem:
-                        item.id,
-
-                    dados_enviados: {
-
-                        title:
-                            novoItem.title,
-
-                        category_id:
-                            novoItem.category_id,
-
-                        price:
-                            novoItem.price,
-
-                        condition:
-                            novoItem.condition,
-
-                        listing_type_id:
-                            novoItem.listing_type_id,
-
-                        pictures:
-                            novoItem.pictures?.length ||
-                            0,
-
-                        attributes:
-                            novoItem.attributes?.length ||
-                            0,
-
-                        variations:
-                            novoItem.variations?.length ||
-                            0
-
-                    }
-
-                });
-
-            }
-
-
-            // ====================================================
-            // ESTOQUE ZERO
-            // ====================================================
-
-            let estoqueAtualizado =
-                false;
-
-
-            try {
-
-                const updateResponse =
-                    await axios.put(
-                        `https://api.mercadolibre.com/items/${novoAnuncio.id}`,
-                        {
-                            available_quantity:
-                                0
-                        },
-                        {
-                            headers: {
-
-                                ...headers,
-
-                                "Content-Type":
-                                    "application/json"
-
-                            }
-                        }
-                    );
-
-
-                if (
-                    updateResponse.data &&
-                    Number(
-                        updateResponse.data
-                            .available_quantity
-                    ) === 0
-                ) {
-
-                    estoqueAtualizado =
-                        true;
-
-                }
-
-            } catch (stockError) {
-
-                console.warn(
-                    "⚠️ Não foi possível colocar estoque zero:",
-                    stockError.response?.data ||
-                    stockError.message
-                );
-
-            }
-
-
-            // ====================================================
-            // COPIAR DESCRIÇÃO
-            // ====================================================
-
-            let descricaoCriada =
-                false;
-
-
-            if (
-                descricao &&
-                descricao.trim()
-            ) {
-
-                try {
-
-                    await axios.post(
-                        `https://api.mercadolibre.com/items/${novoAnuncio.id}/description`,
-                        {
-                            plain_text:
-                                descricao
-                        },
-                        {
-                            headers: {
-
-                                ...headers,
-
-                                "Content-Type":
-                                    "application/json"
-
-                            }
-                        }
-                    );
-
-
-                    descricaoCriada =
-                        true;
-
-
-                } catch (descriptionCreateError) {
-
-                    console.warn(
-                        "⚠️ Erro ao copiar descrição:",
-                        descriptionCreateError.response?.data ||
-                        descriptionCreateError.message
-                    );
-
-                }
-
-            }
-
-
+        
             // ====================================================
             // LOG
             // ====================================================
