@@ -7582,11 +7582,12 @@ app.post(
         try {
 
             const {
-                chave,
-                device_id,
-                link,
-                confirmar
-            } = req.body;
+    chave,
+    device_id,
+    link,
+    confirmar,
+    dimensoes
+} = req.body;
 
 
             // ====================================================
@@ -9059,6 +9060,92 @@ if (familyName) {
 
 }
 
+// ====================================================
+// DIMENSÕES DA EMBALAGEM INFORMADAS PELO USUÁRIO
+// ====================================================
+
+if (
+    dimensoes &&
+    dimensoes.altura &&
+    dimensoes.largura &&
+    dimensoes.comprimento &&
+    dimensoes.peso
+) {
+
+    const altura = Number(dimensoes.altura);
+    const largura = Number(dimensoes.largura);
+    const comprimento = Number(dimensoes.comprimento);
+
+    // Usuário informa peso em KG.
+    // Mercado Livre recebe em GRAMAS.
+    const pesoGramas =
+        Math.round(
+            Number(dimensoes.peso) * 1000
+        );
+
+    if (
+        Number.isFinite(altura) &&
+        Number.isFinite(largura) &&
+        Number.isFinite(comprimento) &&
+        Number.isFinite(pesoGramas) &&
+        altura > 0 &&
+        largura > 0 &&
+        comprimento > 0 &&
+        pesoGramas > 0
+    ) {
+
+        const idsEmbalagem = [
+            "SELLER_PACKAGE_HEIGHT",
+            "SELLER_PACKAGE_WIDTH",
+            "SELLER_PACKAGE_LENGTH",
+            "SELLER_PACKAGE_WEIGHT"
+        ];
+
+        // Remove valores antigos desses campos,
+        // caso existam.
+        novoItem.attributes =
+            novoItem.attributes.filter(
+                attribute =>
+                    !idsEmbalagem.includes(
+                        String(attribute.id).toUpperCase()
+                    )
+            );
+
+        novoItem.attributes.push(
+            {
+                id: "SELLER_PACKAGE_HEIGHT",
+                value_name: `${Math.round(altura)} cm`
+            },
+            {
+                id: "SELLER_PACKAGE_WIDTH",
+                value_name: `${Math.round(largura)} cm`
+            },
+            {
+                id: "SELLER_PACKAGE_LENGTH",
+                value_name: `${Math.round(comprimento)} cm`
+            },
+            {
+                id: "SELLER_PACKAGE_WEIGHT",
+                value_name: `${pesoGramas} g`
+            }
+        );
+
+        console.log(
+            "📦 Dimensões informadas pelo usuário:",
+            JSON.stringify(
+                {
+                    altura: `${Math.round(altura)} cm`,
+                    largura: `${Math.round(largura)} cm`,
+                    comprimento: `${Math.round(comprimento)} cm`,
+                    peso: `${pesoGramas} g`
+                },
+                null,
+                2
+            )
+        );
+    }
+}
+
 
 // ====================================================
 // NÃO DEIXAR O MERCADO LIVRE RECEBER VALOR INVENTADO
@@ -9204,6 +9291,7 @@ if (
         "→ variações não serão enviadas."
     );
 }
+
 
 
             // ====================================================
