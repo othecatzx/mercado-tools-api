@@ -7800,13 +7800,14 @@ try {
 
                 console.log("🔐 Buscando anúncio de origem com token da conta conectada...");
 
-const itemResponse =
-    await axios.get(
-        `https://api.mercadolibre.com/items/${itemId}?include_attributes=all`,
-        {
-            headers
+const itemResponse = await axios.get(
+    `https://api.mercadolibre.com/items/${itemId}?include_attributes=all`,
+    {
+        headers: {
+            Accept: "application/json"
         }
-    );
+    }
+);
 
     const item = itemResponse.data;
 
@@ -10333,17 +10334,10 @@ console.log(
         "❌ ERRO AO BUSCAR ANÚNCIO DE ORIGEM:",
         JSON.stringify(
             {
-                status:
-                    error.response?.status || null,
-
-                data:
-                    error.response?.data || null,
-
-                message:
-                    error.message || null,
-
-                url:
-                    error.config?.url || null
+                status: error?.response?.status || null,
+data: error?.response?.data || null,
+message: error?.message || null,
+url: error?.config?.url || null
             },
             null,
             2
