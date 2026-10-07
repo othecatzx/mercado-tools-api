@@ -8968,6 +8968,8 @@ console.log(
     )
 );
 
+
+
 // ====================================================
 // FAMILY NAME
 // ====================================================
@@ -8977,19 +8979,16 @@ let familyName =
     item.familyName ||
     null;
 
-// Se o anúncio possui variações, NÃO inventamos
-// family_name, pois o Mercado Livre não permite
-// family_name junto com variations.
-const possuiVariacoes =
-    Array.isArray(item.variations) &&
-    item.variations.length > 0;
+// Se o anúncio original não possuir family_name,
+// criamos um nome baseado no produto.
+//
+// IMPORTANTE:
+// Mesmo que o anúncio possua variações,
+// algumas categorias do Mercado Livre exigem
+// family_name. Portanto NÃO devemos deixar
+// familyName nulo apenas por existir variações.
 
-// Só cria family_name automaticamente quando
-// o anúncio NÃO possui variações.
-if (
-    !familyName &&
-    !possuiVariacoes
-) {
+if (!familyName) {
 
     const marca =
         attributes.find(
@@ -9023,10 +9022,16 @@ console.log(
     "👨‍👩‍👧 family_name final:",
     familyName,
     "| possui variações:",
-    possuiVariacoes,
+    Array.isArray(item.variations) &&
+    item.variations.length > 0,
     "| quantidade:",
     item.variations?.length || 0
 );
+
+
+
+
+
 
 const novoItem = {
 
@@ -9204,19 +9209,24 @@ if (
 
 }
 
-           // =================================================
+// =================================================
 // VARIAÇÕES
 // =================================================
 
-// IMPORTANTE:
-// O Mercado Livre não permite enviar "variations"
-// junto com "family_name".
+// Copiar as variações do anúncio original.
+//
+// O family_name NÃO impede o envio das variações.
+// Algumas categorias exigem os dois campos.
 
 if (
-    !familyName &&
     Array.isArray(item.variations) &&
     item.variations.length > 0
 ) {
+
+    console.log(
+        "🔄 Variações originais encontradas:",
+        item.variations.length
+    );
 
     const variations =
         item.variations
@@ -9242,21 +9252,31 @@ if (
                                     id: attribute.id
                                 };
 
-                                if (attribute.value_id) {
+                                if (
+                                    attribute.value_id
+                                ) {
+
                                     resultado.value_id =
                                         attribute.value_id;
+
                                 }
 
-                                if (attribute.value_name) {
+                                if (
+                                    attribute.value_name
+                                ) {
+
                                     resultado.value_name =
                                         attribute.value_name;
+
                                 }
 
                                 return resultado;
+
                             })
                         : [];
 
                 return {
+
                     attribute_combinations:
                         attributeCombinations,
 
@@ -9267,7 +9287,8 @@ if (
                             0
                         ),
 
-                    available_quantity: 0,
+                    available_quantity:
+                        0,
 
                     picture_ids:
                         Array.isArray(
@@ -9275,37 +9296,18 @@ if (
                         )
                             ? variation.picture_ids
                             : []
+
                 };
+
             })
             .filter(
                 variation =>
                     variation.attribute_combinations.length > 0
             );
 
+
     if (variations.length > 0) {
 
-
-        console.log(
-    "🔄 VARIAÇÕES ORIGINAIS:",
-    JSON.stringify(
-        item.variations,
-        null,
-        2
-    )
-);
-
-console.log(
-    "🔄 VARIAÇÕES PREPARADAS PARA CÓPIA:",
-    JSON.stringify(
-        variations,
-        null,
-        2
-    )
-);
-
-novoItem.variations =
-    variations;
-    
         novoItem.variations =
             variations;
 
@@ -9313,7 +9315,24 @@ novoItem.variations =
             "🔄 Variações copiadas:",
             variations.length
         );
+
+        console.log(
+            "🔄 Variações enviadas:",
+            JSON.stringify(
+                variations,
+                null,
+                2
+            )
+        );
+
+    } else {
+
+        console.warn(
+            "⚠️ O anúncio possui variações, mas nenhuma combinação de atributos válida foi encontrada."
+        );
+
     }
+
 
 } else if (familyName) {
 
