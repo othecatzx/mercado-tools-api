@@ -8310,7 +8310,7 @@ try {
             // ====================================================
 
             let listingTypeId =
-                "gold_special";
+                "gold_pro";
 
 
             try {
@@ -8336,7 +8336,7 @@ try {
                     listingTypes.find(
                         type =>
                             type.id ===
-                            "gold_special"
+                            "gold_pro"
                     );
 
 
@@ -9261,7 +9261,7 @@ const novoItem = {
         "buy_it_now",
 
     listing_type_id:
-        "gold_special",
+        "gold_pro",
 
     condition:
         "not_specified",
@@ -9755,7 +9755,7 @@ if (
                         "buy_it_now",
 
                     listing_type_id:
-                        "gold_special",
+                        "gold_pro",
 
                     condition:
                         "not_specified",
