@@ -7861,13 +7861,14 @@ try {
         "🔄 Buscando variações completas do anúncio..."
     );
 
-    const variationsResponse =
-    await axios.get(
-        `https://api.mercadolibre.com/items/${itemId}/variations`,
-        {
-            headers
+    const variationsResponse = await axios.get(
+    `https://api.mercadolibre.com/items/${itemId}/variations`,
+    {
+        headers: {
+            Accept: "application/json"
         }
-    );
+    }
+);
 
 if (
     Array.isArray(
@@ -7908,13 +7909,14 @@ console.log(
                 `🔎 Buscando variação individual ${variacaoBasica.id}...`
             );
 
-            const variacaoResponse =
-    await axios.get(
-        `https://api.mercadolibre.com/items/${itemId}/variations/${variacaoBasica.id}?include_attributes=all`,
-        {
-            headers
+            const variacaoResponse = await axios.get(
+    `https://api.mercadolibre.com/items/${itemId}/variations/${variacaoBasica.id}?include_attributes=all`,
+    {
+        headers: {
+            Accept: "application/json"
         }
-    );
+    }
+);
 
             const variacaoCompleta =
     variacaoResponse.data;
