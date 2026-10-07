@@ -9780,13 +9780,10 @@ if (
                 // NOVO ITEM
                 // ==========================================
 
-                const itemVariacao = {
+               const itemVariacao = {
 
     category_id:
         item.category_id,
-
-    title:
-        tituloNovo,
 
     price:
         Number(
@@ -9819,18 +9816,21 @@ if (
 };
 
 
-                // ==========================================
-                // FAMILY NAME
-                // ==========================================
+// ==========================================
+// FAMILY NAME
+// ==========================================
 
-                if (
-                    familyName
-                ) {
+if (tituloNovo) {
 
-                    itemVariacao.family_name =
-                        familyName;
+    itemVariacao.family_name =
+        tituloNovo;
 
-                }
+} else if (familyName) {
+
+    itemVariacao.family_name =
+        familyName;
+
+}
 
 
                 // ==========================================
