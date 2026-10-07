@@ -9075,6 +9075,44 @@ if (familyName) {
 
 }
 
+// =================================================
+// SKU / CÓDIGO INTERNO
+// =================================================
+
+const skuAnuncio =
+    item.seller_custom_field ||
+    item.seller_sku ||
+    item.sku ||
+    item.attributes?.find(
+        attribute =>
+            [
+                "SELLER_CUSTOM_FIELD",
+                "SELLER_SKU",
+                "SKU"
+            ].includes(
+                String(attribute.id).toUpperCase()
+            )
+    )?.value_name ||
+    null;
+
+if (skuAnuncio) {
+
+    novoItem.seller_custom_field =
+        String(skuAnuncio).trim();
+
+    console.log(
+        "🏷️ SKU do anúncio original:",
+        skuAnuncio
+    );
+
+} else {
+
+    console.log(
+        "⚠️ Anúncio original não possui SKU no nível do anúncio."
+    );
+
+}
+
 // ====================================================
 // DIMENSÕES DA EMBALAGEM INFORMADAS PELO USUÁRIO
 // ====================================================
@@ -9231,6 +9269,27 @@ if (
     const variations =
         item.variations
             .map(variation => {
+const skuVariacao =
+    variation.seller_custom_field ||
+    variation.seller_sku ||
+    variation.sku ||
+    variation.attributes?.find(
+        attribute =>
+            [
+                "SELLER_CUSTOM_FIELD",
+                "SELLER_SKU",
+                "SKU"
+            ].includes(
+                String(attribute.id).toUpperCase()
+            )
+    )?.value_name ||
+    null;
+
+console.log(
+    "🏷️ SKU da variação:",
+    variation.id,
+    skuVariacao || "SEM SKU"
+);
 
                 const attributeCombinations =
                     Array.isArray(
@@ -9275,29 +9334,35 @@ if (
                             })
                         : [];
 
-                return {
+               return {
+    attribute_combinations:
+        attributeCombinations,
 
-                    attribute_combinations:
-                        attributeCombinations,
+    price:
+        Number(
+            variation.price ||
+            item.price ||
+            0
+        ),
 
-                    price:
-                        Number(
-                            variation.price ||
-                            item.price ||
-                            0
-                        ),
+    available_quantity: 0,
 
-                    available_quantity:
-                        0,
+    picture_ids:
+        Array.isArray(
+            variation.picture_ids
+        )
+            ? variation.picture_ids
+            : [],
 
-                    picture_ids:
-                        Array.isArray(
-                            variation.picture_ids
-                        )
-                            ? variation.picture_ids
-                            : []
-
-                };
+    ...(skuVariacao
+        ? {
+            seller_custom_field:
+                String(
+                    skuVariacao
+                ).trim()
+        }
+        : {})
+};
 
             })
             .filter(
