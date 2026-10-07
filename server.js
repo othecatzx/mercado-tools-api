@@ -7808,30 +7808,45 @@ itemResponse =
 
     const item = itemResponse.data;
 
-    const tituloNovo =
-    String(titulo || "").trim();
+    // ====================================================
+// VALIDAR NOVO TÍTULO
+// SOMENTE NA CONFIRMAÇÃO DA CLONAGEM
+// ====================================================
 
-const tituloOriginal =
-    String(item.title || "").trim();
+let tituloNovo = "";
 
-if (!tituloNovo) {
-    return res.status(400).json({
-        ok: false,
-        reason: "titulo_obrigatorio",
-        message: "O título do novo anúncio é obrigatório."
-    });
-}
+if (confirmar === true) {
 
-if (
-    tituloNovo.toLowerCase() ===
-    tituloOriginal.toLowerCase()
-) {
-    return res.status(400).json({
-        ok: false,
-        reason: "titulo_igual",
-        message:
-            "O novo título não pode ser igual ao título do anúncio original."
-    });
+    tituloNovo =
+        String(titulo || "").trim();
+
+    const tituloOriginal =
+        String(item.title || "").trim();
+
+    if (!tituloNovo) {
+
+        return res.status(400).json({
+            ok: false,
+            reason: "titulo_obrigatorio",
+            message:
+                "O título do novo anúncio é obrigatório."
+        });
+
+    }
+
+    if (
+        tituloNovo.toLowerCase() ===
+        tituloOriginal.toLowerCase()
+    ) {
+
+        return res.status(400).json({
+            ok: false,
+            reason: "titulo_igual",
+            message:
+                "O novo título não pode ser igual ao título do anúncio original."
+        });
+
+    }
 }
 
     // ====================================================
