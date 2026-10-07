@@ -9250,11 +9250,16 @@ if (
 // =================================================
 // VARIAÇÕES
 // =================================================
-
-// Copiar as variações do anúncio original.
 //
-// O family_name NÃO impede o envio das variações.
-// Algumas categorias exigem os dois campos.
+// Copiar TODAS as variações do anúncio original.
+// Preserva:
+// - todas as variações
+// - todas as combinações de atributos
+// - SKU de cada variação
+// - preço
+// - estoque inicial 0
+//
+// =================================================
 
 if (
     Array.isArray(item.variations) &&
@@ -9262,57 +9267,143 @@ if (
 ) {
 
     console.log(
-        "🔄 Variações originais encontradas:",
+        "🔄 TOTAL DE VARIAÇÕES ORIGINAIS:",
         item.variations.length
+    );
+
+    console.log(
+        "🔎 VARIAÇÕES ORIGINAIS COMPLETAS:",
+        JSON.stringify(
+            item.variations,
+            null,
+            2
+        )
     );
 
     const variations =
         item.variations
-            .map(variation => {
-const skuVariacao =
-    variation.seller_custom_field ||
-    variation.seller_sku ||
-    variation.sku ||
-    variation.attributes?.find(
-        attribute =>
-            [
-                "SELLER_CUSTOM_FIELD",
-                "SELLER_SKU",
-                "SKU"
-            ].includes(
-                String(attribute.id).toUpperCase()
-            )
-    )?.value_name ||
-    null;
+            .map((variation, index) => {
 
-console.log(
-    "🏷️ SKU da variação:",
-    variation.id,
-    skuVariacao || "SEM SKU"
-);
+                // =================================================
+                // SKU DA VARIAÇÃO
+                // =================================================
 
-                const attributeCombinations =
+                const skuVariacao =
+                    variation.seller_custom_field ||
+                    variation.seller_sku ||
+                    variation.sku ||
+                    variation.attributes?.find(
+                        attribute =>
+                            [
+                                "SELLER_CUSTOM_FIELD",
+                                "SELLER_SKU",
+                                "SKU"
+                            ].includes(
+                                String(
+                                    attribute?.id || ""
+                                ).toUpperCase()
+                            )
+                    )?.value_name ||
+                    null;
+
+
+                console.log(
+                    `🏷️ VARIAÇÃO ${index + 1} | ID ${variation.id} | SKU:`,
+                    skuVariacao || "SEM SKU"
+                );
+
+
+                // =================================================
+                // COMBINAÇÕES DE ATRIBUTOS
+                // =================================================
+
+                let combinacoes = [];
+
+
+                // Primeiro tenta o campo oficial
+                if (
                     Array.isArray(
                         variation.attribute_combinations
                     )
-                        ? variation.attribute_combinations
-                            .filter(
-                                attribute =>
-                                    attribute &&
-                                    attribute.id &&
-                                    (
-                                        attribute.value_id ||
-                                        attribute.value_name
-                                    )
-                            )
-                            .map(attribute => {
+                ) {
+
+                    combinacoes =
+                        variation.attribute_combinations;
+
+                }
+
+
+                // =================================================
+                // FALLBACK
+                // =================================================
+                // Alguns anúncios podem trazer os atributos
+                // dentro de variation.attributes.
+                // =================================================
+
+                if (
+                    combinacoes.length === 0 &&
+                    Array.isArray(
+                        variation.attributes
+                    )
+                ) {
+
+                    combinacoes =
+                        variation.attributes.filter(
+                            attribute =>
+                                attribute &&
+                                attribute.id &&
+                                (
+                                    attribute.value_id ||
+                                    attribute.value_name
+                                ) &&
+                                ![
+                                    "SELLER_CUSTOM_FIELD",
+                                    "SELLER_SKU",
+                                    "SKU"
+                                ].includes(
+                                    String(
+                                        attribute.id
+                                    ).toUpperCase()
+                                )
+                        );
+
+                }
+
+
+                // =================================================
+                // NORMALIZAR ATRIBUTOS
+                // =================================================
+
+                const attributeCombinations =
+                    combinacoes
+                        .filter(
+                            attribute =>
+                                attribute &&
+                                attribute.id &&
+                                (
+                                    attribute.value_id ||
+                                    attribute.value_name
+                                )
+                        )
+                        .map(
+                            attribute => {
 
                                 const resultado = {
-                                    id: attribute.id
+                                    id:
+                                        String(
+                                            attribute.id
+                                        )
                                 };
 
+
                                 if (
-                                    attribute.value_id
+                                    attribute.value_id !==
+                                    undefined &&
+                                    attribute.value_id !==
+                                    null &&
+                                    String(
+                                        attribute.value_id
+                                    ).trim() !== ""
                                 ) {
 
                                     resultado.value_id =
@@ -9320,71 +9411,161 @@ console.log(
 
                                 }
 
+
                                 if (
-                                    attribute.value_name
+                                    attribute.value_name !==
+                                    undefined &&
+                                    attribute.value_name !==
+                                    null &&
+                                    String(
+                                        attribute.value_name
+                                    ).trim() !== ""
                                 ) {
 
                                     resultado.value_name =
-                                        attribute.value_name;
+                                        String(
+                                            attribute.value_name
+                                        ).trim();
 
                                 }
 
+
                                 return resultado;
 
-                            })
-                        : [];
-
-               return {
-    attribute_combinations:
-        attributeCombinations,
-
-    price:
-        Number(
-            variation.price ||
-            item.price ||
-            0
-        ),
-
-    available_quantity: 0,
-
-    picture_ids:
-        Array.isArray(
-            variation.picture_ids
-        )
-            ? variation.picture_ids
-            : [],
-
-    ...(skuVariacao
-        ? {
-            seller_custom_field:
-                String(
-                    skuVariacao
-                ).trim()
-        }
-        : {})
-};
-
-            })
-            .filter(
-                variation =>
-                    variation.attribute_combinations.length > 0
-            );
+                            }
+                        );
 
 
-    if (variations.length > 0) {
+                console.log(
+                    `🎨 VARIAÇÃO ${index + 1} | COMBINAÇÕES:`,
+                    JSON.stringify(
+                        attributeCombinations,
+                        null,
+                        2
+                    )
+                );
+
+
+                // =================================================
+                // MONTAR VARIAÇÃO
+                // =================================================
+
+                const novaVariacao = {
+
+                    attribute_combinations:
+                        attributeCombinations,
+
+                    price:
+                        Number(
+                            variation.price ||
+                            item.price ||
+                            0
+                        ),
+
+                    available_quantity:
+                        0,
+
+                    picture_ids:
+                        Array.isArray(
+                            variation.picture_ids
+                        )
+                            ? variation.picture_ids
+                            : []
+
+                };
+
+
+                // =================================================
+                // SKU
+                // =================================================
+
+                if (
+                    skuVariacao &&
+                    String(
+                        skuVariacao
+                    ).trim()
+                ) {
+
+                    novaVariacao.seller_custom_field =
+                        String(
+                            skuVariacao
+                        ).trim();
+
+                }
+
+
+                return novaVariacao;
+
+            });
+
+    
+    // =================================================
+    // NÃO DESCARTAR SILENCIOSAMENTE
+    // =================================================
+
+    const variacoesValidas =
+        variations.filter(
+            variation =>
+                Array.isArray(
+                    variation.attribute_combinations
+                ) &&
+                variation.attribute_combinations.length > 0
+        );
+
+
+    console.log(
+        "🔄 VARIAÇÕES VÁLIDAS PARA ENVIO:",
+        variacoesValidas.length,
+        "/",
+        item.variations.length
+    );
+
+
+    // =================================================
+    // MOSTRAR SE ALGUMA FOI PERDIDA
+    // =================================================
+
+    if (
+        variacoesValidas.length !==
+        item.variations.length
+    ) {
+
+        console.warn(
+            "⚠️ ALGUMAS VARIAÇÕES NÃO POSSUEM COMBINAÇÕES DE ATRIBUTOS:",
+            JSON.stringify(
+                item.variations
+                    .filter(
+                        (original, index) =>
+                            !variacoesValidas[index]
+                    ),
+                null,
+                2
+            )
+        );
+
+    }
+
+
+    // =================================================
+    // ENVIAR VARIAÇÕES
+    // =================================================
+
+    if (
+        variacoesValidas.length > 0
+    ) {
 
         novoItem.variations =
-            variations;
+            variacoesValidas;
 
         console.log(
-            "🔄 Variações copiadas:",
-            variations.length
+            "✅ VARIAÇÕES COPIADAS:",
+            variacoesValidas.length
         );
 
         console.log(
-            "🔄 Variações enviadas:",
+            "📦 VARIAÇÕES QUE SERÃO ENVIADAS AO ML:",
             JSON.stringify(
-                variations,
+                novoItem.variations,
                 null,
                 2
             )
@@ -9393,21 +9574,21 @@ console.log(
     } else {
 
         console.warn(
-            "⚠️ O anúncio possui variações, mas nenhuma combinação de atributos válida foi encontrada."
+            "⚠️ O anúncio possui variações, mas nenhuma possui combinações de atributos válidas."
         );
 
     }
 
-
-} else if (familyName) {
+}
+else if (familyName) {
 
     console.log(
         "👨‍👩‍👧 family_name detectado:",
         familyName,
-        "→ variações não serão enviadas."
+        "→ anúncio sem variações."
     );
-}
 
+}
 
 
             // ====================================================
