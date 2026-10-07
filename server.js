@@ -9584,66 +9584,60 @@ if (
                 // NORMALIZAR ATRIBUTOS
                 // =================================================
 
-                const attributeCombinations =
-                    combinacoes
-                        .filter(
-                            attribute =>
-                                attribute &&
-                                attribute.id &&
-                                (
-                                    attribute.value_id ||
-                                    attribute.value_name
-                                )
-                        )
-                        .map(
-                            attribute => {
+const attributeCombinations =
+    combinacoes
+        .filter(
+            attribute =>
+                attribute &&
+                (
+                    attribute.value_id ||
+                    attribute.value_name
+                )
+        )
+        .map(
+            attribute => {
 
-                                const resultado = {
-                                    id:
-                                        String(
-                                            attribute.id
-                                        )
-                                };
+                const resultado = {};
 
+                if (
+                    attribute.id !== undefined &&
+                    attribute.id !== null &&
+                    String(attribute.id).trim() !== ""
+                ) {
+                    resultado.id =
+                        String(attribute.id);
+                }
 
-                                if (
-                                    attribute.value_id !==
-                                    undefined &&
-                                    attribute.value_id !==
-                                    null &&
-                                    String(
-                                        attribute.value_id
-                                    ).trim() !== ""
-                                ) {
+                if (
+                    attribute.name !== undefined &&
+                    attribute.name !== null &&
+                    String(attribute.name).trim() !== ""
+                ) {
+                    resultado.name =
+                        String(attribute.name).trim();
+                }
 
-                                    resultado.value_id =
-                                        attribute.value_id;
+                if (
+                    attribute.value_id !== undefined &&
+                    attribute.value_id !== null &&
+                    String(attribute.value_id).trim() !== ""
+                ) {
+                    resultado.value_id =
+                        attribute.value_id;
+                }
 
-                                }
+                if (
+                    attribute.value_name !== undefined &&
+                    attribute.value_name !== null &&
+                    String(attribute.value_name).trim() !== ""
+                ) {
+                    resultado.value_name =
+                        String(attribute.value_name).trim();
+                }
 
-
-                                if (
-                                    attribute.value_name !==
-                                    undefined &&
-                                    attribute.value_name !==
-                                    null &&
-                                    String(
-                                        attribute.value_name
-                                    ).trim() !== ""
-                                ) {
-
-                                    resultado.value_name =
-                                        String(
-                                            attribute.value_name
-                                        ).trim();
-
-                                }
-
-
-                                return resultado;
-
-                            }
-                        );
+                return resultado;
+            }
+        );
 
 
                 console.log(
