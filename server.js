@@ -7807,6 +7807,70 @@ itemResponse =
 
     const item = itemResponse.data;
 
+    // ====================================================
+// 🔄 BUSCAR VARIAÇÕES COMPLETAS
+// ====================================================
+
+try {
+
+    console.log(
+        "🔄 Buscando variações completas do anúncio..."
+    );
+
+    const variationsResponse =
+        await axios.get(
+            `https://api.mercadolibre.com/items/${itemId}/variations?include_attributes=all`,
+            {
+                headers
+            }
+        );
+
+    if (
+        Array.isArray(
+            variationsResponse.data
+        )
+    ) {
+
+        item.variations =
+            variationsResponse.data;
+
+        console.log(
+            "✅ VARIAÇÕES OBTIDAS PELO ENDPOINT:",
+            item.variations.length
+        );
+
+        console.log(
+            "🔎 VARIAÇÕES COMPLETAS:",
+            JSON.stringify(
+                item.variations,
+                null,
+                2
+            )
+        );
+
+    } else {
+
+        console.warn(
+            "⚠️ Endpoint de variações não retornou um array."
+        );
+
+    }
+
+} catch (variationsError) {
+
+    console.error(
+        "❌ ERRO AO BUSCAR VARIAÇÕES:",
+        JSON.stringify(
+            variationsError.response?.data ||
+            variationsError.message,
+            null,
+            2
+        )
+    );
+
+}
+
+
 console.log(
     "✅ Anúncio de origem encontrado:",
     item.id,
@@ -9248,16 +9312,21 @@ if (
 }
 
 // =================================================
-// VARIAÇÕES
+// 🔄 VARIAÇÕES
 // =================================================
 //
-// Copiar TODAS as variações do anúncio original.
+// Copiar as variações do anúncio original.
+//
 // Preserva:
-// - todas as variações
-// - todas as combinações de atributos
-// - SKU de cada variação
+// - combinações de atributos
+// - atributos da variação
+// - SELLER_SKU
+// - seller_custom_field quando existir
 // - preço
-// - estoque inicial 0
+// - imagens
+//
+// Estoque inicial:
+// 0
 //
 // =================================================
 
@@ -9280,228 +9349,383 @@ if (
         )
     );
 
+
     const variations =
         item.variations
-            .map((variation, index) => {
+            .map(
+                (
+                    variation,
+                    index
+                ) => {
 
-                // =================================================
-                // SKU DA VARIAÇÃO
-                // =================================================
+                    // ==========================================
+                    // SKU DA VARIAÇÃO
+                    // ==========================================
 
-                const skuVariacao =
-                    variation.seller_custom_field ||
-                    variation.seller_sku ||
-                    variation.sku ||
-                    variation.attributes?.find(
-                        attribute =>
-                            [
-                                "SELLER_CUSTOM_FIELD",
-                                "SELLER_SKU",
-                                "SKU"
-                            ].includes(
-                                String(
-                                    attribute?.id || ""
-                                ).toUpperCase()
-                            )
-                    )?.value_name ||
-                    null;
-
-
-                console.log(
-                    `🏷️ VARIAÇÃO ${index + 1} | ID ${variation.id} | SKU:`,
-                    skuVariacao || "SEM SKU"
-                );
-
-
-                // =================================================
-                // COMBINAÇÕES DE ATRIBUTOS
-                // =================================================
-
-                let combinacoes = [];
-
-
-                // Primeiro tenta o campo oficial
-                if (
-                    Array.isArray(
-                        variation.attribute_combinations
-                    )
-                ) {
-
-                    combinacoes =
-                        variation.attribute_combinations;
-
-                }
-
-
-                // =================================================
-                // FALLBACK
-                // =================================================
-                // Alguns anúncios podem trazer os atributos
-                // dentro de variation.attributes.
-                // =================================================
-
-                if (
-                    combinacoes.length === 0 &&
-                    Array.isArray(
-                        variation.attributes
-                    )
-                ) {
-
-                    combinacoes =
-                        variation.attributes.filter(
-                            attribute =>
-                                attribute &&
-                                attribute.id &&
-                                (
-                                    attribute.value_id ||
-                                    attribute.value_name
-                                ) &&
-                                ![
-                                    "SELLER_CUSTOM_FIELD",
-                                    "SELLER_SKU",
-                                    "SKU"
-                                ].includes(
-                                    String(
-                                        attribute.id
-                                    ).toUpperCase()
+                    const atributosVariacao =
+                        Array.isArray(
+                            variation.attributes
+                        )
+                            ? variation.attributes
+                                .filter(
+                                    attribute =>
+                                        attribute &&
+                                        attribute.id &&
+                                        (
+                                            attribute.value_id !==
+                                                undefined ||
+                                            attribute.value_name !==
+                                                undefined
+                                        )
                                 )
+                                .map(
+                                    attribute => {
+
+                                        const resultado = {
+                                            id:
+                                                String(
+                                                    attribute.id
+                                                )
+                                        };
+
+                                        if (
+                                            attribute.value_id !==
+                                                undefined &&
+                                            attribute.value_id !==
+                                                null &&
+                                            String(
+                                                attribute.value_id
+                                            ).trim() !== ""
+                                        ) {
+
+                                            resultado.value_id =
+                                                attribute.value_id;
+
+                                        }
+
+                                        if (
+                                            attribute.value_name !==
+                                                undefined &&
+                                            attribute.value_name !==
+                                                null &&
+                                            String(
+                                                attribute.value_name
+                                            ).trim() !== ""
+                                        ) {
+
+                                            resultado.value_name =
+                                                String(
+                                                    attribute.value_name
+                                                ).trim();
+
+                                        }
+
+                                        return resultado;
+
+                                    }
+                                )
+                            : [];
+
+
+                    // ==========================================
+                    // SELLER SKU
+                    // ==========================================
+
+                    const sellerSkuAttribute =
+                        atributosVariacao.find(
+                            attribute =>
+                                String(
+                                    attribute.id
+                                ).toUpperCase() ===
+                                "SELLER_SKU"
                         );
 
-                }
+
+                    const skuVariacao =
+                        sellerSkuAttribute?.value_name ||
+                        variation.seller_sku ||
+                        variation.seller_custom_field ||
+                        variation.sku ||
+                        null;
 
 
-                // =================================================
-                // NORMALIZAR ATRIBUTOS
-                // =================================================
+                    console.log(
+                        `🏷️ VARIAÇÃO ${index + 1} | ID ${variation.id}`
+                    );
 
-                const attributeCombinations =
-                    combinacoes
-                        .filter(
-                            attribute =>
-                                attribute &&
-                                attribute.id &&
-                                (
-                                    attribute.value_id ||
-                                    attribute.value_name
-                                )
+                    console.log(
+                        "   SKU:",
+                        skuVariacao ||
+                        "SEM SKU"
+                    );
+
+                    console.log(
+                        "   ATRIBUTOS:",
+                        JSON.stringify(
+                            atributosVariacao,
+                            null,
+                            2
                         )
-                        .map(
-                            attribute => {
+                    );
 
-                                const resultado = {
-                                    id:
+
+                    // ==========================================
+                    // COMBINAÇÕES
+                    // ==========================================
+
+                    let combinacoes =
+                        Array.isArray(
+                            variation.attribute_combinations
+                        )
+                            ? variation.attribute_combinations
+                            : [];
+
+
+                    // Fallback
+                    if (
+                        combinacoes.length === 0 &&
+                        Array.isArray(
+                            variation.attributes
+                        )
+                    ) {
+
+                        combinacoes =
+                            variation.attributes.filter(
+                                attribute => {
+
+                                    if (
+                                        !attribute ||
+                                        !attribute.id
+                                    ) {
+                                        return false;
+                                    }
+
+                                    const id =
                                         String(
                                             attribute.id
-                                        )
-                                };
+                                        ).toUpperCase();
 
+                                    if (
+                                        id ===
+                                            "SELLER_SKU" ||
+                                        id ===
+                                            "SELLER_CUSTOM_FIELD" ||
+                                        id ===
+                                            "SKU"
+                                    ) {
+                                        return false;
+                                    }
 
-                                if (
-                                    attribute.value_id !==
-                                    undefined &&
-                                    attribute.value_id !==
-                                    null &&
-                                    String(
-                                        attribute.value_id
-                                    ).trim() !== ""
-                                ) {
-
-                                    resultado.value_id =
-                                        attribute.value_id;
+                                    return (
+                                        attribute.value_id ||
+                                        attribute.value_name
+                                    );
 
                                 }
+                            );
+
+                    }
 
 
-                                if (
-                                    attribute.value_name !==
-                                    undefined &&
-                                    attribute.value_name !==
-                                    null &&
-                                    String(
+                    const attributeCombinations =
+                        combinacoes
+                            .filter(
+                                attribute =>
+                                    attribute &&
+                                    attribute.id &&
+                                    (
+                                        attribute.value_id ||
                                         attribute.value_name
-                                    ).trim() !== ""
-                                ) {
+                                    )
+                            )
+                            .map(
+                                attribute => {
 
-                                    resultado.value_name =
+                                    const resultado = {
+                                        id:
+                                            String(
+                                                attribute.id
+                                            )
+                                    };
+
+
+                                    if (
+                                        attribute.value_id !==
+                                            undefined &&
+                                        attribute.value_id !==
+                                            null &&
+                                        String(
+                                            attribute.value_id
+                                        ).trim() !== ""
+                                    ) {
+
+                                        resultado.value_id =
+                                            attribute.value_id;
+
+                                    }
+
+
+                                    if (
+                                        attribute.value_name !==
+                                            undefined &&
+                                        attribute.value_name !==
+                                            null &&
                                         String(
                                             attribute.value_name
-                                        ).trim();
+                                        ).trim() !== ""
+                                    ) {
+
+                                        resultado.value_name =
+                                            String(
+                                                attribute.value_name
+                                            ).trim();
+
+                                    }
+
+
+                                    return resultado;
 
                                 }
+                            );
 
 
-                                return resultado;
-
-                            }
-                        );
-
-
-                console.log(
-                    `🎨 VARIAÇÃO ${index + 1} | COMBINAÇÕES:`,
-                    JSON.stringify(
-                        attributeCombinations,
-                        null,
-                        2
-                    )
-                );
-
-
-                // =================================================
-                // MONTAR VARIAÇÃO
-                // =================================================
-
-                const novaVariacao = {
-
-                    attribute_combinations:
-                        attributeCombinations,
-
-                    price:
-                        Number(
-                            variation.price ||
-                            item.price ||
-                            0
-                        ),
-
-                    available_quantity:
-                        0,
-
-                    picture_ids:
-                        Array.isArray(
-                            variation.picture_ids
+                    console.log(
+                        `🎨 VARIAÇÃO ${index + 1} | COMBINAÇÕES:`,
+                        JSON.stringify(
+                            attributeCombinations,
+                            null,
+                            2
                         )
-                            ? variation.picture_ids
-                            : []
-
-                };
+                    );
 
 
-                // =================================================
-                // SKU
-                // =================================================
+                    // ==========================================
+                    // NOVA VARIAÇÃO
+                    // ==========================================
 
-                if (
-                    skuVariacao &&
-                    String(
-                        skuVariacao
-                    ).trim()
-                ) {
+                    const novaVariacao = {
 
-                    novaVariacao.seller_custom_field =
+                        attribute_combinations:
+                            attributeCombinations,
+
+                        price:
+                            Number(
+                                variation.price ||
+                                item.price ||
+                                0
+                            ),
+
+                        available_quantity:
+                            0,
+
+                        picture_ids:
+                            Array.isArray(
+                                variation.picture_ids
+                            )
+                                ? variation.picture_ids
+                                : []
+
+                    };
+
+
+                    // ==========================================
+                    // ⭐ COPIAR ATRIBUTOS DA VARIAÇÃO
+                    // ==========================================
+
+                    if (
+                        atributosVariacao.length > 0
+                    ) {
+
+                        novaVariacao.attributes =
+                            atributosVariacao;
+
+                    }
+
+
+                    // ==========================================
+                    // SKU OFICIAL
+                    // ==========================================
+
+                    if (
+                        skuVariacao &&
                         String(
                             skuVariacao
-                        ).trim();
+                        ).trim()
+                    ) {
+
+                        const skuLimpo =
+                            String(
+                                skuVariacao
+                            ).trim();
+
+
+                        // O Mercado Livre recomenda
+                        // SELLER_SKU dentro de attributes.
+
+                        if (
+                            !Array.isArray(
+                                novaVariacao.attributes
+                            )
+                        ) {
+
+                            novaVariacao.attributes = [];
+
+                        }
+
+
+                        const skuExistente =
+                            novaVariacao.attributes.find(
+                                attribute =>
+                                    String(
+                                        attribute.id
+                                    ).toUpperCase() ===
+                                    "SELLER_SKU"
+                            );
+
+
+                        if (
+                            skuExistente
+                        ) {
+
+                            skuExistente.value_name =
+                                skuLimpo;
+
+                        } else {
+
+                            novaVariacao.attributes.push({
+                                id:
+                                    "SELLER_SKU",
+
+                                value_name:
+                                    skuLimpo
+                            });
+
+                        }
+
+
+                        console.log(
+                            `🏷️ SKU COPIADO → VARIAÇÃO ${index + 1}:`,
+                            skuLimpo
+                        );
+
+                    } else {
+
+                        console.log(
+                            `⚠️ VARIAÇÃO ${index + 1} SEM SKU`
+                        );
+
+                    }
+
+
+                    return novaVariacao;
 
                 }
+            );
 
 
-                return novaVariacao;
-
-            });
-
-    
-    // =================================================
-    // NÃO DESCARTAR SILENCIOSAMENTE
-    // =================================================
+    // ==========================================
+    // VALIDAR VARIAÇÕES
+    // ==========================================
 
     const variacoesValidas =
         variations.filter(
@@ -9514,41 +9738,16 @@ if (
 
 
     console.log(
-        "🔄 VARIAÇÕES VÁLIDAS PARA ENVIO:",
+        "🔄 VARIAÇÕES VÁLIDAS:",
         variacoesValidas.length,
         "/",
         item.variations.length
     );
 
 
-    // =================================================
-    // MOSTRAR SE ALGUMA FOI PERDIDA
-    // =================================================
-
-    if (
-        variacoesValidas.length !==
-        item.variations.length
-    ) {
-
-        console.warn(
-            "⚠️ ALGUMAS VARIAÇÕES NÃO POSSUEM COMBINAÇÕES DE ATRIBUTOS:",
-            JSON.stringify(
-                item.variations
-                    .filter(
-                        (original, index) =>
-                            !variacoesValidas[index]
-                    ),
-                null,
-                2
-            )
-        );
-
-    }
-
-
-    // =================================================
-    // ENVIAR VARIAÇÕES
-    // =================================================
+    // ==========================================
+    // NÃO PERDER VARIAÇÕES
+    // ==========================================
 
     if (
         variacoesValidas.length > 0
@@ -9557,13 +9756,15 @@ if (
         novoItem.variations =
             variacoesValidas;
 
-        console.log(
-            "✅ VARIAÇÕES COPIADAS:",
-            variacoesValidas.length
-        );
 
         console.log(
-            "📦 VARIAÇÕES QUE SERÃO ENVIADAS AO ML:",
+            "✅ VARIAÇÕES COPIADAS:",
+            novoItem.variations.length
+        );
+
+
+        console.log(
+            "📦 PAYLOAD FINAL DAS VARIAÇÕES:",
             JSON.stringify(
                 novoItem.variations,
                 null,
@@ -9573,22 +9774,21 @@ if (
 
     } else {
 
-        console.warn(
-            "⚠️ O anúncio possui variações, mas nenhuma possui combinações de atributos válidas."
+        console.error(
+            "❌ O ANÚNCIO ORIGINAL POSSUI VARIAÇÕES, MAS NENHUMA PÔDE SER MONTADA."
         );
 
     }
 
 }
-else if (familyName) {
+else {
 
     console.log(
-        "👨‍👩‍👧 family_name detectado:",
-        familyName,
-        "→ anúncio sem variações."
+        "ℹ️ Anúncio original não possui variações."
     );
 
 }
+
             // ====================================================
             // REMOVER VALORES VAZIOS
             // ====================================================
