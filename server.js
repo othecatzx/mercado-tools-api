@@ -10239,37 +10239,40 @@ console.log(
 
             return res.json({
 
-                ok: true,
+    ok: true,
 
-                modo:
-                    "clonado",
+    modo: "clonado",
 
-                item_id:
-                    novoAnuncio.id,
+    anuncios:
+        novosAnuncios.map(
+            anuncio => ({
 
                 id:
-                    novoAnuncio.id,
+                    anuncio.id,
 
                 permalink:
-                    novoAnuncio.permalink ||
-                    `https://www.mercadolivre.com.br/p/${novoAnuncio.id}`,
+                    anuncio.permalink ||
+                    `https://www.mercadolivre.com.br/p/${anuncio.id}`,
 
                 title:
-                    novoAnuncio.title,
+                    anuncio.title
 
-                estoque:
-                    0,
+            })
+        ),
 
-                estoque_atualizado:
-                    estoqueAtualizado,
+    total_anuncios:
+        novosAnuncios.length,
 
-                descricao_copiada:
-                    descricaoCriada,
+    estoque:
+        0,
 
-                anuncio_origem:
-                    item.id
+    descricao_copiada:
+        true,
 
-            });
+    anuncio_origem:
+        item.id
+
+});
 
 
         } catch (error) {
