@@ -7833,6 +7833,14 @@ if (
 
     const variacoesBasicas =
         variationsResponse.data;
+console.log(
+    "🚨🚨🚨 VARIAÇÕES BÁSICAS DO MERCADO LIVRE:",
+    JSON.stringify(
+        variacoesBasicas,
+        null,
+        2
+    )
+);
 
     console.log(
         "✅ VARIAÇÕES ENCONTRADAS:",
@@ -7965,6 +7973,14 @@ console.log(
         }
 
     }
+console.log(
+    "🚨🚨🚨 VARIAÇÕES MESCLADAS ANTES DO CLONE:",
+    JSON.stringify(
+        variacoesCompletas,
+        null,
+        2
+    )
+);
 
     item.variations =
         variacoesCompletas;
