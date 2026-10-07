@@ -7865,11 +7865,75 @@ if (
                 );
 
             const variacaoCompleta =
-                variacaoResponse.data;
+    variacaoResponse.data;
 
-            variacoesCompletas.push(
-                variacaoCompleta
-            );
+// ====================================================
+// 🔗 JUNTAR DADOS DA VARIAÇÃO BÁSICA + COMPLETA
+// ====================================================
+//
+// A consulta /variations traz:
+// - attribute_combinations
+// - price
+// - picture_ids
+// - etc.
+//
+// A consulta individual traz:
+// - attributes
+// - SELLER_SKU
+// - outros atributos específicos
+//
+// NÃO podemos substituir a básica pela completa,
+// pois perderíamos attribute_combinations.
+// ====================================================
+
+const variacaoFinal = {
+    ...variacaoBasica,
+    ...variacaoCompleta,
+
+    // Preservar combinações da consulta básica
+    // caso a consulta individual não as retorne.
+    attribute_combinations:
+        Array.isArray(
+            variacaoCompleta.attribute_combinations
+        ) &&
+        variacaoCompleta.attribute_combinations.length > 0
+            ? variacaoCompleta.attribute_combinations
+            : (
+                Array.isArray(
+                    variacaoBasica.attribute_combinations
+                )
+                    ? variacaoBasica.attribute_combinations
+                    : []
+            ),
+
+    // Preservar atributos da consulta individual
+    // principalmente SELLER_SKU.
+    attributes:
+        Array.isArray(
+            variacaoCompleta.attributes
+        )
+            ? variacaoCompleta.attributes
+            : (
+                Array.isArray(
+                    variacaoBasica.attributes
+                )
+                    ? variacaoBasica.attributes
+                    : []
+            )
+};
+
+variacoesCompletas.push(
+    variacaoFinal
+);
+
+console.log(
+    `🔗 Variação ${variacaoBasica.id} mesclada:`,
+    JSON.stringify(
+        variacaoFinal,
+        null,
+        2
+    )
+);
 
             console.log(
                 `✅ Variação ${variacaoBasica.id} completa:`,
@@ -9616,15 +9680,118 @@ if (
     ).trim()
 ) {
 
-    novaVariacao.attributes = [
-        {
+   // =================================================
+// ATRIBUTOS DA VARIAÇÃO / SKU
+// =================================================
+
+const atributosVariacao =
+    Array.isArray(
+        variation.attributes
+    )
+        ? variation.attributes
+            .filter(
+                attribute =>
+                    attribute &&
+                    attribute.id
+            )
+            .map(
+                attribute => {
+
+                    const resultado = {
+                        id:
+                            String(
+                                attribute.id
+                            )
+                    };
+
+                    if (
+                        attribute.value_id !==
+                            undefined &&
+                        attribute.value_id !==
+                            null &&
+                        String(
+                            attribute.value_id
+                        ).trim() !== ""
+                    ) {
+                        resultado.value_id =
+                            attribute.value_id;
+                    }
+
+                    if (
+                        attribute.value_name !==
+                            undefined &&
+                        attribute.value_name !==
+                            null &&
+                        String(
+                            attribute.value_name
+                        ).trim() !== ""
+                    ) {
+                        resultado.value_name =
+                            String(
+                                attribute.value_name
+                            ).trim();
+                    }
+
+                    return resultado;
+                }
+            )
+        : [];
+
+
+// =================================================
+// GARANTIR SELLER_SKU
+// =================================================
+
+if (
+    skuVariacao &&
+    String(
+        skuVariacao
+    ).trim()
+) {
+
+    const skuExistente =
+        atributosVariacao.find(
+            attribute =>
+                String(
+                    attribute.id
+                ).toUpperCase() ===
+                "SELLER_SKU"
+        );
+
+    if (skuExistente) {
+
+        skuExistente.value_name =
+            String(
+                skuVariacao
+            ).trim();
+
+    } else {
+
+        atributosVariacao.push({
             id: "SELLER_SKU",
             value_name:
                 String(
                     skuVariacao
                 ).trim()
-        }
-    ];
+        });
+
+    }
+
+}
+
+
+// =================================================
+// ENVIAR ATRIBUTOS
+// =================================================
+
+if (
+    atributosVariacao.length > 0
+) {
+
+    novaVariacao.attributes =
+        atributosVariacao;
+
+}
 
 }
 
