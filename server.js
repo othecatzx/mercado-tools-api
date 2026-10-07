@@ -9209,7 +9209,7 @@ console.log(
             familyName: item.familyName,
             category_id: item.category_id,
             seller_id: item.seller_id,
-            title: tituloNovo,
+            title: titulo,
             listing_type_id:
                 item.listing_type_id,
             attributes_count:
