@@ -10218,8 +10218,6 @@ console.log(
                             descricao_copiada:
                                 descricaoCriada,
 
-                            estoque_atualizado:
-                                estoqueAtualizado
 
                         }
 
