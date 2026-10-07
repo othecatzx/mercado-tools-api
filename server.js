@@ -7800,11 +7800,14 @@ try {
 
                 console.log("🔐 Buscando anúncio de origem com token da conta conectada...");
 
-itemResponse =
-    await axios.get(
-        `https://api.mercadolibre.com/items/${itemId}?include_attributes=all`,
-        { headers }
-    );
+itemResponse = await axios.get(
+    `https://api.mercadolibre.com/items/${itemId}?include_attributes=all`,
+    {
+        headers: {
+            Accept: "application/json"
+        }
+    }
+);
 
     const item = itemResponse.data;
 
@@ -7862,7 +7865,9 @@ try {
     await axios.get(
         `https://api.mercadolibre.com/items/${itemId}/variations`,
         {
-            headers
+            headers: {
+                Accept: "application/json"
+            }
         }
     );
 
@@ -7906,12 +7911,14 @@ console.log(
             );
 
             const variacaoResponse =
-                await axios.get(
-                    `https://api.mercadolibre.com/items/${itemId}/variations/${variacaoBasica.id}?include_attributes=all`,
-                    {
-                        headers
-                    }
-                );
+    await axios.get(
+        `https://api.mercadolibre.com/items/${itemId}/variations/${variacaoBasica.id}?include_attributes=all`,
+        {
+            headers: {
+                Accept: "application/json"
+            }
+        }
+    );
 
             const variacaoCompleta =
     variacaoResponse.data;
@@ -9286,18 +9293,17 @@ console.log(
 
 
 const novoItem = {
-
     category_id:
         item.category_id,
 
+    family_name:
+        tituloNovo,
+
     price:
-        Number(
-            item.price || 0
-        ),
+        Number(item.price || 0),
 
     currency_id:
-        item.currency_id ||
-        "BRL",
+        item.currency_id || "BRL",
 
     buying_mode:
         "buy_it_now",
@@ -9314,12 +9320,8 @@ const novoItem = {
     pictures:
         pictures,
 
-        title:
-    tituloNovo,
-
     attributes:
         attributes
-
 };
 
 
@@ -9780,10 +9782,13 @@ if (
                 // NOVO ITEM
                 // ==========================================
 
-               const itemVariacao = {
+              const itemVariacao = {
 
     category_id:
         item.category_id,
+
+    family_name:
+        tituloNovo,
 
     price:
         Number(
@@ -9793,8 +9798,7 @@ if (
         ),
 
     currency_id:
-        item.currency_id ||
-        "BRL",
+        item.currency_id || "BRL",
 
     buying_mode:
         "buy_it_now",
@@ -9813,6 +9817,7 @@ if (
 
     attributes:
         novosAtributos
+
 };
 
 
