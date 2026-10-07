@@ -7586,6 +7586,7 @@ app.post(
     device_id,
     link,
     confirmar,
+    titulo,
     dimensoes
 } = req.body;
 
@@ -7806,6 +7807,32 @@ itemResponse =
     );
 
     const item = itemResponse.data;
+
+    const tituloNovo =
+    String(titulo || "").trim();
+
+const tituloOriginal =
+    String(item.title || "").trim();
+
+if (!tituloNovo) {
+    return res.status(400).json({
+        ok: false,
+        reason: "titulo_obrigatorio",
+        message: "O título do novo anúncio é obrigatório."
+    });
+}
+
+if (
+    tituloNovo.toLowerCase() ===
+    tituloOriginal.toLowerCase()
+) {
+    return res.status(400).json({
+        ok: false,
+        reason: "titulo_igual",
+        message:
+            "O novo título não pode ser igual ao título do anúncio original."
+    });
+}
 
     // ====================================================
 // 🔄 BUSCAR VARIAÇÕES COMPLETAS
@@ -9168,6 +9195,7 @@ console.log(
             familyName: item.familyName,
             category_id: item.category_id,
             seller_id: item.seller_id,
+            title: tituloNovo,
             listing_type_id:
                 item.listing_type_id,
             attributes_count:
