@@ -7800,14 +7800,13 @@ try {
 
                 console.log("🔐 Buscando anúncio de origem com token da conta conectada...");
 
-itemResponse = await axios.get(
-    `https://api.mercadolibre.com/items/${itemId}?include_attributes=all`,
-    {
-        headers: {
-            Accept: "application/json"
+const itemResponse =
+    await axios.get(
+        `https://api.mercadolibre.com/items/${itemId}?include_attributes=all`,
+        {
+            headers
         }
-    }
-);
+    );
 
     const item = itemResponse.data;
 
@@ -7865,9 +7864,7 @@ try {
     await axios.get(
         `https://api.mercadolibre.com/items/${itemId}/variations`,
         {
-            headers: {
-                Accept: "application/json"
-            }
+            headers
         }
     );
 
@@ -7914,9 +7911,7 @@ console.log(
     await axios.get(
         `https://api.mercadolibre.com/items/${itemId}/variations/${variacaoBasica.id}?include_attributes=all`,
         {
-            headers: {
-                Accept: "application/json"
-            }
+            headers
         }
     );
 
@@ -10331,78 +10326,43 @@ console.log(
 });
 
 
+
         } catch (error) {
 
-            console.error(
-                "❌ Erro geral ao clonar anúncio:",
-                error.response?.data ||
-                error.message ||
-                error
-            );
+    console.error(
+        "❌ ERRO AO BUSCAR ANÚNCIO DE ORIGEM:",
+        JSON.stringify(
+            {
+                status:
+                    error.response?.status || null,
 
-
-            if (error.statusCode) {
-
-                return res.status(
-                    error.statusCode
-                ).json({
-
-                    ok: false,
-
-                    reason:
-                        error.reason,
-
-                    message:
-                        error.message
-
-                });
-
-            }
-
-
-            if (error.response) {
-
-                return res.status(
-                    error.response.status ||
-                    500
-                ).json({
-
-                    ok: false,
-
-                    reason:
-                        "mercadolivre_api_error",
-
-                    message:
-                        error.response.data?.message ||
-                        "Erro ao consultar Mercado Livre",
-
-                    details:
-                        error.response.data ||
-                        null
-
-                });
-
-            }
-
-
-            return res.status(500).json({
-
-                ok: false,
-
-                reason:
-                    "clone_error",
+                data:
+                    error.response?.data || null,
 
                 message:
-                    error.message ||
-                    "Erro interno ao clonar anúncio.",
+                    error.message || null,
 
-                details:
-                    error.response?.data ||
-                    null
+                url:
+                    error.config?.url || null
+            },
+            null,
+            2
+        )
+    );
 
-            });
-
-        }
+    return res.status(
+        error.response?.status || 500
+    ).json({
+        ok: false,
+        reason: "erro_buscar_anuncio_origem",
+        message:
+            error.response?.data?.message ||
+            error.message ||
+            "Não foi possível consultar o anúncio de origem.",
+        details:
+            error.response?.data || null
+    });
+}
 
     }
 );
