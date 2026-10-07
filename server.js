@@ -7798,27 +7798,252 @@ try {
 
             try {
 
-                console.log("🔐 Buscando anúncio de origem com token da conta conectada...");
+              console.log(
+    "🌐 Buscando página pública do anúncio de origem:",
+    itemId
+);
 
-console.log("🌐 Buscando anúncio público de origem SEM token da conta conectada...");
+let item;
 
-itemResponse = await axios.get(
-    `https://api.mercadolibre.com/items/${itemId}?include_attributes=all`,
-    {
-        headers: {
-            Accept: "application/json"
+try {
+
+    const paginaUrl =
+        `https://www.mercadolivre.com.br/p/${itemId}`;
+
+    const paginaResponse =
+        await axios.get(
+            paginaUrl,
+            {
+                headers: {
+                    "User-Agent":
+                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/154.0.0.0 Safari/537.36",
+                    "Accept":
+                        "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+                    "Accept-Language":
+                        "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7"
+                },
+
+                timeout: 15000,
+
+                maxRedirects: 5
+            }
+        );
+
+    const html =
+        paginaResponse.data;
+
+    console.log(
+        "✅ Página pública recebida:",
+        html?.length || 0,
+        "bytes"
+    );
+
+    // ====================================================
+    // TENTAR ENCONTRAR DADOS EMBUTIDOS NA PÁGINA
+    // ====================================================
+
+    const candidatos = [
+
+        // JSON-LD
+        ...(
+            html.match(
+                /<script[^>]*type=["']application\/ld\+json["'][^>]*>[\s\S]*?<\/script>/gi
+            ) || []
+        ),
+
+        // Estados JSON comuns do Mercado Livre
+        ...(
+            html.match(
+                /<script[^>]*>[\s\S]*?ML[\s\S]*?<\/script>/gi
+            ) || []
+        )
+
+    ];
+
+    console.log(
+        "🔎 Blocos candidatos encontrados:",
+        candidatos.length
+    );
+
+    // ====================================================
+    // TENTAR TITLE / META
+    // ====================================================
+
+    const tituloMeta =
+        html.match(
+            /<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i
+        )?.[1] ||
+        html.match(
+            /<meta[^>]+name=["']title["'][^>]+content=["']([^"']+)["']/i
+        )?.[1] ||
+        null;
+
+    console.log(
+        "📝 Título encontrado na página:",
+        tituloMeta
+    );
+
+    // ====================================================
+    // IMAGENS
+    // ====================================================
+
+    const imagens = [];
+
+    const regexImagens =
+        /https?:\/\/[^"'\\\s]+/gi;
+
+    const urls =
+        html.match(regexImagens) || [];
+
+    for (const urlBruta of urls) {
+
+        let url;
+
+        try {
+
+            url =
+                urlBruta
+                    .replace(/\\u002F/g, "/")
+                    .replace(/\\\//g, "/");
+
+        } catch {
+
+            continue;
+
         }
+
+        if (
+            !url.includes("mlstatic.com") &&
+            !url.includes("mercadolibre")
+        ) {
+            continue;
+        }
+
+        if (
+            !/\.(jpg|jpeg|png|webp)/i.test(url)
+        ) {
+            continue;
+        }
+
+        if (
+            !imagens.includes(url)
+        ) {
+
+            imagens.push(url);
+
+        }
+
     }
-);
 
-console.log(
-    "✅ Anúncio de origem encontrado:",
-    itemResponse.data?.id,
-    "|",
-    itemResponse.data?.title
-);
+    console.log(
+        "🖼️ Imagens encontradas:",
+        imagens.length
+    );
 
-    const item = itemResponse.data;
+    // ====================================================
+    // DEBUG
+    // ====================================================
+
+    console.log(
+        "📄 URL final:",
+        paginaResponse.request?.res?.responseUrl ||
+        paginaUrl
+    );
+
+    console.log(
+        "📦 Primeiras imagens:",
+        imagens.slice(0, 5)
+    );
+
+    // ====================================================
+    // MONTAR ITEM MÍNIMO
+    // ====================================================
+
+    item = {
+
+        id:
+            itemId,
+
+        title:
+            tituloMeta ||
+            `Anúncio ${itemId}`,
+
+        pictures:
+            imagens.map(url => ({
+                source: url
+            })),
+
+        attributes: [],
+
+        variations: []
+
+    };
+
+    console.log(
+        "✅ DADOS PÚBLICOS INICIAIS OBTIDOS:",
+        JSON.stringify(
+            {
+                id: item.id,
+                title: item.title,
+                pictures:
+                    item.pictures.length
+            },
+            null,
+            2
+        )
+    );
+
+} catch (publicError) {
+
+    console.error(
+        "❌ ERRO AO BUSCAR PÁGINA PÚBLICA:",
+        JSON.stringify(
+            {
+                status:
+                    publicError?.response?.status ||
+                    null,
+
+                message:
+                    publicError?.message ||
+                    null,
+
+                url:
+                    publicError?.config?.url ||
+                    null,
+
+                data:
+                    publicError?.response?.data
+                        ? String(
+                            publicError.response.data
+                        ).slice(0, 1000)
+                        : null
+            },
+            null,
+            2
+        )
+    );
+
+    return res.status(
+        publicError?.response?.status ||
+        500
+    ).json({
+
+        ok: false,
+
+        reason:
+            "erro_pagina_publica",
+
+        message:
+            "Não foi possível acessar a página pública do anúncio.",
+
+        details:
+            publicError?.response?.data ||
+            publicError?.message ||
+            null
+
+    });
+
+}
 
     // ====================================================
 // VALIDAR NOVO TÍTULO
