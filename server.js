@@ -7591,76 +7591,7 @@ app.post(
     anuncio_publico
 } = req.body;
 
-chrome.runtime.onMessage.addListener(
-    (mensagem, sender, sendResponse) => {
 
-        if (
-            mensagem?.acao ===
-            "mlsupport_abrir_aba_clonagem"
-        ) {
-
-            chrome.tabs.create(
-                {
-                    url: mensagem.url,
-                    active: false
-                },
-                tab => {
-
-                    if (
-                        chrome.runtime.lastError ||
-                        !tab
-                    ) {
-
-                        sendResponse({
-                            ok: false,
-                            message:
-                                chrome.runtime.lastError?.message ||
-                                "Não foi possível abrir a aba."
-                        });
-
-                        return;
-                    }
-
-
-                    sendResponse({
-                        ok: true,
-                        tabId: tab.id
-                    });
-
-                }
-            );
-
-
-            return true;
-        }
-
-
-        if (
-            mensagem?.acao ===
-            "mlsupport_fechar_aba"
-        ) {
-
-            const tabId =
-                Number(mensagem.tabId);
-
-
-            if (
-                Number.isInteger(tabId) &&
-                tabId > 0
-            ) {
-
-                chrome.tabs.remove(
-                    tabId,
-                    () => {}
-                );
-
-            }
-
-            return false;
-        }
-
-    }
-);
 
 let tituloNovo = "";
             // ====================================================
@@ -7925,28 +7856,6 @@ item.variations =
         : [];
 
 try {
-
-    const paginaUrl =
-        `https://www.mercadolivre.com.br/p/${itemId}`;
-
-    const paginaResponse =
-        await axios.get(
-            paginaUrl,
-            {
-                headers: {
-                    "User-Agent":
-                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/154.0.0.0 Safari/537.36",
-                    "Accept":
-                        "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-                    "Accept-Language":
-                        "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7"
-                },
-
-                timeout: 15000,
-
-                maxRedirects: 5
-            }
-        );
 
     const html =
         paginaResponse.data;
@@ -8525,27 +8434,6 @@ console.log(
                     details:
                         itemError.response?.data ||
                         null
-
-                });
-
-            }
-
-
-            const item =
-                itemResponse.data;
-
-
-            if (!item) {
-
-                return res.status(404).json({
-
-                    ok: false,
-
-                    reason:
-                        "item_not_found",
-
-                    message:
-                        "Anúncio não encontrado."
 
                 });
 
