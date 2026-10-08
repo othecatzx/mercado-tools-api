@@ -3591,13 +3591,39 @@ app.get("/api/mercadolivre/rx", async (req, res) => {
         // CONSULTAR ITEM
         // ====================================================
 
-        const itemResponse =
-            await axios.get(
-                `https://api.mercadolibre.com/items/${itemId}`,
-                {
-                    headers
-                }
-            );
+        let itemResponse;
+
+if (
+    anuncio_publico &&
+    anuncio_publico.id &&
+    /^MLB\d+$/i.test(
+        String(anuncio_publico.id)
+    )
+) {
+    console.log(
+        "🌐 Usando anúncio público recebido:",
+        anuncio_publico.id
+    );
+
+    itemResponse = {
+        data: anuncio_publico
+    };
+
+} else {
+
+    console.log(
+        "🔎 Buscando anúncio pela API:",
+        itemId
+    );
+
+    itemResponse =
+        await axios.get(
+            `https://api.mercadolibre.com/items/${itemId}`,
+            {
+                headers
+            }
+        );
+}
 
 
         const item =
@@ -7591,7 +7617,30 @@ app.post(
     anuncio_publico
 } = req.body;
 
+// ====================================================
+// USAR MLB EXTRAÍDO DA PÁGINA PÚBLICA
+// ====================================================
 
+if (
+    anuncio_publico &&
+    anuncio_publico.id &&
+    /^MLB\d+$/i.test(
+        String(anuncio_publico.id)
+    )
+) {
+
+    itemId =
+        String(anuncio_publico.id)
+            .trim()
+            .toUpperCase();
+
+    userProductId = null;
+
+    console.log(
+        "🌐 MLB recebido da página pública:",
+        itemId
+    );
+}
 
 let tituloNovo = "";
             // ====================================================
@@ -7621,67 +7670,144 @@ let tituloNovo = "";
 
             }
 
+         // ====================================================
+// IDENTIFICAR MLB OU MLBU
+// ====================================================
 
-            // ====================================================
-            // EXTRAIR MLB
-            // ====================================================
+let itemId = String(link)
+    .trim()
+    .toUpperCase();
 
-            let itemId =
-                String(link)
-                    .trim()
-                    .toUpperCase();
+let userProductId = null;
 
+// ----------------------------------------------------
+// MLBU
+// ----------------------------------------------------
 
-            /*
-             * Aceita:
-             *
-             * MLB123456789
-             * MLB-123456789
-             * MLB_123456789
-             * MLBU123456789
-             * MLBU-123456789
-             *
-             * URLs:
-             *
-             * https://produto.mercadolivre.com.br/MLB-123456789
-             * https://www.mercadolivre.com.br/...
-             */
+const matchMLBU = itemId.match(/MLBU[-_]?(\d+)/i);
 
-            const match =
-                itemId.match(
-                    /MLB(?:U)?[-_]?(\d+)/i
-                );
+if (matchMLBU) {
 
+    userProductId =
+        `MLBU${matchMLBU[1]}`;
 
-            if (match) {
+    console.log(
+        "🆔 User Product recebido:",
+        userProductId
+    );
+}
 
-                itemId =
-                    `MLB${match[1]}`;
+// ----------------------------------------------------
+// MLB tradicional
+// ----------------------------------------------------
 
-            }
+if (!userProductId) {
 
+    const matchMLB =
+        itemId.match(/MLB[-_]?(\d+)/i);
 
-            if (!/^MLB\d+$/i.test(itemId)) {
+    if (matchMLB) {
 
-                return res.status(400).json({
-                    ok: false,
-                    reason: "invalid_item_id",
-                    message:
-                        "Não foi possível identificar um código MLB válido."
-                });
+        itemId =
+            `MLB${matchMLB[1]}`;
 
-            }
+        console.log(
+            "🆔 MLB recebido:",
+            itemId
+        );
+    }
+}
 
+// ----------------------------------------------------
+// Se veio URL contendo MLBU
+// ----------------------------------------------------
 
-            itemId =
-                itemId.toUpperCase();
+if (!userProductId) {
 
+    const matchUrlMLBU =
+        itemId.match(/\/up\/(MLBU\d+)/i);
 
-            console.log(
-                `🔄 Iniciando clonagem do anúncio ${itemId}`
-            );
+    if (matchUrlMLBU) {
 
+        userProductId =
+            matchUrlMLBU[1];
 
+        console.log(
+            "🆔 MLBU encontrado na URL:",
+            userProductId
+        );
+    }
+}
+
+// ----------------------------------------------------
+// Se veio URL contendo MLB
+// ----------------------------------------------------
+
+if (
+    !userProductId &&
+    !/^MLB\d+$/i.test(itemId)
+) {
+
+    const matchUrlMLB =
+        itemId.match(/(?:^|[\/_-])MLB[-_]?(\d+)/i);
+
+    if (matchUrlMLB) {
+
+        itemId =
+            `MLB${matchUrlMLB[1]}`;
+
+        console.log(
+            "🆔 MLB encontrado na URL:",
+            itemId
+        );
+    }
+}
+
+// ----------------------------------------------------
+// PRIORIDADE: MLB EXTRAÍDO DA PÁGINA PÚBLICA
+// ----------------------------------------------------
+
+if (
+    anuncio_publico &&
+    anuncio_publico.id &&
+    /^MLB\d+$/i.test(
+        String(anuncio_publico.id)
+    )
+) {
+
+    itemId =
+        String(anuncio_publico.id)
+            .trim()
+            .toUpperCase();
+
+    userProductId = null;
+
+    console.log(
+        "🌐 MLB recebido da página pública:",
+        itemId
+    );
+}
+
+// ----------------------------------------------------
+// VALIDAR
+// ----------------------------------------------------
+
+if (
+    !userProductId &&
+    !/^MLB\d+$/i.test(itemId)
+) {
+
+    return res.status(400).json({
+
+        ok: false,
+
+        reason:
+            "invalid_item_id",
+
+        message:
+            "Não foi possível identificar um MLB ou MLBU válido."
+    });
+}
             // ====================================================
             // VALIDAR LICENÇA / EMPRESA
             // ====================================================
@@ -7719,6 +7845,29 @@ let tituloNovo = "";
                     "application/json"
 
             };
+
+       // ==========================================
+// RESOLVER USER PRODUCT -> MLB
+// ==========================================
+
+if (
+    userProductId &&
+    !/^MLB\d+$/i.test(itemId)
+) {
+
+    console.log(
+        "🔎 User Product recebido:",
+        userProductId
+    );
+
+    // O MLB será obtido pela página pública.
+    // Não consultar /user-products aqui, pois
+    // o anúncio de origem não precisa estar conectado.
+
+    console.log(
+        "🌐 Aguardando MLB extraído da página pública."
+    );
+}
 
 
 // ====================================================
