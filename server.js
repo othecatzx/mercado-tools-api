@@ -34,6 +34,12 @@ const supabase = createClient(
     process.env.SUPABASE_SERVICE_KEY
 );
 
+// Banco separado, usado exclusivamente para os EAN-8
+const supabaseEan = createClient(
+    process.env.EAN_SUPABASE_URL,
+    process.env.EAN_SUPABASE_SERVICE_ROLE_KEY
+);
+
 function verificarAdmin(req, res, next) {
     try {
         const authorization = req.headers.authorization;
@@ -2943,6 +2949,172 @@ app.post("/api/license/status", async (req, res) => {
       status: "unknown"
     });
   }
+});
+
+
+// ==========================================
+// GERAR EAN-8 EXCLUSIVO PARA O BLING
+// ==========================================
+
+function calcularEAN8(base) {
+    const digitos = String(base).padStart(7, "0");
+
+    if (!/^\d{7}$/.test(digitos)) {
+        throw new Error("Base EAN inválida.");
+    }
+
+    let soma = 0;
+
+    for (let i = 0; i < 7; i++) {
+        soma += Number(digitos[i]) * (i % 2 === 0 ? 3 : 1);
+    }
+
+    const verificador = (10 - (soma % 10)) % 10;
+
+    return digitos + verificador;
+}
+
+function gerarBaseEAN8() {
+    return String(
+        Math.floor(Math.random() * 10000000)
+    ).padStart(7, "0");
+}
+
+app.post("/api/ean/generate", async (req, res) => {
+    try {
+        const { chave, device_id } = req.body;
+
+        if (!chave || !device_id) {
+            return res.status(400).json({
+                success: false,
+                error: "Chave e dispositivo são obrigatórios."
+            });
+        }
+
+        // Verificar se a licença existe e está ativa
+        const { data: license, error: licenseError } =
+            await supabase
+                .from("licenses")
+                .select("id, company_id, status, vencimento")
+                .eq("chave", String(chave).trim())
+                .maybeSingle();
+
+        if (licenseError) {
+            console.error("Erro ao consultar licença para EAN:", licenseError);
+
+            return res.status(500).json({
+                success: false,
+                error: "Erro ao validar a licença."
+            });
+        }
+
+        if (!license || license.status !== "active") {
+            return res.status(403).json({
+                success: false,
+                error: "Licença inválida ou inativa."
+            });
+        }
+
+        if (
+            license.vencimento &&
+            new Date(license.vencimento).getTime() < Date.now()
+        ) {
+            return res.status(403).json({
+                success: false,
+                error: "Licença expirada."
+            });
+        }
+
+        // Verificar se a empresa está ativa
+        const { data: company, error: companyError } =
+            await supabase
+                .from("companies")
+                .select("id, status")
+                .eq("id", license.company_id)
+                .maybeSingle();
+
+        if (companyError) {
+            console.error("Erro ao consultar empresa para EAN:", companyError);
+
+            return res.status(500).json({
+                success: false,
+                error: "Erro ao validar a empresa."
+            });
+        }
+
+        if (!company || company.status !== "active") {
+            return res.status(403).json({
+                success: false,
+                error: "Empresa inativa."
+            });
+        }
+
+        // Verificar se o dispositivo pertence à empresa e está ativo
+        const { data: device, error: deviceError } =
+            await supabase
+                .from("devices")
+                .select("id, status")
+                .eq("company_id", license.company_id)
+                .eq("device_id", String(device_id))
+                .maybeSingle();
+
+        if (deviceError) {
+            console.error("Erro ao consultar dispositivo para EAN:", deviceError);
+
+            return res.status(500).json({
+                success: false,
+                error: "Erro ao validar o dispositivo."
+            });
+        }
+
+        if (!device || device.status !== "active") {
+            return res.status(403).json({
+                success: false,
+                error: "Dispositivo não autorizado."
+            });
+        }
+
+        // Reservar um EAN exclusivo no banco separado
+        for (let tentativa = 0; tentativa < 20; tentativa++) {
+            const ean = calcularEAN8(gerarBaseEAN8());
+
+            const { error: insertError } = await supabaseEan
+                .from("ean_codes")
+                .insert({ ean });
+
+            if (!insertError) {
+                return res.status(201).json({
+                    success: true,
+                    ean
+                });
+            }
+
+            // Se o EAN já existir, tentar outro.
+            if (insertError.code === "23505") {
+                continue;
+            }
+
+            console.error("Erro ao salvar EAN:", insertError);
+
+            return res.status(500).json({
+                success: false,
+                error: "Não foi possível registrar o EAN."
+            });
+        }
+
+        return res.status(503).json({
+            success: false,
+            error: "Não foi possível reservar um EAN exclusivo. Tente novamente."
+        });
+
+    } catch (error) {
+        console.error("Erro ao gerar EAN-8:", error);
+
+        return res.status(500).json({
+            success: false,
+            error: "Erro interno ao gerar o EAN."
+        });
+    }
 });
 
 // ==========================================
@@ -7621,26 +7793,7 @@ app.post(
 // USAR MLB EXTRAÍDO DA PÁGINA PÚBLICA
 // ====================================================
 
-if (
-    anuncio_publico &&
-    anuncio_publico.id &&
-    /^MLB\d+$/i.test(
-        String(anuncio_publico.id)
-    )
-) {
 
-    itemId =
-        String(anuncio_publico.id)
-            .trim()
-            .toUpperCase();
-
-    userProductId = null;
-
-    console.log(
-        "🌐 MLB recebido da página pública:",
-        itemId
-    );
-}
 
 let tituloNovo = "";
             // ====================================================
@@ -8003,6 +8156,7 @@ item.variations =
     )
         ? anuncio_publico.variations
         : [];
+        
 
 try {
 
@@ -8039,7 +8193,7 @@ try {
 
     console.log(
         "🔎 Blocos candidatos encontrados:",
-        candidatos.length
+        candidatos.lengthsupabase 
     );
 
     // ====================================================
