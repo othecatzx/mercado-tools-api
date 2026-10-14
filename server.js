@@ -2,6 +2,7 @@ const express = require("express");
 const crypto = require("crypto");
 const helmet = require("helmet");
 const axios = require("axios");
+const rateLimit = require("express-rate-limit");
 const { WebSocketServer } = require("ws");
 const cors = require("cors");
 const bcrypt = require("bcryptjs");
