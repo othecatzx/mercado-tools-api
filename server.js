@@ -31,7 +31,9 @@ app.use(express.urlencoded({ extended: true }));
 
 const supabase = createClient(
     process.env.SUPABASE_URL,
-    process.env.SUPABASE_SERVICE_KEY
+    process.env.SUPABASE_SERVICE_KEY,
+    process.env.SUPABASE_URL,
+    process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
 // Banco separado, usado exclusivamente para os EAN-8
@@ -10947,8 +10949,110 @@ app.post("/api/mercadolivre/notificacoes", async (req, res) => {
     return res.status(200).send("OK");
 });
 
+
+
 const server = app.listen(PORT, () => {
     console.log(`API rodando em http://localhost:${PORT}`);
+});
+
+
+app.disable("x-powered-by");
+app.use(helmet());
+app.use(cors());
+app.use(express.json({ limit: "10kb" }));
+
+app.use(
+    "/api/",
+    rateLimit({
+        windowMs: 60 * 1000,
+        limit: 30,
+        standardHeaders: "draft-7",
+        legacyHeaders: false,
+        message: {
+            error: "Muitas solicitações. Aguarde um minuto."
+        }
+    })
+);
+
+// Calcula o dígito verificador padrão EAN-8.
+function calcularEAN8(base) {
+    const digitos = String(base).padStart(7, "0");
+
+    if (!/^\d{7}$/.test(digitos)) {
+        throw new Error("Base EAN inválida.");
+    }
+
+    let soma = 0;
+
+    for (let i = 0; i < 7; i++) {
+        soma += Number(digitos[i]) * (i % 2 === 0 ? 3 : 1);
+    }
+
+    const verificador = (10 - (soma % 10)) % 10;
+
+    return digitos + verificador;
+}
+
+// Gera uma base aleatória de 7 dígitos.
+function gerarBase() {
+    return String(
+        Math.floor(Math.random() * 10000000)
+    ).padStart(7, "0");
+}
+
+app.get("/health", (req, res) => {
+    res.json({
+        status: "ok",
+        service: "bling-ean-api"
+    });
+});
+
+app.post("/api/ean/generate", async (req, res) => {
+    try {
+        // A unicidade é garantida pelo banco, não pelo navegador.
+        for (let tentativa = 0; tentativa < 20; tentativa++) {
+            const ean = calcularEAN8(gerarBase());
+
+            const { error } = await supabase
+                .from("ean_codes")
+                .insert({ ean });
+
+            if (!error) {
+                return res.status(201).json({
+                    success: true,
+                    ean
+                });
+            }
+
+            // Código 23505: violação de restrição UNIQUE.
+            if (error.code === "23505") {
+                continue;
+            }
+
+            console.error("Erro ao salvar EAN:", error.message);
+
+            return res.status(500).json({
+                success: false,
+                error: "Não foi possível registrar o EAN."
+            });
+        }
+
+        return res.status(503).json({
+            success: false,
+            error: "Não foi possível reservar um EAN exclusivo. Tente novamente."
+        });
+    } catch (error) {
+        console.error("Erro interno:", error.message);
+
+        return res.status(500).json({
+            success: false,
+            error: "Erro interno ao gerar o EAN."
+        });
+    }
+});
+
+app.listen(PORT, () => {
+    console.log(`API EAN-8 rodando na porta ${PORT}`);
 });
 
 // ==========================================
