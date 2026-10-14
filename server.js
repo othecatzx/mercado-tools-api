@@ -31,9 +31,7 @@ app.use(express.urlencoded({ extended: true }));
 
 const supabase = createClient(
     process.env.SUPABASE_URL,
-    process.env.SUPABASE_SERVICE_KEY,
-    process.env.SUPABASE_URL,
-    process.env.SUPABASE_SERVICE_ROLE_KEY
+    process.env.SUPABASE_SERVICE_KEY
 );
 
 // Banco separado, usado exclusivamente para os EAN-8
