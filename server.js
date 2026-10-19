@@ -2712,6 +2712,216 @@ app.get("/api/asaas-status", async (req, res) => {
     }
 });
 
+
+// ==========================================
+// INTEGRAÇÃO GOOGLE CHAT — CÓDIGOS ML
+// Requer tabelas google_chat_settings e google_chat_sent_codes.
+// ==========================================
+
+async function validarDispositivoGoogleChat(chave, device_id) {
+    if (!chave || !device_id) {
+        return { error: "missing_data" };
+    }
+
+    const { data: license, error: licenseError } = await supabase
+        .from("licenses")
+        .select("chave, company_id, status, vencimento")
+        .eq("chave", chave)
+        .maybeSingle();
+
+    if (licenseError) throw licenseError;
+    if (!license || license.status !== "active") {
+        return { error: "invalid_license" };
+    }
+    if (license.vencimento && new Date(license.vencimento).getTime() < Date.now()) {
+        return { error: "license_expired" };
+    }
+
+    const { data: company, error: companyError } = await supabase
+        .from("companies")
+        .select("id, nome, status")
+        .eq("id", license.company_id)
+        .maybeSingle();
+
+    if (companyError) throw companyError;
+    if (!company || company.status !== "active") {
+        return { error: "company_inactive" };
+    }
+
+    const { data: device, error: deviceError } = await supabase
+        .from("devices")
+        .select("id, device_id, company_id, status, mercadolivre_admin")
+        .eq("company_id", license.company_id)
+        .eq("device_id", device_id)
+        .maybeSingle();
+
+    if (deviceError) throw deviceError;
+    if (!device || device.status !== "active") {
+        return { error: "device_not_active" };
+    }
+
+    return { license, company, device };
+}
+
+// Consulta a configuração. Só o dispositivo marcado como ADM do Mercado Livre pode consultar/editar.
+app.post("/api/google-chat/settings/get", async (req, res) => {
+    try {
+        const auth = await validarDispositivoGoogleChat(req.body.chave, req.body.device_id);
+        if (auth.error) return res.status(403).json({ success: false, error: auth.error });
+        if (auth.device.mercadolivre_admin !== true) {
+            return res.status(403).json({ success: false, error: "admin_required" });
+        }
+
+        const { data, error } = await supabase
+            .from("google_chat_settings")
+            .select("webhook_url, enabled, updated_at")
+            .eq("company_id", auth.company.id)
+            .maybeSingle();
+
+        if (error) throw error;
+        return res.json({
+            success: true,
+            company: auth.company.nome,
+            configured: Boolean(data && data.webhook_url),
+            webhook_url: data?.webhook_url || "",
+            enabled: data?.enabled === true
+        });
+    } catch (error) {
+        console.error("Google Chat settings get:", error.message || error);
+        return res.status(500).json({ success: false, error: "server_error" });
+    }
+});
+
+app.post("/api/google-chat/settings/save", async (req, res) => {
+    try {
+        const { chave, device_id, webhook_url, enabled } = req.body || {};
+        const auth = await validarDispositivoGoogleChat(chave, device_id);
+        if (auth.error) return res.status(403).json({ success: false, error: auth.error });
+        if (auth.device.mercadolivre_admin !== true) {
+            return res.status(403).json({ success: false, error: "admin_required" });
+        }
+
+        const url = String(webhook_url || "").trim();
+        if (url && (!/^https:\/\/chat\.googleapis\.com\/v1\/spaces\/[^/]+\/messages\?key=[^&]+&token=.+$/.test(url))) {
+            return res.status(400).json({
+                success: false,
+                error: "invalid_webhook",
+                message: "Informe uma URL de webhook válida do Google Chat."
+            });
+        }
+
+        const payload = {
+            company_id: auth.company.id,
+            webhook_url: url || null,
+            enabled: Boolean(enabled) && Boolean(url),
+            updated_by_device_id: device_id,
+            updated_at: new Date().toISOString()
+        };
+
+        const { error } = await supabase
+            .from("google_chat_settings")
+            .upsert(payload, { onConflict: "company_id" });
+
+        if (error) throw error;
+        return res.json({ success: true, enabled: payload.enabled, configured: Boolean(url) });
+    } catch (error) {
+        console.error("Google Chat settings save:", error.message || error);
+        return res.status(500).json({ success: false, error: "server_error" });
+    }
+});
+
+// Envia o código atual da conta para o webhook configurado pela ADM da empresa.
+// A tabela google_chat_sent_codes evita repetir o mesmo código da mesma empresa no mesmo dia.
+app.post("/api/google-chat/posting-code", async (req, res) => {
+    try {
+        const { chave, device_id, code } = req.body || {};
+        const auth = await validarDispositivoGoogleChat(chave, device_id);
+        if (auth.error) return res.status(403).json({ success: false, error: auth.error });
+
+        const codigo = String(code || "").trim().toUpperCase();
+        if (!/^[A-Z0-9]{6,16}$/.test(codigo)) {
+            return res.status(400).json({ success: false, error: "invalid_code" });
+        }
+
+        const { data: setting, error: settingError } = await supabase
+            .from("google_chat_settings")
+            .select("webhook_url, enabled")
+            .eq("company_id", auth.company.id)
+            .maybeSingle();
+
+        if (settingError) throw settingError;
+        if (!setting || setting.enabled !== true || !setting.webhook_url) {
+            return res.json({ success: true, skipped: true, reason: "not_configured" });
+        }
+
+        const today = new Date().toISOString().slice(0, 10);
+        const { data: alreadySent, error: sentLookupError } = await supabase
+            .from("google_chat_sent_codes")
+            .select("id")
+            .eq("company_id", auth.company.id)
+            .eq("code", codigo)
+            .eq("code_date", today)
+            .maybeSingle();
+
+        if (sentLookupError) throw sentLookupError;
+        if (alreadySent) {
+            return res.json({ success: true, duplicate: true });
+        }
+
+        const companyName = String(auth.company.nome || "Empresa")
+            .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+            .replace(/\s+/g, " ").trim();
+        const companyLower = companyName.toLowerCase();
+        const companyLabel =
+            companyLower.includes("4show") ? "4Show" :
+            companyLower.includes("daphie") ? "Daphie" :
+            companyLower.includes("dmais") ? "Dmais" :
+            companyLower.includes("recitek") ? "Recitek" :
+            /(^|\s)ols(\s|$)/i.test(companyName) ? "OLS" :
+            companyName;
+
+        // Reservar o código antes do POST evita envios paralelos por várias máquinas.
+        const { data: claim, error: claimError } = await supabase
+            .from("google_chat_sent_codes")
+            .insert({
+                company_id: auth.company.id,
+                code: codigo,
+                code_date: today,
+                source_device_id: device_id,
+                sent_at: new Date().toISOString()
+            })
+            .select("id")
+            .single();
+
+        if (claimError) {
+            if (claimError.code === "23505") {
+                return res.json({ success: true, duplicate: true });
+            }
+            throw claimError;
+        }
+
+        const googleResponse = await fetch(setting.webhook_url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json; charset=UTF-8" },
+            body: JSON.stringify({
+                text: `Códigos ML\\n\\n${companyLabel}: ${codigo}`
+            })
+        });
+
+        if (!googleResponse.ok) {
+            const detail = await googleResponse.text().catch(() => "");
+            console.error("Google Chat webhook falhou:", googleResponse.status, detail.slice(0, 300));
+            await supabase.from("google_chat_sent_codes").delete().eq("id", claim.id);
+            return res.status(502).json({ success: false, error: "google_chat_failed" });
+        }
+
+        return res.json({ success: true, sent: true, company: companyLabel });
+    } catch (error) {
+        console.error("Google Chat posting-code:", error.message || error);
+        return res.status(500).json({ success: false, error: "server_error" });
+    }
+});
+
 // ==========================================
 // CONSULTAR STATUS DA LICENÇA
 // ==========================================
@@ -2924,6 +3134,7 @@ app.post("/api/license/status", async (req, res) => {
         company: company.nome,
         company_id: company.id,
         device_id: device.device_id,
+        mercadolivre_admin: device.mercadolivre_admin === true,
         license_expires_at: license.vencimento
       });
     }
