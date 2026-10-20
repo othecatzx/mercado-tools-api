@@ -305,7 +305,7 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
               const key = itemId;
               let product = productMap.get(key);
               if (!product) {
-                product = { company_id: account.company_id, company_name: company?.nome || 'Empresa', nickname: account.nickname || 'Conta Mercado Livre', item_id: itemId, title: item.title || '', quantity_sold: 0, revenue: 0, orders: 0, _orderIds: new Set(), current_price: null, stock: null, status: '', image: '', permalink: '' };
+                product = { company_id: account.company_id, company_name: company?.nome || 'Empresa', nickname: account.nickname || 'Conta Mercado Livre', item_id: itemId, title: item.title || '', sku: item.seller_sku || item.seller_custom_field || line.seller_sku || '', quantity_sold: 0, revenue: 0, orders: 0, _orderIds: new Set(), current_price: null, stock: null, status: '', image: '', permalink: '' };
                 productMap.set(key, product);
               }
               product.quantity_sold += quantity;
@@ -339,6 +339,11 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
                 product.current_price = detail.price == null ? null : Number(detail.price);
                 product.stock = detail.available_quantity == null ? null : Number(detail.available_quantity);
                 product.status = detail.status || '';
+                const skuAttribute = (detail.attributes || []).find(attribute => ['SELLER_SKU', 'SELLER_CUSTOM_FIELD'].includes(String(attribute.id || '').toUpperCase()));
+                const variation = (detail.variations || []).find(v => v.seller_custom_field || (v.attributes || []).some(a => String(a.id || '').toUpperCase() === 'SELLER_SKU'));
+                const variationSkuAttribute = (variation?.attributes || []).find(attribute => String(attribute.id || '').toUpperCase() === 'SELLER_SKU');
+                product.sku = detail.seller_custom_field || detail.seller_sku || skuAttribute?.value_name || variation?.seller_custom_field || variationSkuAttribute?.value_name || product.sku || '';
+                product.seller_sku = product.sku;
               } catch (_) { /* Product details are optional; preserve order-derived metrics. */ }
             }
           };
