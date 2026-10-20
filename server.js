@@ -3944,6 +3944,168 @@ app.post("/api/agency-codes/capture", async (req, res) => {
 
 
 // ============================================================
+// CÓDIGO DIÁRIO DA AGÊNCIA — teste pelo backend usando OAuth
+// Observação: a rota do painel pode exigir sessão web/cookies. Este teste
+// não usa nem armazena cookies; se o Mercado Livre exigir sessão, falhará
+// e será necessário manter captura autenticada pelo navegador ou achar API oficial.
+// ============================================================
+function getSaoPauloDateString(date = new Date()) {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "America/Sao_Paulo",
+        year: "numeric", month: "2-digit", day: "2-digit"
+    }).formatToParts(date);
+    const values = Object.fromEntries(parts.map(p => [p.type, p.value]));
+    return `${values.year}-${values.month}-${values.day}`;
+}
+
+function findAgencyCodeInResponse(value) {
+    if (!value || typeof value !== "object") return null;
+    if (Array.isArray(value)) {
+        for (const item of value) {
+            const found = findAgencyCodeInResponse(item);
+            if (found) return found;
+        }
+        return null;
+    }
+    const uiType = String(value.uiType || "").toLowerCase();
+    const title = String(value.data?.title || "").toLowerCase();
+    const content = value.data?.content;
+    if ((uiType === "banner_auth_code" || title.includes("código de autorização")) &&
+        typeof content === "string" && /^[A-Z0-9-]{3,32}$/i.test(content.trim())) {
+        return content.trim().toUpperCase();
+    }
+    for (const [key, child] of Object.entries(value)) {
+        if (key === "content" && typeof child === "string" &&
+            /código de autorização/i.test(String(value.title || "")) &&
+            /^[A-Z0-9-]{3,32}$/i.test(child.trim())) {
+            return child.trim().toUpperCase();
+        }
+        const found = findAgencyCodeInResponse(child);
+        if (found) return found;
+    }
+    return null;
+}
+
+async function fetchAndSaveAgencyCode(companyId) {
+    const { data: account, error: accountError } = await supabase
+        .from("mercadolivre_accounts")
+        .select("company_id, ml_user_id, nickname")
+        .eq("company_id", companyId)
+        .maybeSingle();
+    if (accountError) throw accountError;
+    if (!account) throw new Error("Empresa não possui conta do Mercado Livre conectada.");
+    if (!account.ml_user_id) throw new Error("Conta conectada sem ml_user_id.");
+
+    const token = await getValidMercadoLivreToken(companyId);
+    const requestBody = {
+        baseUrl: "/dispatch/middleend/MLB",
+        method: "GET",
+        path: "banner",
+        loadingEvents: [],
+        errorEvents: [],
+        queryParams: [
+            { key: "userId", value: account.ml_user_id },
+            { key: "locale", value: "pt_BR" },
+            { key: "gmt", value: "-03:00" },
+            { key: "referrer", value: "web-wrapper" }
+        ],
+        pathParams: [],
+        bodyParams: [],
+        headers: []
+    };
+
+    const response = await axios.post(
+        "https://vendedores.mercadolivre.com.br/vendas/omni/lista/api/shipping/banner",
+        requestBody,
+        {
+            timeout: 15000,
+            headers: {
+                Authorization: `Bearer ${token}`,
+                Accept: "application/json",
+                "Content-Type": "application/json",
+                Origin: "https://vendedores.mercadolivre.com.br",
+                Referer: "https://vendedores.mercadolivre.com.br/vendas/omni/lista"
+            },
+            validateStatus: status => status >= 200 && status < 500
+        }
+    );
+
+    if (response.status < 200 || response.status >= 300) {
+        const err = new Error(`Rota do banner respondeu HTTP ${response.status}; pode exigir sessão web.`);
+        err.statusCode = response.status;
+        throw err;
+    }
+
+    const code = findAgencyCodeInResponse(response.data);
+    if (!code) {
+        throw new Error("Resposta recebida, mas não encontrei o código no formato esperado. Pode ser uma resposta de login/sessão.");
+    }
+
+    const now = new Date().toISOString();
+    const codeDate = getSaoPauloDateString();
+    const { error: saveError } = await supabase.from("company_ml_codes").upsert({
+        company_id: companyId,
+        code,
+        code_date: codeDate,
+        source: "backend-oauth-probe",
+        device_id: "backend",
+        captured_at: now,
+        updated_at: now
+    }, { onConflict: "company_id,code_date" });
+    if (saveError) throw saveError;
+
+    return { company_id: companyId, code, code_date: codeDate, ml_nickname: account.nickname || null };
+}
+
+// Teste manual autenticado pelo painel de administração. Não devolve tokens.
+app.post("/api/admin/agency-codes/test/:companyId", verificarAdmin, async (req, res) => {
+    try {
+        const result = await fetchAndSaveAgencyCode(req.params.companyId);
+        return res.json({ ok: true, ...result });
+    } catch (error) {
+        const status = error.statusCode === 401 || error.statusCode === 403 ? 502 : 500;
+        console.error("Agency code backend test failed:", error.response?.status || error.statusCode || "error", error.message);
+        return res.status(status).json({
+            ok: false,
+            reason: "backend_fetch_failed",
+            upstream_status: error.response?.status || error.statusCode || null,
+            message: error.message || "Falha ao consultar o código da Agência."
+        });
+    }
+});
+
+// Ative AGENCY_CODE_AUTO_SYNC=true no Render somente após o teste manual funcionar.
+// O job tenta atualizar os códigos conectados a cada 15 minutos; falhas não apagam o último código salvo.
+async function syncAllAgencyCodes() {
+    const { data: accounts, error } = await supabase
+        .from("mercadolivre_accounts")
+        .select("company_id");
+    if (error) {
+        console.error("Agency code sync: erro listando contas:", error.message);
+        return;
+    }
+    for (const account of accounts || []) {
+        try {
+            const result = await fetchAndSaveAgencyCode(account.company_id);
+            console.log(`Agency code sync OK | empresa ${result.company_id} | data ${result.code_date}`);
+        } catch (e) {
+            console.error(`Agency code sync falhou | empresa ${account.company_id} | HTTP ${e.response?.status || e.statusCode || "-"} | ${e.message}`);
+        }
+    }
+}
+
+if (String(process.env.AGENCY_CODE_AUTO_SYNC || "").toLowerCase() === "true") {
+    setTimeout(() => {
+        syncAllAgencyCodes().catch(e => console.error("Agency code initial sync error:", e.message));
+    }, 60_000);
+    setInterval(() => {
+        syncAllAgencyCodes().catch(e => console.error("Agency code scheduled sync error:", e.message));
+    }, 15 * 60 * 1000);
+    console.log("Agency code automatic sync enabled (15-minute interval).");
+}
+
+
+// ============================================================
 // 🔬 RAIO-X DO ANÚNCIO
 // ============================================================
 
