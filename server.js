@@ -3902,6 +3902,46 @@ async function validarAcessoMercadoLivre(chave, device_id) {
     };
 }
 
+// Recebe o código diário mostrado na página de Agência do Mercado Livre.
+// A empresa é resolvida pela licença validada; o cliente não escolhe company_id.
+app.post("/api/agency-codes/capture", async (req, res) => {
+    try {
+        const { chave, device_id } = req.body || {};
+        const code = String(req.body?.code || "").trim().toUpperCase();
+        if (!/^[A-Z0-9-]{3,32}$/.test(code)) {
+            return res.status(400).json({ ok: false, error: "invalid_code", message: "Código da agência inválido." });
+        }
+
+        const { company, device } = await validarAcessoMercadoLivre(chave, device_id);
+        const parts = new Intl.DateTimeFormat("en-CA", {
+            timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit", day: "2-digit"
+        }).formatToParts(new Date());
+        const dateParts = Object.fromEntries(parts.map(part => [part.type, part.value]));
+        const codeDate = `${dateParts.year}-${dateParts.month}-${dateParts.day}`;
+        const now = new Date().toISOString();
+        const { error } = await supabase.from("company_ml_codes").upsert({
+            company_id: company.id,
+            code,
+            code_date: codeDate,
+            source: "extension-agency-page",
+            device_id: device.device_id,
+            captured_at: now,
+            updated_at: now
+        }, { onConflict: "company_id,code_date" });
+        if (error) throw error;
+
+        return res.json({ ok: true, company: company.nome, code_date: codeDate });
+    } catch (error) {
+        const status = error.statusCode || 500;
+        if (status >= 500) console.error("Agency code capture error:", error.message || error);
+        return res.status(status).json({
+            ok: false,
+            error: error.reason || "capture_failed",
+            message: status >= 500 ? "Não foi possível salvar o código da agência." : (error.message || "Não autorizado.")
+        });
+    }
+});
+
 
 // ============================================================
 // 🔬 RAIO-X DO ANÚNCIO

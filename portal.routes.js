@@ -131,24 +131,45 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
     }
   });
 
-  // Códigos ML são configurados pelo administrador no cadastro da empresa.
-  // O cliente só recebe códigos das empresas vinculadas às próprias licenças.
+  // Códigos diários de Agência capturados pela extensão e vinculados à empresa da licença.
   app.get('/api/portal/codes', authPortal, async (req, res) => {
     try {
-      const { data: links, error } = await supabase.from('portal_user_licenses')
-        .select('licenses(company_id,companies(id,nome,codigo_ml,status))')
+      const { data: links, error: linkError } = await supabase.from('portal_user_licenses')
+        .select('licenses(company_id,companies(id,nome,status))')
         .eq('user_id', req.portalUserId);
-      if (error) throw error;
-      const seen = new Set();
-      const codes = [];
+      if (linkError) throw linkError;
+
+      const companies = new Map();
       for (const row of links || []) {
-        const license = row.licenses;
-        const company = license?.companies;
-        if (!company?.id || seen.has(company.id)) continue;
-        seen.add(company.id);
-        if (company.codigo_ml && String(company.codigo_ml).trim()) {
-          codes.push({ company_id: company.id, name: company.nome || 'Empresa', code: String(company.codigo_ml).trim(), status: company.status || 'unknown' });
-        }
+        const company = row.licenses?.companies;
+        if (company?.id && !companies.has(company.id)) companies.set(company.id, company);
+      }
+      const ids = [...companies.keys()];
+      if (!ids.length) return res.json({ ok: true, codes: [] });
+
+      const { data: rows, error: codesError } = await supabase.from('company_ml_codes')
+        .select('company_id,code,code_date,updated_at')
+        .in('company_id', ids)
+        .order('code_date', { ascending: false })
+        .order('updated_at', { ascending: false });
+      if (codesError) throw codesError;
+
+      const latestByCompany = new Map();
+      for (const row of rows || []) {
+        if (!latestByCompany.has(row.company_id)) latestByCompany.set(row.company_id, row);
+      }
+      const codes = [];
+      for (const [companyId, company] of companies) {
+        const latest = latestByCompany.get(companyId);
+        if (!latest) continue;
+        codes.push({
+          company_id: companyId,
+          name: company.nome || 'Empresa',
+          code: latest.code,
+          code_date: latest.code_date,
+          updated_at: latest.updated_at,
+          status: company.status || 'unknown'
+        });
       }
       return res.json({ ok: true, codes });
     } catch (error) {
