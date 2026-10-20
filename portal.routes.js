@@ -1,165 +1,303 @@
-<!doctype html>
-<html lang="pt-BR">
-<head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="theme-color" content="#0b1020"><title>Portal do Cliente · ML SH Support</title>
-<style>
-:root{--bg:#f4f6fb;--panel:#fff;--ink:#111827;--muted:#778197;--line:#e7eaf1;--dark:#10172a;--purple:#6d5dfc;--purple2:#8b5cf6;--green:#16a36a;--red:#d94b64;--shadow:0 12px 36px #1c2a4a0b}*{box-sizing:border-box}body{margin:0;background:var(--bg);font:14px/1.5 Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--ink)}button,input{font:inherit}button{cursor:pointer}.hidden{display:none!important}.auth-shell{min-height:100vh;display:grid;grid-template-columns:minmax(280px,1fr) minmax(360px,520px);background:#fff}.auth-visual{background:radial-gradient(circle at 20% 20%,#3d367d 0,transparent 32%),linear-gradient(145deg,#10172a,#171b38 60%,#29225c);color:white;padding:56px;display:flex;flex-direction:column;justify-content:space-between;overflow:hidden;position:relative}.auth-visual:after{content:"";position:absolute;width:480px;height:480px;border:1px solid #ffffff16;border-radius:50%;right:-160px;bottom:-180px;box-shadow:0 0 0 45px #ffffff06,0 0 0 100px #ffffff04}.brand{display:flex;align-items:center;gap:12px;font-weight:800;letter-spacing:-.4px}.brand-mark{width:42px;height:42px;border-radius:13px;background:linear-gradient(135deg,#8b5cf6,#5545e8);display:grid;place-items:center;color:white;font-size:18px;box-shadow:0 8px 20px #6d5dfc40}.auth-copy{position:relative;z-index:1;max-width:500px}.auth-copy h1{font-size:clamp(34px,4vw,54px);line-height:1.06;letter-spacing:-2px;margin:0 0 20px}.auth-copy p{color:#b8c0d9;font-size:16px;max-width:420px}.feature-pills{display:flex;gap:10px;flex-wrap:wrap;margin-top:28px}.feature-pills span{border:1px solid #ffffff24;background:#ffffff0a;border-radius:30px;padding:8px 12px;color:#e3e5f3;font-size:12px}.auth-foot{color:#8790ad;font-size:12px;position:relative;z-index:1}.auth-main{padding:34px;display:flex;align-items:center;justify-content:center}.auth-card{width:100%;max-width:390px}.auth-card h2{font-size:28px;letter-spacing:-.8px;margin:0 0 7px}.sub{color:var(--muted);margin:0 0 28px}.field{display:flex;flex-direction:column;gap:7px;margin:15px 0}.field label{font-size:12px;font-weight:700;color:#3c465c}.field input{width:100%;border:1px solid #dfe4ee;background:#fff;border-radius:11px;padding:12px 13px;outline:none;transition:.15s}.field input:focus{border-color:#877aff;box-shadow:0 0 0 3px #6d5dfc17}.btn{border:0;border-radius:11px;padding:11px 15px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;gap:8px;transition:.15s}.btn-primary{color:#fff;background:linear-gradient(135deg,var(--purple),#5545e8);box-shadow:0 6px 14px #6d5dfc27}.btn-primary:hover{transform:translateY(-1px);filter:brightness(1.04)}.btn-ghost{background:#f4f5fa;color:#424b60;border:1px solid var(--line)}.btn-light{background:white;color:#4e42d9;border:1px solid #e5e1ff}.btn-danger{color:#c23950;background:#fff0f2}.btn-block{width:100%;margin-top:7px}.auth-switch{text-align:center;color:var(--muted);font-size:13px;margin-top:22px}.text-btn{border:0;background:none;color:#5e4ef3;font-weight:800;padding:0 3px}.auth-note{font-size:12px;color:#8790a3;margin-top:18px}.alert{padding:11px 13px;border-radius:10px;font-size:12px;margin:12px 0}.alert.error{background:#fff0f2;color:#b4233c;border:1px solid #ffd7de}.alert.success{background:#eafaf2;color:#087647;border:1px solid #c8f1db}.app{min-height:100vh}.sidebar{width:250px;background:var(--dark);color:#b6bfd3;position:fixed;inset:0 auto 0 0;padding:24px 15px;display:flex;flex-direction:column;z-index:5}.sidebar .brand{color:white;padding:0 10px 28px}.sidebar .brand-mark{width:37px;height:37px}.nav-label{font-size:10px;letter-spacing:1.5px;color:#707b99;font-weight:800;padding:12px 12px 8px}.nav{display:flex;flex-direction:column;gap:4px}.nav-item{border:0;background:transparent;color:#aeb8ce;padding:11px 12px;border-radius:10px;text-align:left;display:flex;align-items:center;gap:12px;font-size:13px;font-weight:600}.nav-item .ico{width:20px;text-align:center;font-size:16px;opacity:.85}.nav-item:hover{background:#ffffff0b;color:#fff}.nav-item.active{background:linear-gradient(90deg,#6d5dfc35,#6d5dfc12);color:#fff;box-shadow:inset 3px 0 #897aff}.nav-item .soon{font-size:9px;background:#ffffff12;color:#8894b0;border-radius:5px;padding:2px 5px;margin-left:auto}.side-bottom{margin-top:auto}.side-help{margin:14px 4px;padding:14px;background:#ffffff08;border:1px solid #ffffff12;border-radius:13px}.side-help b{font-size:12px;color:white}.side-help p{font-size:11px;color:#8d98b5;margin:6px 0 10px}.side-help button{background:#ffffff12;color:#e3e6f2;border:1px solid #ffffff12;border-radius:8px;padding:7px 10px;font-size:11px}.side-user{border-top:1px solid #ffffff12;padding:16px 7px 0;display:flex;align-items:center;gap:10px}.avatar{width:34px;height:34px;border-radius:11px;background:#5545e8;color:white;display:grid;place-items:center;font-weight:800;flex-shrink:0}.user-meta{min-width:0;flex:1}.user-meta b{font-size:12px;color:#f5f6fb;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.user-meta small{font-size:10px;color:#8994b0}.logout{border:0;background:transparent;color:#929db6;font-size:17px}.main{margin-left:250px;min-height:100vh}.topbar{height:76px;background:#ffffffd9;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;padding:0 34px;position:sticky;top:0;z-index:3;backdrop-filter:blur(14px)}.crumb{color:var(--muted);font-size:12px}.crumb b{color:#30394c;font-weight:700}.top-right{display:flex;align-items:center;gap:12px}.status-pill{display:inline-flex;align-items:center;gap:7px;background:#eafaf2;color:#087647;border-radius:30px;padding:7px 10px;font-size:11px;font-weight:700}.dot{width:6px;height:6px;background:#18a66c;border-radius:50%}.content{max-width:1360px;margin:0 auto;padding:32px 34px 50px}.page-head{display:flex;justify-content:space-between;align-items:flex-start;gap:18px;margin-bottom:26px}.eyebrow{font-size:10px;letter-spacing:1.6px;color:#7c6ff5;font-weight:900;text-transform:uppercase;margin-bottom:7px}.page-head h1{font-size:28px;letter-spacing:-1px;margin:0 0 7px}.page-head p{color:var(--muted);margin:0}.actions{display:flex;gap:9px;flex-wrap:wrap}.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px}.stat-card,.panel,.license-card{background:var(--panel);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow)}.stat-card{padding:20px;min-height:130px}.stat-top{display:flex;align-items:center;justify-content:space-between;color:#7d879b;font-size:12px;font-weight:650}.stat-icon{width:35px;height:35px;display:grid;place-items:center;border-radius:11px;background:#f0edff;color:#6655ef;font-size:17px}.stat-number{font-size:29px;letter-spacing:-1px;font-weight:800;margin:14px 0 3px}.stat-foot{font-size:11px;color:#8992a5}.section-row{display:flex;justify-content:space-between;align-items:center;margin:28px 0 14px;gap:12px}.section-row h2{font-size:16px;margin:0;letter-spacing:-.3px}.section-row p{font-size:12px;color:var(--muted);margin:3px 0 0}.panel{padding:21px}.panel-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:17px}.panel-head h3{margin:0;font-size:14px}.muted{color:var(--muted)}.license-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:15px}.license-card{padding:18px}.license-top{display:flex;gap:12px;align-items:flex-start}.company-logo{width:43px;height:43px;border-radius:13px;background:linear-gradient(135deg,#f0edff,#e6e4ff);color:#6251e8;display:grid;place-items:center;font-weight:900;flex-shrink:0}.license-title{flex:1;min-width:0}.license-title h3{margin:2px 0 3px;font-size:15px}.license-title p{margin:0;color:var(--muted);font-size:11px}.badge{border-radius:6px;padding:5px 7px;font-size:10px;font-weight:800;background:#eafaf2;color:#087647}.badge.warn{background:#fff4df;color:#986313}.badge.off{background:#fff0f2;color:#b4233c}.license-key{margin:17px 0 13px;padding:10px 11px;background:#f7f8fc;border:1px dashed #dfe3ed;border-radius:9px;display:flex;align-items:center;justify-content:space-between;gap:8px}.license-key code{font-size:12px;letter-spacing:.4px;overflow-wrap:anywhere;color:#424b60}.mini-btn{border:1px solid #e3e6ef;background:white;color:#596276;border-radius:8px;padding:6px 8px;font-size:11px;font-weight:750;white-space:nowrap}.license-meta{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding-top:12px;border-top:1px solid #edf0f5}.meta-label{color:#8b94a6;font-size:10px}.meta-value{font-size:12px;font-weight:700;margin-top:3px}.empty{padding:38px 20px;text-align:center;color:var(--muted)}.empty .empty-icon{width:48px;height:48px;border-radius:15px;background:#f0edff;color:#6959f3;display:grid;place-items:center;font-size:22px;margin:0 auto 12px}.empty h3{color:#31394b;font-size:15px;margin:0 0 5px}.empty p{font-size:12px;max-width:340px;margin:0 auto 15px}.table-wrap{overflow:auto}.table{width:100%;border-collapse:collapse;min-width:560px}.table th{text-align:left;color:#8a93a6;font-size:10px;text-transform:uppercase;letter-spacing:.8px;padding:12px;border-bottom:1px solid var(--line)}.table td{padding:14px 12px;border-bottom:1px solid #f0f2f7;font-size:12px}.table tr:last-child td{border-bottom:0}.device-name{font-weight:750}.device-id{color:#9aa2b2;font-size:10px;margin-top:3px}.code-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:13px}.code-card{padding:17px;border:1px solid var(--line);background:#fff;border-radius:14px;display:flex;align-items:center;gap:12px}.code-logo{width:42px;height:42px;border-radius:12px;background:#f2efff;color:#6252e8;display:grid;place-items:center;font-weight:900}.code-main{min-width:0;flex:1}.code-main b{font-size:13px;display:block}.code-main code{font-size:12px;color:#788197;letter-spacing:.7px}.placeholder-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:15px}.placeholder-card{background:#fff;border:1px solid var(--line);border-radius:15px;padding:20px;min-height:155px}.placeholder-card .stat-icon{margin-bottom:16px}.placeholder-card h3{font-size:14px;margin:0 0 6px}.placeholder-card p{font-size:12px;color:var(--muted);margin:0 0 12px}.tag-soon{display:inline-block;border-radius:5px;background:#f2f3f8;color:#8a91a2;padding:4px 7px;font-size:10px;font-weight:800}.notice{border:1px solid #e4e0ff;background:#f7f5ff;border-radius:12px;padding:13px 15px;color:#5b52a5;font-size:12px;margin-bottom:17px}.modal-backdrop{position:fixed;inset:0;background:#11182766;z-index:20;display:grid;place-items:center;padding:20px}.modal{background:white;border-radius:18px;padding:24px;width:min(100%,440px);box-shadow:0 24px 70px #0b102044}.modal-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:5px}.modal h2{font-size:20px;margin:0}.modal-close{border:0;background:#f4f5f9;border-radius:9px;width:32px;height:32px}.modal p{color:var(--muted);font-size:12px;margin:7px 0 18px}.modal-actions{display:flex;justify-content:flex-end;gap:9px;margin-top:18px}.toast{position:fixed;right:24px;bottom:24px;background:#111827;color:#fff;padding:12px 16px;border-radius:11px;box-shadow:0 10px 30px #0002;z-index:50;font-size:12px;max-width:340px}.mobile-menu{display:none}.loading{opacity:.6;pointer-events:none}.small{font-size:11px}.settings-box{max-width:700px}.settings-row{display:flex;justify-content:space-between;align-items:center;padding:15px 0;border-bottom:1px solid var(--line);gap:15px}.settings-row:last-child{border-bottom:0}.settings-row b{font-size:13px}.settings-row p{font-size:11px;color:var(--muted);margin:3px 0 0}
-@media(max-width:1050px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}.sidebar{width:220px}.main{margin-left:220px}.content{padding:27px 24px}.topbar{padding:0 24px}.license-list{grid-template-columns:1fr}.placeholder-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
-@media(max-width:760px){.auth-shell{grid-template-columns:1fr}.auth-visual{display:none}.auth-main{min-height:100vh;padding:25px}.sidebar{width:76px;padding:18px 10px}.sidebar .brand{padding:0 9px 25px}.brand-text,.nav-label,.nav-item .nav-text,.nav-item .soon,.side-help,.user-meta,.logout{display:none}.nav-item{justify-content:center;padding:12px 0}.nav-item .ico{font-size:18px}.side-user{justify-content:center;padding:15px 0 0}.main{margin-left:76px}.topbar{height:65px;padding:0 16px}.content{padding:23px 15px}.page-head{display:block}.page-head h1{font-size:24px}.actions{margin-top:16px}.grid{gap:10px}.stat-card{padding:14px;min-height:115px}.stat-number{font-size:24px}.stat-top{font-size:10px}.stat-icon{width:30px;height:30px}.code-grid,.placeholder-grid{grid-template-columns:1fr}.status-pill{display:none}.crumb{font-size:11px}.license-card{padding:14px}.panel{padding:15px}.section-row{margin-top:23px}.top-right .btn{padding:8px 10px;font-size:11px}}
-@media(max-width:430px){.grid{grid-template-columns:1fr 1fr}.stat-card{min-height:105px}.stat-number{font-size:22px}.stat-foot{font-size:10px}.auth-card h2{font-size:25px}}
+// Portal do Cliente ML SH Support — rotas isoladas do painel administrativo.
+// Requer tabelas portal_users e portal_user_licenses (migration.sql).
+const path = require('path');
 
-/* Ajustes de layout: evitar cortes em zoom 100% e larguras intermediárias */
-html,body{width:100%;max-width:100%;overflow-x:hidden}
-.app,.main,.content,#pageContent{min-width:0;max-width:100%}
-.main{width:calc(100% - 250px)}
-.content{width:100%;max-width:1440px;margin:0 auto;padding-left:clamp(16px,2.4vw,34px);padding-right:clamp(16px,2.4vw,34px)}
-.page-head>div:first-child{min-width:0;max-width:100%}
-.page-head p,.placeholder-card p{overflow-wrap:anywhere}
-.stat-card,.panel,.license-card,.placeholder-card{min-width:0}
-.filters-row{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:4px 0 14px}
-.filter-field{display:flex;flex-direction:column;gap:6px;min-width:0}
-.filter-field label,.sales-toolbar label{font-size:11px;font-weight:750;color:#687389}
-.filter-control{width:100%;min-width:0;border:1px solid #dfe4ee;background:#fff;border-radius:10px;padding:10px 12px;color:#30394c;outline:none}
-.filter-control:focus{border-color:#877aff;box-shadow:0 0 0 3px #6d5dfc17}
-.filter-result{font-size:11px;color:var(--muted);margin:2px 0 10px}
-.compact-empty{padding:20px}
-.sales-toolbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:-8px 0 18px}
-.sales-toolbar .filter-control{width:auto;min-width:170px}
-.sales-toolbar .muted{margin-left:auto}
-.sales-stats{margin-bottom:18px}
-.sales-panel{margin-top:16px}
-.sales-note{margin-top:16px;margin-bottom:0}
-.loading-panel{padding:28px;color:var(--muted)}
-.sales-table{min-width:700px}
-@media(max-width:1100px){.main{width:calc(100% - 220px)}.grid{grid-template-columns:repeat(2,minmax(0,1fr))}.placeholder-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.content{padding-left:22px;padding-right:22px}}
-@media(max-width:900px){.sidebar{width:76px;padding:18px 10px}.sidebar .brand{padding:0 9px 25px}.brand-text,.nav-label,.nav-item .nav-text,.nav-item .soon,.side-help,.user-meta,.logout{display:none}.nav-item{justify-content:center;padding:12px 0}.nav-item .ico{font-size:18px}.side-user{justify-content:center;padding:15px 0 0}.main{margin-left:76px;width:calc(100% - 76px)}.topbar{padding:0 18px}.content{padding:22px 18px}}
-@media(max-width:600px){.main{margin-left:64px;width:calc(100% - 64px)}.sidebar{width:64px;padding:16px 7px}.sidebar .brand{padding-left:6px}.topbar{padding:0 12px}.top-right .btn{padding:8px 10px;font-size:11px}.content{padding:18px 12px}.page-head{display:flex;flex-direction:column;gap:12px}.page-head h1{font-size:23px}.actions{margin-top:0}.grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.stat-card{padding:12px}.stat-top{align-items:flex-start;gap:5px}.stat-number{font-size:22px}.filters-row{grid-template-columns:1fr}.panel{padding:13px}.panel-head{align-items:flex-start;flex-wrap:wrap}.license-list,.code-grid,.placeholder-grid{grid-template-columns:1fr}.sales-toolbar{align-items:flex-start}.sales-toolbar .muted{width:100%;margin-left:0}.sales-toolbar .filter-control{flex:1}.settings-row{align-items:flex-start;flex-wrap:wrap}}
-@media(max-width:380px){.grid{grid-template-columns:1fr}.crumb{max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.top-right .btn span{display:none}}
+module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
+  app.use('/portal', require('express').static(path.join(__dirname, 'portal')));
 
-</style>
-</head>
-<body>
-<div id="authView" class="auth-shell">
-  <aside class="auth-visual"><div class="brand"><div class="brand-mark">M</div><span>ML SH <span style="font-weight:500;color:#aab3d1">Support</span></span></div><div class="auth-copy"><div class="eyebrow" style="color:#a99fff">PORTAL DO CLIENTE</div><h1>Suas lojas.<br>Suas licenças.<br><span style="color:#a99fff">Tudo em um só lugar.</span></h1><p>Um espaço único para acompanhar suas licenças, dispositivos autorizados e ferramentas do ecossistema ML SH Support.</p><div class="feature-pills"><span>✦ Gestão de licenças</span><span>⌘ Dispositivos</span><span>↗ Códigos ML</span></div></div><div class="auth-foot">© 2026 ML SH Support · Portal do Cliente</div></aside>
-  <main class="auth-main"><div class="auth-card"><div class="brand" style="margin-bottom:32px;color:#171d30"><div class="brand-mark">M</div><span>ML SH Support</span></div><div id="loginForm"><h2>Bem-vindo de volta</h2><p class="sub">Entre para acessar seu painel de cliente.</p><form id="doLogin"><div class="field"><label for="loginEmail">E-mail</label><input id="loginEmail" type="email" autocomplete="email" placeholder="voce@empresa.com.br" required></div><div class="field"><label for="loginPassword">Senha</label><input id="loginPassword" type="password" autocomplete="current-password" placeholder="Sua senha" required></div><div id="loginError"></div><button class="btn btn-primary btn-block" type="submit">Entrar no painel <span>→</span></button></form><div class="auth-switch">Ainda não tem uma conta? <button class="text-btn" id="showRegister">Criar conta</button></div><div class="auth-note">Sua conta é independente das licenças. Você pode vincular uma ou mais chaves após entrar.</div></div>
-  <div id="registerForm" class="hidden"><h2>Crie sua conta</h2><p class="sub">Configure seu acesso ao portal em poucos passos.</p><form id="doRegister"><div class="field"><label for="registerName">Nome completo</label><input id="registerName" autocomplete="name" placeholder="Como podemos te chamar?" required maxlength="100"></div><div class="field"><label for="registerEmail">E-mail</label><input id="registerEmail" type="email" autocomplete="email" placeholder="voce@empresa.com.br" required></div><div class="field"><label for="registerPassword">Senha</label><input id="registerPassword" type="password" autocomplete="new-password" minlength="8" placeholder="Mínimo de 8 caracteres" required></div><div id="registerError"></div><button class="btn btn-primary btn-block" type="submit">Criar minha conta <span>→</span></button></form><div class="auth-switch">Já tem uma conta? <button class="text-btn" id="showLogin">Entrar</button></div><div class="auth-note">Ao continuar, você poderá cadastrar as chaves de licença que já possui.</div></div></div></main>
-</div>
-<div id="appView" class="app hidden">
-  <aside class="sidebar"><div class="brand"><div class="brand-mark">M</div><span class="brand-text">ML SH <span style="font-weight:500;color:#909bb8">Support</span></span></div>
-    <div class="nav-label">WORKSPACE</div><nav class="nav"><button class="nav-item active" data-page="overview"><span class="ico">◫</span><span class="nav-text">Visão geral</span></button><button class="nav-item" data-page="licenses"><span class="ico">⌘</span><span class="nav-text">Minhas licenças</span></button><button class="nav-item" data-page="devices"><span class="ico">▣</span><span class="nav-text">Dispositivos</span></button><button class="nav-item" data-page="sales"><span class="ico">↗</span><span class="nav-text">Vendas</span><span class="soon">EM BREVE</span></button></nav>
-    <div class="nav-label">FERRAMENTAS</div><nav class="nav"><button class="nav-item" data-page="codes"><span class="ico">▤</span><span class="nav-text">Códigos ML</span></button></nav>
-    <div class="nav-label">CONTA</div><nav class="nav"><button class="nav-item" data-page="support"><span class="ico">◉</span><span class="nav-text">Suporte</span></button><button class="nav-item" data-page="settings"><span class="ico">⚙</span><span class="nav-text">Configurações</span></button></nav>
-    <div class="side-bottom"><div class="side-help"><b>Precisa de ajuda?</b><p>Estamos aqui para ajudar com sua conta e licenças.</p><button data-page="support">Acessar suporte ↗</button></div><div class="side-user"><div class="avatar" id="sideAvatar">C</div><div class="user-meta"><b id="sideName">Cliente</b><small id="sideEmail">cliente@email.com</small></div><button class="logout" id="logoutBtn" title="Sair">↪</button></div></div>
-  </aside>
-  <main class="main"><header class="topbar"><div class="crumb">Portal do Cliente <span style="color:#b4bbca"> / </span> <b id="crumbPage">Visão geral</b></div><div class="top-right"><span class="status-pill"><span class="dot"></span> Sistema operacional</span><button class="btn btn-primary" id="topAddLicense">＋ <span>Adicionar licença</span></button></div></header><div class="content" id="pageContent"></div></main>
-</div>
-<div id="modalRoot"></div><div id="toastRoot"></div>
-<script>
-const API='';
-let portalCodes=[];
-let salesData=null;
-let salesLoading=false;
-let deviceFilters={company:'all',lastAccess:'all',sort:'newest'};
-let token=localStorage.getItem('mlsh_portal_token')||'';let currentUser=null;let dashboard={summary:{licenses:0,active_licenses:0,companies:0,devices:0,active_devices:0},licenses:[],devices:[]};let currentPage='overview';
-const $=id=>document.getElementById(id);const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-function toast(message){$('toastRoot').innerHTML=`<div class="toast">${esc(message)}</div>`;setTimeout(()=>$('toastRoot').innerHTML='',2800)}
-async function api(path,options={}){const headers={'Content-Type':'application/json',...(options.headers||{})};if(token)headers.Authorization='Bearer '+token;let response;try{response=await fetch(API+path,{...options,headers})}catch(e){throw new Error('Não foi possível conectar ao servidor. Tente novamente.')}let data={};try{data=await response.json()}catch(_){}if(!response.ok){if(response.status===401&&token){logout(false)}throw new Error(data.message||'Não foi possível concluir a solicitação.')}return data}
-function showAuth(which='login'){ $('authView').classList.remove('hidden');$('appView').classList.add('hidden');$('loginForm').classList.toggle('hidden',which!=='login');$('registerForm').classList.toggle('hidden',which!=='register') }
-function showApp(){ $('authView').classList.add('hidden');$('appView').classList.remove('hidden');updateUserUI();renderPage(); }
-function updateUserUI(){if(!currentUser)return;const name=currentUser.nome||'Cliente';$('sideName').textContent=name;$('sideEmail').textContent=currentUser.email||'';$('sideAvatar').textContent=name.trim().charAt(0).toUpperCase()}
-async function refreshDashboard(){
-  const [d,c]=await Promise.all([
-    api('/api/portal/dashboard'),
-    api('/api/portal/codes').catch(()=>({codes:[]}))
-  ]);
-  dashboard=d;portalCodes=Array.isArray(c.codes)?c.codes:[];
-  return d
-}
-async function boot(){if(!token){showAuth();return}try{const r=await api('/api/portal/me');currentUser=r.user;await refreshDashboard();showApp()}catch(e){token='';localStorage.removeItem('mlsh_portal_token');showAuth()}}
-function logout(show=true){token='';currentUser=null;localStorage.removeItem('mlsh_portal_token');if(show)toast('Você saiu da sua conta.');showAuth()}
-$('showRegister').onclick=()=>showAuth('register');$('showLogin').onclick=()=>showAuth('login');$('logoutBtn').onclick=()=>logout();$('topAddLicense').onclick=()=>openAddLicense();
-$('doLogin').addEventListener('submit',async e=>{e.preventDefault();$('loginError').innerHTML='';const btn=e.submitter;btn.disabled=true;try{const r=await api('/api/portal/login',{method:'POST',body:JSON.stringify({email:$('loginEmail').value,senha:$('loginPassword').value})});token=r.token;localStorage.setItem('mlsh_portal_token',token);currentUser=r.user;await refreshDashboard();showApp()}catch(err){$('loginError').innerHTML=`<div class="alert error">${esc(err.message)}</div>`}finally{btn.disabled=false}});
-$('doRegister').addEventListener('submit',async e=>{e.preventDefault();$('registerError').innerHTML='';const btn=e.submitter;btn.disabled=true;try{const r=await api('/api/portal/register',{method:'POST',body:JSON.stringify({nome:$('registerName').value,email:$('registerEmail').value,senha:$('registerPassword').value})});token=r.token;localStorage.setItem('mlsh_portal_token',token);currentUser=r.user;await refreshDashboard();showApp();toast('Conta criada com sucesso! Adicione sua primeira licença.');openAddLicense()}catch(err){$('registerError').innerHTML=`<div class="alert error">${esc(err.message)}</div>`}finally{btn.disabled=false}});
-document.querySelectorAll('[data-page]').forEach(btn=>btn.addEventListener('click',()=>navigate(btn.dataset.page)));
-function navigate(page){currentPage=page;document.querySelectorAll('.nav-item[data-page]').forEach(b=>b.classList.toggle('active',b.dataset.page===page));const labels={overview:'Visão geral',licenses:'Minhas licenças',devices:'Dispositivos',sales:'Vendas',codes:'Códigos ML',support:'Suporte',settings:'Configurações'};$('crumbPage').textContent=labels[page]||'Portal';renderPage()}
-function fmtDate(v){if(!v)return '—';const d=new Date(v);return Number.isNaN(d.getTime())?'—':d.toLocaleDateString('pt-BR')}
-function statusBadge(status,expires){if(status!=='active')return '<span class="badge off">Inativa</span>';if(expires&&new Date(expires).getTime()<Date.now())return '<span class="badge off">Expirada</span>';return '<span class="badge">Ativa</span>'}
-function initials(name){return String(name||'?').trim().split(/\s+/).slice(0,2).map(x=>x[0]).join('').toUpperCase()}
-function pageHead(eyebrow,title,desc,action=''){return `<div class="page-head"><div><div class="eyebrow">${eyebrow}</div><h1>${title}</h1><p>${desc}</p></div>${action?`<div class="actions">${action}</div>`:''}</div>`}
-function stat(label,value,icon,foot){return `<div class="stat-card"><div class="stat-top"><span>${label}</span><span class="stat-icon">${icon}</span></div><div class="stat-number">${value}</div><div class="stat-foot">${foot}</div></div>`}
-function licenseCard(l){const company=l.company?.nome||l.company||'Empresa';return `<article class="license-card"><div class="license-top"><div class="company-logo">${esc(initials(company))}</div><div class="license-title"><h3>${esc(company)}</h3><p>Licença ML SH Support</p></div>${statusBadge(l.status,l.vencimento)}</div><div class="license-key"><code>${esc(l.chave||'Chave não disponível')}</code><button class="mini-btn" data-copy="${esc(l.chave||'')}">▢ Copiar</button></div><div class="license-meta"><div><div class="meta-label">Vencimento</div><div class="meta-value">${fmtDate(l.vencimento)}</div></div><div><div class="meta-label">Adicionada ao portal</div><div class="meta-value">${fmtDate(l.added_at||l.created_at)}</div></div></div></article>`}
-function emptyState(icon,title,desc,button=''){return `<div class="empty"><div class="empty-icon">${icon}</div><h3>${title}</h3><p>${desc}</p>${button}</div>`}
-function codesMarkup(){
- const configured=portalCodes.filter(c=>c.code);
- if(!configured.length) return `<div class="panel">${emptyState('▤','Nenhum código configurado','Os códigos são definidos no painel administrativo, no cadastro de cada empresa. Quando o administrador preencher o Código ML, ele aparecerá aqui automaticamente.')}</div>`;
- return `<div class="panel"><div class="panel-head"><div><h3>Códigos das suas lojas</h3><div class="small muted">Exibimos apenas códigos das empresas vinculadas às suas licenças.</div></div><button class="btn btn-primary" data-copy-all>▢ Copiar todos</button></div><div class="code-grid">${configured.map(c=>`<div class="code-card"><div class="code-logo">${esc(initials(c.name))}</div><div class="code-main"><b>${esc(c.name)}</b><code>${esc(c.code)}</code></div><button class="mini-btn" data-copy="${esc(c.code)}">Copiar</button></div>`).join('')}</div></div>`;
-}
-function renderDeviceRows(){
- const tbody=$('devicesTableBody');if(!tbody)return;
- const now=Date.now();
- let rows=[...(dashboard.devices||[])];
- if(deviceFilters.company!=='all') rows=rows.filter(d=>String(d.company_id)===String(deviceFilters.company));
- rows=rows.filter(d=>{
-   const t=d.ultimo_acesso?new Date(d.ultimo_acesso).getTime():0;
-   if(deviceFilters.lastAccess==='none')return !t;
-   if(deviceFilters.lastAccess==='24h')return t>0&&now-t<=86400000;
-   if(deviceFilters.lastAccess==='7d')return t>0&&now-t<=7*86400000;
-   if(deviceFilters.lastAccess==='30d')return t>0&&now-t<=30*86400000;
-   if(deviceFilters.lastAccess==='older')return t>0&&now-t>30*86400000;
-   return true;
- });
- rows.sort((a,b)=>{
-   const ta=a.ultimo_acesso?new Date(a.ultimo_acesso).getTime():0;
-   const tb=b.ultimo_acesso?new Date(b.ultimo_acesso).getTime():0;
-   return deviceFilters.sort==='oldest'?ta-tb:tb-ta;
- });
- tbody.innerHTML=rows.length?rows.map(d=>`<tr><td><div class="device-name">${esc(d.nome||'Dispositivo')}</div><div class="device-id">${esc(d.device_id||'')}</div></td><td>${esc(d.company_name||'—')}</td><td>${statusBadge(d.status)}</td><td>${d.ultimo_acesso?esc(new Date(d.ultimo_acesso).toLocaleString('pt-BR')):'Nunca acessou'}</td></tr>`).join(''):`<tr><td colspan="4"><div class="empty compact-empty"><h3>Nenhum dispositivo encontrado</h3><p>Altere os filtros ou atualize os dados.</p></div></td></tr>`;
- const count=$('deviceResultCount');if(count)count.textContent=`${rows.length} de ${(dashboard.devices||[]).length} dispositivo(s)`;
-}
-function salesMarkup(){
- const d=salesData;
- const days=d?.days||30;
- const stores=d?.stores||[];
- const connected=stores.filter(s=>s.connected);
- const fmtMoney=v=>Number(v||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
- return `${pageHead('ANALYTICS','Vendas','Acompanhe pedidos e faturamento das contas Mercado Livre vinculadas às suas licenças.',`<button class="btn btn-ghost" data-sales-refresh>↻ Atualizar</button>`)}
- <div class="sales-toolbar"><label for="salesPeriod">Período</label><select id="salesPeriod" class="filter-control"><option value="7" ${days===7?'selected':''}>Últimos 7 dias</option><option value="30" ${days===30?'selected':''}>Últimos 30 dias</option><option value="90" ${days===90?'selected':''}>Últimos 90 dias</option></select><span class="small muted">${salesLoading?'Atualizando dados…':`${connected.length} conta(s) conectada(s)`}</span></div>
- ${salesLoading?`<div class="panel loading-panel">Consultando as vendas do Mercado Livre…</div>`:`
- <div class="grid sales-stats">${stat('Pedidos no período',d?.totals?.orders??'—','↗',connected.length?'Contas conectadas':'Conecte uma conta Mercado Livre')}${stat('Faturamento consultado',fmtMoney(connected.reduce((sum,s)=>sum+(s.revenue||0),0)),'＄','Soma dos pedidos consultados')}${stat('Lojas conectadas',connected.length,'▦',`${stores.length} empresa(s) com licença`) }${stat('Período',`${days} dias`,'◷','Janela selecionada')}</div>
- ${stores.length?`<div class="panel sales-panel"><div class="panel-head"><div><h3>Desempenho por loja</h3><div class="small muted">Dados consultados diretamente na API do Mercado Livre.</div></div></div><div class="table-wrap"><table class="table sales-table"><thead><tr><th>Empresa</th><th>Conta Mercado Livre</th><th>Pedidos</th><th>Faturamento</th><th>Status</th></tr></thead><tbody>${stores.map(s=>`<tr><td><b>${esc(s.company_name)}</b></td><td>${esc(s.nickname||'—')}<div class="device-id">${esc(s.ml_user_id||'')}</div></td><td>${s.connected?Number(s.orders||0).toLocaleString('pt-BR'):'—'}</td><td>${s.connected?fmtMoney(s.revenue):'—'}${s.truncated?'<div class="device-id">Faturamento calculado nos últimos 500 pedidos consultados</div>':''}</td><td>${s.connected?'<span class="badge">Conectada</span>':`<span class="badge off">Atenção</span><div class="device-id">${esc(s.error||'Falha ao consultar')}</div>`}</td></tr>`).join('')}</tbody></table></div></div>`:`<div class="panel">${emptyState('↗','Nenhuma loja vinculada','Adicione uma licença ao portal para visualizar as empresas associadas.')}</div>`}
- <div class="notice sales-note">Para aparecerem vendas, a conta do Mercado Livre precisa estar conectada à empresa no painel atual. O faturamento soma os pedidos retornados pela API no período; quando houver mais de 500 pedidos, a contagem total é exibida, mas o faturamento é calculado sobre os 500 mais recentes.</div>`}`;
-}
-async function loadSales(days=30){
- salesLoading=true;salesData={...(salesData||{}),days,stores:salesData?.stores||[],totals:salesData?.totals||{orders:0,revenue:0}};
- if(currentPage==='sales')renderPage();
- try{salesData=await api('/api/portal/sales?days='+encodeURIComponent(days));}
- catch(e){salesData={days,connected:0,totals:{orders:0,revenue:0},stores:[],error:e.message};toast(e.message)}
- finally{salesLoading=false;if(currentPage==='sales')renderPage()}
-}
+  function authPortal(req, res, next) {
+    try {
+      const header = req.headers.authorization || '';
+      const token = header.startsWith('Bearer ') ? header.slice(7) : '';
+      if (!token) return res.status(401).json({ ok: false, error: 'auth_required' });
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      if (decoded.type !== 'portal' || !decoded.portal_user_id) throw new Error('wrong_token_type');
+      req.portalUserId = decoded.portal_user_id;
+      next();
+    } catch (_) {
+      return res.status(401).json({ ok: false, error: 'invalid_session' });
+    }
+  }
 
-function renderPage(){if(!$('appView').classList.contains('hidden')){const s=dashboard.summary||{};let html='';switch(currentPage){case'overview':html=pageHead('SEU WORKSPACE','Visão geral','Acompanhe suas licenças e dispositivos em um único lugar.',`<button class="btn btn-primary" data-add>＋ Adicionar licença</button>`)+`<div class="grid">${stat('Licenças cadastradas',s.licenses||0,'⌘',`${s.active_licenses||0} ativas`)}${stat('Empresas vinculadas',s.companies||0,'▦','Lojas associadas às licenças')}${stat('Dispositivos registrados',s.devices||0,'▣',`${s.active_devices||0} ativos`)}${stat('Códigos ML',portalCodes.length,'▤','Configurados para suas lojas')}</div><div class="section-row"><div><h2>Suas licenças</h2><p>Resumo das empresas vinculadas à sua conta.</p></div><button class="btn btn-ghost" data-go="licenses">Ver todas →</button></div>${(dashboard.licenses||[]).length?`<div class="license-list">${dashboard.licenses.slice(0,4).map(l=>licenseCard(l)).join('')}</div>`: `<div class="panel">${emptyState('⌘','Nenhuma licença cadastrada','Adicione uma chave que você já possui. Vamos identificar a empresa automaticamente.',`<button class="btn btn-primary" data-add>＋ Cadastrar primeira licença</button>`)}</div>`}<div class="section-row"><div><h2>Acesso rápido</h2><p>Ferramentas úteis para o seu dia a dia.</p></div></div><div class="placeholder-grid"><div class="placeholder-card"><div class="stat-icon">▤</div><h3>Códigos ML</h3><p>Copie os códigos das lojas em poucos segundos.</p><button class="btn btn-ghost" data-go="codes">Abrir códigos →</button></div><div class="placeholder-card"><div class="stat-icon">▣</div><h3>Dispositivos</h3><p>Consulte os computadores que estão usando suas licenças.</p><button class="btn btn-ghost" data-go="devices">Ver dispositivos →</button></div><div class="placeholder-card"><div class="stat-icon">↗</div><h3>Relatórios de vendas</h3><p>Área preparada para indicadores de vendas das lojas conectadas.</p><span class="tag-soon">EM BREVE</span></div></div>`;break;
-case'licenses':html=pageHead('GESTÃO','Minhas licenças','Cadastre as chaves que você possui e veja a empresa vinculada a cada uma.',`<button class="btn btn-primary" data-add>＋ Adicionar licença</button>`)+((dashboard.licenses||[]).length?`<div class="license-list">${dashboard.licenses.map(l=>licenseCard(l)).join('')}</div>`:`<div class="panel">${emptyState('⌘','Seu painel começa aqui','Adicione uma licença válida. O nome da empresa e o status serão carregados pelo sistema.',`<button class="btn btn-primary" data-add>＋ Adicionar licença</button>`)}</div>`);break;
-case'devices':{
- const companyOptions=[...new Map((dashboard.devices||[]).map(d=>[String(d.company_id),{id:d.company_id,name:d.company_name||'Empresa'}])).values()];
- html=pageHead('INVENTÁRIO','Dispositivos','Filtre os dispositivos por empresa e último acesso.')+`<div class="panel"><div class="panel-head"><div><h3>Dispositivos autorizados</h3><div class="small muted">Dados sincronizados com o sistema de licenças.</div></div><button class="btn btn-ghost" data-refresh>↻ Atualizar</button></div><div class="filters-row"><div class="filter-field"><label for="deviceCompanyFilter">Empresa</label><select id="deviceCompanyFilter" class="filter-control"><option value="all">Todas as empresas</option>${companyOptions.map(c=>`<option value="${esc(c.id)}" ${String(deviceFilters.company)===String(c.id)?'selected':''}>${esc(c.name)}</option>`).join('')}</select></div><div class="filter-field"><label for="deviceAccessFilter">Último acesso</label><select id="deviceAccessFilter" class="filter-control"><option value="all" ${deviceFilters.lastAccess==='all'?'selected':''}>Qualquer data</option><option value="24h" ${deviceFilters.lastAccess==='24h'?'selected':''}>Últimas 24 horas</option><option value="7d" ${deviceFilters.lastAccess==='7d'?'selected':''}>Últimos 7 dias</option><option value="30d" ${deviceFilters.lastAccess==='30d'?'selected':''}>Últimos 30 dias</option><option value="older" ${deviceFilters.lastAccess==='older'?'selected':''}>Há mais de 30 dias</option><option value="none" ${deviceFilters.lastAccess==='none'?'selected':''}>Sem acesso registrado</option></select></div><div class="filter-field"><label for="deviceSortFilter">Ordenar</label><select id="deviceSortFilter" class="filter-control"><option value="newest" ${deviceFilters.sort==='newest'?'selected':''}>Acesso mais recente</option><option value="oldest" ${deviceFilters.sort==='oldest'?'selected':''}>Acesso mais antigo</option></select></div></div><div class="filter-result" id="deviceResultCount"></div>${(dashboard.devices||[]).length?`<div class="table-wrap"><table class="table"><thead><tr><th>Dispositivo</th><th>Empresa</th><th>Status</th><th>Último acesso</th></tr></thead><tbody id="devicesTableBody"></tbody></table></div>`:emptyState('▣','Nenhum dispositivo para mostrar','Quando computadores estiverem registrados nas empresas das suas licenças, eles aparecerão aqui.')}</div>`;
- break;
-}
-case'codes':html=pageHead('FERRAMENTAS','Códigos ML','Códigos configurados para as empresas vinculadas às suas licenças.',`<button class="btn btn-primary" data-copy-all>▢ Copiar todos</button>`)+codesMarkup();break;
-case'sales':html=salesMarkup();break;
-case'support':html=pageHead('AJUDA','Suporte','Precisa de ajuda com uma licença, dispositivo ou acesso?')+`<div class="panel settings-box"><div class="stat-icon" style="margin-bottom:15px">◉</div><h3 style="margin:0 0 7px">Fale com o suporte</h3><p class="muted">Ao entrar em contato, informe o e-mail da sua conta e a empresa relacionada ao problema. Não compartilhe sua senha.</p><div class="settings-row"><div><b>Conta atual</b><p>${esc(currentUser?.email||'')}</p></div><button class="btn btn-ghost" data-copy="${esc(currentUser?.email||'')}">Copiar e-mail</button></div><div class="settings-row"><div><b>Licenças cadastradas</b><p>${s.licenses||0} vinculada(s) a esta conta</p></div><button class="btn btn-ghost" data-go="licenses">Ver licenças</button></div><div style="margin-top:18px"><button class="btn btn-primary" id="supportMail">✉ Preparar e-mail para suporte</button></div></div>`;break;
-case'settings':html=pageHead('PREFERÊNCIAS','Configurações','Gerencie os dados básicos e a segurança da sua conta.')+`<div class="panel settings-box"><div class="panel-head"><div><h3>Perfil da conta</h3><div class="small muted">Informações usadas para identificar seu acesso ao portal.</div></div></div><div class="settings-row"><div><b>Nome</b><p>${esc(currentUser?.nome||'—')}</p></div><span class="small muted">Conta do portal</span></div><div class="settings-row"><div><b>E-mail</b><p>${esc(currentUser?.email||'—')}</p></div><span class="badge">Verificado no login</span></div><div class="settings-row"><div><b>Senha</b><p>Por segurança, a senha não é exibida.</p></div><span class="small muted">Redefinição futura</span></div><div class="settings-row"><div><b>Sessão</b><p>Encerre o acesso neste dispositivo.</p></div><button class="btn btn-danger" id="settingsLogout">Sair da conta</button></div></div>`;break;}
-$('pageContent').innerHTML=html;bindDynamicActions();if(currentPage==='sales'&&!salesLoading&&!salesData)loadSales(30);}}
-function bindDynamicActions(){document.querySelectorAll('[data-add]').forEach(b=>b.onclick=openAddLicense);document.querySelectorAll('[data-go]').forEach(b=>b.onclick=()=>navigate(b.dataset.go));document.querySelectorAll('[data-copy]').forEach(b=>b.onclick=()=>copyText(b.dataset.copy));document.querySelectorAll('[data-copy-all]').forEach(b=>b.onclick=()=>copyText(portalCodes.filter(c=>c.code).map(c=>`${c.name}: ${c.code}`).join('\n')));
- if($('deviceCompanyFilter'))$('deviceCompanyFilter').onchange=e=>{deviceFilters.company=e.target.value;renderDeviceRows()};
- if($('deviceAccessFilter'))$('deviceAccessFilter').onchange=e=>{deviceFilters.lastAccess=e.target.value;renderDeviceRows()};
- if($('deviceSortFilter'))$('deviceSortFilter').onchange=e=>{deviceFilters.sort=e.target.value;renderDeviceRows()};
- if($('devicesTableBody'))renderDeviceRows();
- document.querySelectorAll('[data-sales-refresh]').forEach(b=>b.onclick=()=>loadSales(Number($('salesPeriod')?.value||30)));
- if($('salesPeriod'))$('salesPeriod').onchange=e=>loadSales(Number(e.target.value));document.querySelectorAll('[data-refresh]').forEach(b=>b.onclick=async()=>{try{await refreshDashboard();renderPage();toast('Dados atualizados.')}catch(e){toast(e.message)}});if($('settingsLogout'))$('settingsLogout').onclick=()=>logout();if($('supportMail'))$('supportMail').onclick=()=>{const subject=encodeURIComponent('Suporte ML SH Support');const body=encodeURIComponent(`Olá, preciso de ajuda com o Portal do Cliente.\n\nConta: ${currentUser?.email||''}\nLicenças cadastradas: ${(dashboard.summary||{}).licenses||0}\n\nDescrição do problema:\n`);location.href=`mailto:?subject=${subject}&body=${body}`}}
-async function copyText(text){try{await navigator.clipboard.writeText(text);toast('Copiado para a área de transferência.')}catch(e){const t=document.createElement('textarea');t.value=text;document.body.appendChild(t);t.select();try{document.execCommand('copy');toast('Copiado para a área de transferência.')}catch(_){toast('Não foi possível copiar automaticamente.')}t.remove()}}
-function openAddLicense(){if(!token)return; $('modalRoot').innerHTML=`<div class="modal-backdrop" id="modalBackdrop"><section class="modal"><div class="modal-head"><h2>Adicionar licença</h2><button class="modal-close" id="closeModal">×</button></div><p>Informe a chave de licença que você já possui. Vamos validar a chave e identificar a empresa automaticamente.</p><form id="addLicenseForm"><div class="field"><label for="licenseKey">Chave da licença</label><input id="licenseKey" autocomplete="off" placeholder="Cole sua chave de licença" required maxlength="200"></div><div id="licenseResult"></div><div class="modal-actions"><button type="button" class="btn btn-ghost" id="cancelModal">Cancelar</button><button class="btn btn-primary" type="submit">Validar e adicionar</button></div></form></section></div>`;$('closeModal').onclick=closeModal;$('cancelModal').onclick=closeModal;$('modalBackdrop').onclick=e=>{if(e.target.id==='modalBackdrop')closeModal()};$('addLicenseForm').onsubmit=async e=>{e.preventDefault();const form=e.currentTarget;const btn=form.querySelector('[type=submit]');btn.disabled=true;btn.textContent='Validando…';$('licenseResult').innerHTML='';try{const r=await api('/api/portal/licenses',{method:'POST',body:JSON.stringify({chave:$('licenseKey').value.trim()})});$('licenseResult').innerHTML=`<div class="alert success">Licença vinculada! Empresa identificada: <b>${esc(r.license.company?.nome||'Empresa')}</b>.</div>`;await refreshDashboard();setTimeout(()=>{closeModal();navigate('licenses');toast('Licença adicionada com sucesso.')},700)}catch(err){$('licenseResult').innerHTML=`<div class="alert error">${esc(err.message)}</div>`}finally{btn.disabled=false;btn.textContent='Validar e adicionar'}}}
-function closeModal(){$('modalRoot').innerHTML=''}
-boot();
-</script>
-</body></html>
+  async function getPortalUser(id) {
+    const { data, error } = await supabase.from('portal_users')
+      .select('id,nome,email,status,created_at').eq('id', id).maybeSingle();
+    if (error) throw error;
+    return data;
+  }
+
+  app.post('/api/portal/register', async (req, res) => {
+    try {
+      const nome = String(req.body?.nome || '').trim().slice(0, 100);
+      const email = String(req.body?.email || '').trim().toLowerCase();
+      const senha = String(req.body?.senha || '');
+      if (!nome || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || senha.length < 8) {
+        return res.status(400).json({ ok: false, error: 'invalid_fields', message: 'Informe nome, e-mail válido e senha com pelo menos 8 caracteres.' });
+      }
+      const { data: existing, error: lookupError } = await supabase.from('portal_users').select('id').eq('email', email).maybeSingle();
+      if (lookupError) throw lookupError;
+      if (existing) return res.status(409).json({ ok: false, error: 'email_exists', message: 'Já existe uma conta com este e-mail.' });
+      const senha_hash = await bcrypt.hash(senha, 12);
+      const { data: user, error } = await supabase.from('portal_users')
+        .insert({ nome, email, senha_hash, status: 'active' })
+        .select('id,nome,email,status,created_at').single();
+      if (error) {
+        if (error.code === '23505') return res.status(409).json({ ok: false, error: 'email_exists', message: 'Já existe uma conta com este e-mail.' });
+        throw error;
+      }
+      const token = jwt.sign({ type: 'portal', portal_user_id: user.id, email: user.email }, process.env.JWT_SECRET, { expiresIn: '7d' });
+      return res.status(201).json({ ok: true, token, user });
+    } catch (error) {
+      console.error('Portal register error:', error.message);
+      return res.status(500).json({ ok: false, error: 'server_error', message: 'Não foi possível criar a conta agora.' });
+    }
+  });
+
+  app.post('/api/portal/login', async (req, res) => {
+    try {
+      const email = String(req.body?.email || '').trim().toLowerCase();
+      const senha = String(req.body?.senha || '');
+      if (!email || !senha) return res.status(400).json({ ok: false, error: 'missing_credentials', message: 'Informe e-mail e senha.' });
+      const { data: user, error } = await supabase.from('portal_users').select('*').eq('email', email).maybeSingle();
+      if (error) throw error;
+      if (!user || user.status !== 'active' || !(await bcrypt.compare(senha, user.senha_hash))) {
+        return res.status(401).json({ ok: false, error: 'invalid_credentials', message: 'E-mail ou senha incorretos.' });
+      }
+      const token = jwt.sign({ type: 'portal', portal_user_id: user.id, email: user.email }, process.env.JWT_SECRET, { expiresIn: '7d' });
+      return res.json({ ok: true, token, user: { id: user.id, nome: user.nome, email: user.email, status: user.status, created_at: user.created_at } });
+    } catch (error) {
+      console.error('Portal login error:', error.message);
+      return res.status(500).json({ ok: false, error: 'server_error', message: 'Não foi possível entrar agora.' });
+    }
+  });
+
+  app.get('/api/portal/me', authPortal, async (req, res) => {
+    try {
+      const user = await getPortalUser(req.portalUserId);
+      if (!user || user.status !== 'active') return res.status(401).json({ ok: false, error: 'account_unavailable' });
+      return res.json({ ok: true, user });
+    } catch (error) {
+      console.error('Portal me error:', error.message);
+      return res.status(500).json({ ok: false, error: 'server_error' });
+    }
+  });
+
+  app.get('/api/portal/licenses', authPortal, async (req, res) => {
+    try {
+      const { data, error } = await supabase.from('portal_user_licenses')
+        .select('id,created_at,licenses(id,chave,status,inicio,vencimento,company_id,companies(id,nome,documento,status))')
+        .eq('user_id', req.portalUserId).order('created_at', { ascending: false });
+      if (error) throw error;
+      const licenses = (data || []).map(row => {
+        const l = row.licenses || {};
+        const c = l.companies || {};
+        return { link_id: row.id, added_at: row.created_at, id: l.id, chave: l.chave, status: l.status,
+          inicio: l.inicio, vencimento: l.vencimento, company_id: l.company_id,
+          company: { id: c.id, nome: c.nome || 'Empresa não identificada', documento: c.documento || null, status: c.status || 'unknown', codigo_ml: c.codigo_ml || null } };
+      });
+      return res.json({ ok: true, licenses });
+    } catch (error) {
+      console.error('Portal licenses error:', error.message);
+      return res.status(500).json({ ok: false, error: 'server_error', message: 'Não foi possível carregar as licenças.' });
+    }
+  });
+
+  app.post('/api/portal/licenses', authPortal, async (req, res) => {
+    try {
+      const chave = String(req.body?.chave || '').trim();
+      if (!chave || chave.length > 200) return res.status(400).json({ ok: false, error: 'invalid_license', message: 'Informe uma chave de licença válida.' });
+      const { data: license, error: licenseError } = await supabase.from('licenses')
+        .select('id,chave,status,inicio,vencimento,company_id').eq('chave', chave).maybeSingle();
+      if (licenseError) throw licenseError;
+      if (!license) return res.status(404).json({ ok: false, error: 'license_not_found', message: 'Não encontramos essa licença. Confira a chave e tente novamente.' });
+      const { data: company, error: companyError } = await supabase.from('companies')
+        .select('id,nome,documento,status,codigo_ml').eq('id', license.company_id).maybeSingle();
+      if (companyError) throw companyError;
+      if (!company) return res.status(404).json({ ok: false, error: 'company_not_found', message: 'A empresa desta licença não foi encontrada.' });
+      const { data: currentLink, error: currentError } = await supabase.from('portal_user_licenses')
+        .select('id,user_id').eq('license_id', license.id).maybeSingle();
+      if (currentError) throw currentError;
+      if (currentLink?.user_id === req.portalUserId) return res.status(409).json({ ok: false, error: 'license_already_added', message: 'Essa licença já está na sua conta.' });
+      if (currentLink && currentLink.user_id !== req.portalUserId) return res.status(409).json({ ok: false, error: 'license_claimed', message: 'Essa licença já está vinculada a outra conta. Entre em contato com o suporte se acredita que isso é um erro.' });
+      const { error: insertError } = await supabase.from('portal_user_licenses').insert({ user_id: req.portalUserId, license_id: license.id });
+      if (insertError) {
+        if (insertError.code === '23505') return res.status(409).json({ ok: false, error: 'license_claimed', message: 'Essa licença já está vinculada a uma conta.' });
+        throw insertError;
+      }
+      return res.status(201).json({ ok: true, license: { id: license.id, chave: license.chave, status: license.status, inicio: license.inicio, vencimento: license.vencimento, company } });
+    } catch (error) {
+      console.error('Portal add license error:', error.message);
+      return res.status(500).json({ ok: false, error: 'server_error', message: 'Não foi possível cadastrar a licença.' });
+    }
+  });
+
+  // Códigos ML são configurados pelo administrador no cadastro da empresa.
+  // O cliente só recebe códigos das empresas vinculadas às próprias licenças.
+  app.get('/api/portal/codes', authPortal, async (req, res) => {
+    try {
+      const { data: links, error } = await supabase.from('portal_user_licenses')
+        .select('licenses(company_id,companies(id,nome,codigo_ml,status))')
+        .eq('user_id', req.portalUserId);
+      if (error) throw error;
+      const seen = new Set();
+      const codes = [];
+      for (const row of links || []) {
+        const license = row.licenses;
+        const company = license?.companies;
+        if (!company?.id || seen.has(company.id)) continue;
+        seen.add(company.id);
+        if (company.codigo_ml && String(company.codigo_ml).trim()) {
+          codes.push({ company_id: company.id, name: company.nome || 'Empresa', code: String(company.codigo_ml).trim(), status: company.status || 'unknown' });
+        }
+      }
+      return res.json({ ok: true, codes });
+    } catch (error) {
+      console.error('Portal codes error:', error.message);
+      return res.status(500).json({ ok: false, error: 'server_error', message: 'Não foi possível carregar os códigos das lojas.' });
+    }
+  });
+
+  // Vendas reais das contas do Mercado Livre conectadas às empresas licenciadas.
+  app.get('/api/portal/sales', authPortal, async (req, res) => {
+    try {
+      const days = Math.max(1, Math.min(90, Number.parseInt(req.query.days, 10) || 30));
+      const { data: links, error: linkError } = await supabase.from('portal_user_licenses')
+        .select('licenses(company_id,companies(id,nome,status))').eq('user_id', req.portalUserId);
+      if (linkError) throw linkError;
+      const companies = new Map();
+      for (const row of links || []) {
+        const c = row.licenses?.companies;
+        if (c?.id) companies.set(c.id, c);
+      }
+      const companyIds = [...companies.keys()];
+      if (!companyIds.length) return res.json({ ok: true, days, connected: 0, totals: { orders: 0, revenue: 0 }, stores: [] });
+
+      const { data: accounts, error: accountError } = await supabase.from('mercadolivre_accounts')
+        .select('company_id,ml_user_id,nickname,access_token,refresh_token,token_expires_at')
+        .in('company_id', companyIds);
+      if (accountError) throw accountError;
+
+      const stores = [];
+      const connectedCompanyIds = new Set((accounts || []).map(a => String(a.company_id)));
+      for (const [companyId, company] of companies.entries()) {
+        if (!connectedCompanyIds.has(String(companyId))) {
+          stores.push({
+            company_id: companyId,
+            company_name: company.nome || 'Empresa',
+            nickname: 'Conta não conectada',
+            connected: false,
+            error: 'Conecte a conta Mercado Livre desta empresa pelo fluxo de autorização já existente.',
+            orders: 0,
+            revenue: 0
+          });
+        }
+      }
+      const now = Date.now();
+      const from = new Date(now - days * 86400000).toISOString();
+      const to = new Date(now).toISOString();
+
+      for (const account of accounts || []) {
+        const company = companies.get(account.company_id);
+        let accessToken = account.access_token;
+        try {
+          if (!accessToken) throw new Error('Conta sem token de acesso');
+          const expiresAt = account.token_expires_at ? new Date(account.token_expires_at).getTime() : 0;
+          if (expiresAt && expiresAt <= now + 120000) {
+            if (!account.refresh_token || !process.env.ML_CLIENT_ID || !process.env.ML_CLIENT_SECRET) throw new Error('Token expirado; reconecte a conta Mercado Livre');
+            const refreshResponse = await fetch('https://api.mercadolibre.com/oauth/token', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json' },
+              body: new URLSearchParams({ grant_type: 'refresh_token', client_id: process.env.ML_CLIENT_ID, client_secret: process.env.ML_CLIENT_SECRET, refresh_token: account.refresh_token })
+            });
+            const refreshed = await refreshResponse.json();
+            if (!refreshResponse.ok) throw new Error('Não foi possível renovar o token do Mercado Livre');
+            accessToken = refreshed.access_token;
+            await supabase.from('mercadolivre_accounts').update({
+              access_token: refreshed.access_token,
+              refresh_token: refreshed.refresh_token || account.refresh_token,
+              token_expires_at: new Date(Date.now() + Number(refreshed.expires_in || 0) * 1000).toISOString(),
+              updated_at: new Date().toISOString()
+            }).eq('company_id', account.company_id);
+          }
+
+          let orders = [];
+          let totalOrders = 0;
+          const pageSize = 50;
+          const maxOrders = 500;
+          for (let offset = 0; offset < maxOrders; offset += pageSize) {
+            const params = new URLSearchParams({
+              seller: String(account.ml_user_id),
+              'order.date_created.from': from,
+              'order.date_created.to': to,
+              limit: String(pageSize),
+              offset: String(offset),
+              sort: 'date_desc'
+            });
+            const response = await fetch('https://api.mercadolibre.com/orders/search?' + params.toString(), {
+              headers: { Authorization: 'Bearer ' + accessToken, Accept: 'application/json' }
+            });
+            const result = await response.json();
+            if (!response.ok) throw new Error(result.message || 'Falha ao consultar pedidos');
+            totalOrders = Number(result.paging?.total || 0);
+            orders = orders.concat(result.results || []);
+            if ((result.results || []).length < pageSize || offset + pageSize >= totalOrders || offset + pageSize >= maxOrders) break;
+          }
+          const revenue = orders.reduce((sum, order) => sum + Number(order.total_amount || 0), 0);
+          stores.push({
+            company_id: account.company_id,
+            company_name: company?.nome || 'Empresa',
+            nickname: account.nickname || 'Conta Mercado Livre',
+            ml_user_id: account.ml_user_id,
+            connected: true,
+            orders: totalOrders,
+            revenue,
+            orders_sampled: Math.min(totalOrders, maxOrders),
+            truncated: totalOrders > maxOrders
+          });
+        } catch (error) {
+          stores.push({
+            company_id: account.company_id,
+            company_name: company?.nome || 'Empresa',
+            nickname: account.nickname || 'Conta Mercado Livre',
+            ml_user_id: account.ml_user_id,
+            connected: false,
+            error: error.message || 'Não foi possível consultar esta conta',
+            orders: 0,
+            revenue: 0
+          });
+        }
+      }
+      return res.json({
+        ok: true, days, connected: stores.filter(s => s.connected).length,
+        totals: { orders: stores.reduce((sum, s) => sum + (s.orders || 0), 0), revenue: stores.reduce((sum, s) => sum + (s.revenue || 0), 0) },
+        stores
+      });
+    } catch (error) {
+      console.error('Portal sales error:', error.message);
+      return res.status(500).json({ ok: false, error: 'server_error', message: 'Não foi possível carregar as vendas.' });
+    }
+  });
+
+  app.get('/api/portal/dashboard', authPortal, async (req, res) => {
+    try {
+      const { data: links, error: linkError } = await supabase.from('portal_user_licenses')
+        .select('licenses(id,chave,status,vencimento,company_id,companies(id,nome,status,codigo_ml))').eq('user_id', req.portalUserId);
+      if (linkError) throw linkError;
+      const licenses = (links || []).map(x => x.licenses).filter(Boolean);
+      const companyMap = new Map();
+      licenses.forEach(l => { if (l.companies?.id) companyMap.set(l.companies.id, l.companies); });
+      const companyIds = [...companyMap.keys()];
+      let devices = [];
+      if (companyIds.length) {
+        const { data, error } = await supabase.from('devices').select('id,company_id,device_id,nome,status,ultimo_acesso').in('company_id', companyIds).order('ultimo_acesso', { ascending: false });
+        if (error) throw error;
+        devices = (data || []).map(d => ({ ...d, company_name: companyMap.get(d.company_id)?.nome || 'Empresa' }));
+      }
+      const activeLicenses = licenses.filter(l => l.status === 'active' && (!l.vencimento || new Date(l.vencimento).getTime() >= Date.now())).length;
+      return res.json({ ok: true, summary: { licenses: licenses.length, active_licenses: activeLicenses, companies: companyIds.length, devices: devices.length, active_devices: devices.filter(d => d.status === 'active').length }, licenses: licenses.map(l => ({ id: l.id, chave: l.chave, status: l.status, vencimento: l.vencimento, company_id: l.company_id, company: l.companies?.nome || 'Empresa não identificada', codigo_ml: l.companies?.codigo_ml || null })), devices });
+    } catch (error) {
+      console.error('Portal dashboard error:', error.message);
+      return res.status(500).json({ ok: false, error: 'server_error', message: 'Não foi possível carregar o painel.' });
+    }
+  });
+};
