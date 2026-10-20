@@ -131,46 +131,47 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
     }
   });
 
-  // Códigos diários de Agência capturados pela extensão e vinculados à empresa da licença.
+  // Códigos da Agência: mostra todas as empresas vinculadas à conta do portal,
+  // buscando primeiro o código capturado diariamente em company_ml_codes.
   app.get('/api/portal/codes', authPortal, async (req, res) => {
     try {
       const { data: links, error: linkError } = await supabase.from('portal_user_licenses')
-        .select('licenses(company_id,companies(id,nome,status))')
+        .select('licenses(company_id,companies(id,nome,codigo_ml,status))')
         .eq('user_id', req.portalUserId);
       if (linkError) throw linkError;
 
       const companies = new Map();
       for (const row of links || []) {
         const company = row.licenses?.companies;
-        if (company?.id && !companies.has(company.id)) companies.set(company.id, company);
+        if (company?.id && !companies.has(String(company.id))) {
+          companies.set(String(company.id), company);
+        }
       }
-      const ids = [...companies.keys()];
-      if (!ids.length) return res.json({ ok: true, codes: [] });
+      const companyIds = [...companies.keys()];
+      if (!companyIds.length) return res.json({ ok: true, codes: [] });
 
-      const { data: rows, error: codesError } = await supabase.from('company_ml_codes')
+      const { data: capturedRows, error: capturedError } = await supabase
+        .from('company_ml_codes')
         .select('company_id,code,code_date,updated_at')
-        .in('company_id', ids)
+        .in('company_id', companyIds)
         .order('code_date', { ascending: false })
         .order('updated_at', { ascending: false });
-      if (codesError) throw codesError;
+      if (capturedError) throw capturedError;
 
-      const latestByCompany = new Map();
-      for (const row of rows || []) {
-        if (!latestByCompany.has(row.company_id)) latestByCompany.set(row.company_id, row);
+      const latestCodeByCompany = new Map();
+      for (const row of capturedRows || []) {
+        const key = String(row.company_id);
+        if (!latestCodeByCompany.has(key) && String(row.code || '').trim()) {
+          latestCodeByCompany.set(key, String(row.code).trim());
+        }
       }
-      const codes = [];
-      for (const [companyId, company] of companies) {
-        const latest = latestByCompany.get(companyId);
-        if (!latest) continue;
-        codes.push({
-          company_id: companyId,
-          name: company.nome || 'Empresa',
-          code: latest.code,
-          code_date: latest.code_date,
-          updated_at: latest.updated_at,
-          status: company.status || 'unknown'
-        });
-      }
+
+      const codes = [...companies.entries()].map(([companyId, company]) => ({
+        company_id: company.id,
+        name: company.nome || 'Empresa',
+        code: latestCodeByCompany.get(companyId) || String(company.codigo_ml || '').trim() || null,
+        status: company.status || 'unknown'
+      }));
       return res.json({ ok: true, codes });
     } catch (error) {
       console.error('Portal codes error:', error.message);
