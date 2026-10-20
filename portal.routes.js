@@ -183,6 +183,8 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
   app.get('/api/portal/sales', authPortal, async (req, res) => {
     try {
       const days = Math.max(1, Math.min(90, Number.parseInt(req.query.days, 10) || 30));
+      const offsetDays = Math.max(0, Math.min(180, Number.parseInt(req.query.offsetDays, 10) || 0));
+      const summaryOnly = req.query.summaryOnly === '1';
       const { data: links, error: linkError } = await supabase.from('portal_user_licenses')
         .select('licenses(company_id,companies(id,nome,status))').eq('user_id', req.portalUserId);
       if (linkError) throw linkError;
@@ -217,8 +219,8 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
         }
       }
       const now = Date.now();
-      const from = new Date(now - days * 86400000).toISOString();
-      const to = new Date(now).toISOString();
+      const to = new Date(now - offsetDays * 86400000).toISOString();
+      const from = new Date(now - (offsetDays + days) * 86400000).toISOString();
 
       for (const account of accounts || []) {
         const company = companies.get(account.company_id);
@@ -322,7 +324,7 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
           totalUnits += storeProducts.reduce((sum, product) => sum + product.quantity_sold, 0);
           // Enrich the best-selling listings with photos, current price, stock and direct link.
           // Limit detail lookups to the top 100 per account to keep the endpoint responsive.
-          const enrichmentTargets = storeProducts.slice().sort((a, b) => b.quantity_sold - a.quantity_sold).slice(0, 100);
+          const enrichmentTargets = summaryOnly ? [] : storeProducts.slice().sort((a, b) => b.quantity_sold - a.quantity_sold).slice(0, 100);
           let enrichIndex = 0;
           const enrichWorker = async () => {
             while (enrichIndex < enrichmentTargets.length) {
