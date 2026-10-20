@@ -42,6 +42,9 @@ const supabaseEan = createClient(
     process.env.EAN_SUPABASE_SERVICE_ROLE_KEY
 );
 
+// Portal SaaS do cliente: cadastro, login, vinculação de licenças e painel.
+require("./portal.routes")(app, { supabase, jwt, bcrypt });
+
 function verificarAdmin(req, res, next) {
     try {
         const authorization = req.headers.authorization;
@@ -11162,9 +11165,7 @@ app.post("/api/mercadolivre/notificacoes", async (req, res) => {
 
 
 
-const server = app.listen(PORT, () => {
-    console.log(`API rodando em http://localhost:${PORT}`);
-});
+// O servidor HTTP é iniciado após registrar todas as rotas.
 
 
 app.disable("x-powered-by");
@@ -11262,13 +11263,14 @@ app.post("/api/ean/generate", async (req, res) => {
     }
 });
 
-app.listen(PORT, () => {
-    console.log(`API EAN-8 rodando na porta ${PORT}`);
-});
 
 // ==========================================
 // 🔌 WEBSOCKET
 // ==========================================
+
+const server = app.listen(PORT, () => {
+    console.log(`Mercado Tools API rodando na porta ${PORT}`);
+});
 
 const wss = new WebSocketServer({
     server
