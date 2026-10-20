@@ -23,6 +23,7 @@ console.log(
 app.use(express.json({
     type: ["application/json", "application/*+json", "text/plain"]
 }));
+
 app.use(cors());
 
 app.use("/admin", express.static(path.join(__dirname, "admin")));
