@@ -200,6 +200,8 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
       if (accountError) throw accountError;
 
       const stores = [];
+      const allProducts = [];
+      let totalUnits = 0;
       const connectedCompanyIds = new Set((accounts || []).map(a => String(a.company_id)));
       for (const [companyId, company] of companies.entries()) {
         if (!connectedCompanyIds.has(String(companyId))) {
@@ -292,6 +294,56 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
           await fetchOrdersRange(from, to);
           const orders = [...orderMap.values()];
           const revenue = orders.reduce((sum, order) => sum + Number(order.total_amount || 0), 0);
+          const productMap = new Map();
+          for (const order of orders) {
+            for (const line of (order.order_items || [])) {
+              const item = line.item || {};
+              const itemId = String(item.id || line.item_id || '').trim();
+              if (!itemId) continue;
+              const quantity = Math.max(0, Number(line.quantity || 0));
+              const unitPrice = Number(line.unit_price ?? line.full_unit_price ?? 0);
+              const key = itemId;
+              let product = productMap.get(key);
+              if (!product) {
+                product = { company_id: account.company_id, company_name: company?.nome || 'Empresa', nickname: account.nickname || 'Conta Mercado Livre', item_id: itemId, title: item.title || '', quantity_sold: 0, revenue: 0, orders: 0, _orderIds: new Set(), current_price: null, stock: null, status: '', image: '', permalink: '' };
+                productMap.set(key, product);
+              }
+              product.quantity_sold += quantity;
+              product.revenue += quantity * unitPrice;
+              product._orderIds.add(String(order.id));
+              if (!product.title && item.title) product.title = item.title;
+            }
+          }
+          const storeProducts = [...productMap.values()];
+          for (const product of storeProducts) {
+            product.orders = product._orderIds.size;
+            delete product._orderIds;
+          }
+          totalUnits += storeProducts.reduce((sum, product) => sum + product.quantity_sold, 0);
+          // Enrich the best-selling listings with photos, current price, stock and direct link.
+          // Limit detail lookups to the top 100 per account to keep the endpoint responsive.
+          const enrichmentTargets = storeProducts.slice().sort((a, b) => b.quantity_sold - a.quantity_sold).slice(0, 100);
+          let enrichIndex = 0;
+          const enrichWorker = async () => {
+            while (enrichIndex < enrichmentTargets.length) {
+              const product = enrichmentTargets[enrichIndex++];
+              try {
+                const itemResponse = await fetch('https://api.mercadolibre.com/items/' + encodeURIComponent(product.item_id), {
+                  headers: { Authorization: 'Bearer ' + accessToken, Accept: 'application/json' }
+                });
+                if (!itemResponse.ok) continue;
+                const detail = await itemResponse.json();
+                product.title = detail.title || product.title;
+                product.image = detail.secure_thumbnail || detail.thumbnail || detail.pictures?.[0]?.secure_url || detail.pictures?.[0]?.url || '';
+                product.permalink = detail.permalink || '';
+                product.current_price = detail.price == null ? null : Number(detail.price);
+                product.stock = detail.available_quantity == null ? null : Number(detail.available_quantity);
+                product.status = detail.status || '';
+              } catch (_) { /* Product details are optional; preserve order-derived metrics. */ }
+            }
+          };
+          await Promise.all(Array.from({ length: Math.min(5, enrichmentTargets.length) }, () => enrichWorker()));
+          allProducts.push(...storeProducts);
           stores.push({
             company_id: account.company_id,
             company_name: company?.nome || 'Empresa',
@@ -301,7 +353,9 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
             orders: orders.length,
             revenue,
             orders_sampled: orders.length,
-            truncated: false
+            truncated: false,
+            units: storeProducts.reduce((sum, product) => sum + product.quantity_sold, 0),
+            products: storeProducts.length
           });
         } catch (error) {
           stores.push({
@@ -316,10 +370,17 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
           });
         }
       }
+      allProducts.sort((a, b) => Number(b.quantity_sold || 0) - Number(a.quantity_sold || 0));
       return res.json({
         ok: true, days, connected: stores.filter(s => s.connected).length,
-        totals: { orders: stores.reduce((sum, s) => sum + (s.orders || 0), 0), revenue: stores.reduce((sum, s) => sum + (s.revenue || 0), 0) },
-        stores
+        totals: {
+          orders: stores.reduce((sum, s) => sum + (s.orders || 0), 0),
+          revenue: stores.reduce((sum, s) => sum + (s.revenue || 0), 0),
+          units: totalUnits,
+          products: allProducts.length
+        },
+        stores,
+        products: allProducts
       });
     } catch (error) {
       console.error('Portal sales error:', error.message);

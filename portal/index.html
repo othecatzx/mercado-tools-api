@@ -37,6 +37,38 @@ html,body{width:100%;max-width:100%;overflow-x:hidden}
 @media(max-width:600px){.main{margin-left:64px;width:calc(100% - 64px)}.sidebar{width:64px;padding:16px 7px}.sidebar .brand{padding-left:6px}.topbar{padding:0 12px}.top-right .btn{padding:8px 10px;font-size:11px}.content{padding:18px 12px}.page-head{display:flex;flex-direction:column;gap:12px}.page-head h1{font-size:23px}.actions{margin-top:0}.grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.stat-card{padding:12px}.stat-top{align-items:flex-start;gap:5px}.stat-number{font-size:22px}.filters-row{grid-template-columns:1fr}.panel{padding:13px}.panel-head{align-items:flex-start;flex-wrap:wrap}.license-list,.code-grid,.placeholder-grid{grid-template-columns:1fr}.sales-toolbar{align-items:flex-start}.sales-toolbar .muted{width:100%;margin-left:0}.sales-toolbar .filter-control{flex:1}.settings-row{align-items:flex-start;flex-wrap:wrap}}
 @media(max-width:380px){.grid{grid-template-columns:1fr}.crumb{max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.top-right .btn span{display:none}}
 
+
+/* Sales analytics SaaS */
+.sales-toolbar{background:#fff;border:1px solid var(--line);border-radius:14px;padding:13px 15px;margin:0 0 18px;box-shadow:var(--shadow)}
+.sales-toolbar .filter-control{border:1px solid #dfe4ef;border-radius:9px;padding:10px 12px;background:#fff;color:#182033;min-height:40px}
+.sales-products-panel{margin-top:18px;overflow:hidden}
+.sales-products-panel .panel-head{padding-bottom:14px;border-bottom:1px solid var(--line);margin-bottom:14px}
+.sales-product-filters{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:12px 0 16px}
+.sales-product-filters input,.sales-product-filters select{border:1px solid #dfe4ef;border-radius:9px;padding:10px 12px;background:#fff;min-height:40px;color:#182033}
+.sales-product-filters input{flex:1;min-width:180px}
+.sales-products-table{min-width:850px;width:100%;border-collapse:collapse}
+.sales-products-table th{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:#7a8499;font-weight:800;text-align:left;padding:11px 12px;background:#f8f9fc;white-space:nowrap}
+.sales-products-table td{padding:12px;border-bottom:1px solid #edf0f6;vertical-align:middle}
+.sales-products-table tr:last-child td{border-bottom:0}
+.product-cell{display:flex;align-items:center;gap:12px;min-width:260px}
+.product-thumb{width:54px;height:54px;flex:0 0 54px;border-radius:10px;object-fit:contain;background:#f4f6fa;border:1px solid #edf0f5}
+.product-title{font-weight:750;color:#1b2335;max-width:330px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;line-height:1.35}
+.product-sub{font-size:11px;color:#8a93a6;margin-top:4px}
+.product-qty{font-weight:850;font-size:15px;color:#1d2638;font-variant-numeric:tabular-nums}
+.product-revenue{font-weight:750;color:#13855b;white-space:nowrap}
+.product-store{font-size:11px;color:#687389;background:#f3f4f8;padding:5px 8px;border-radius:7px;display:inline-block;white-space:nowrap}
+.sales-chart-grid{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:16px;margin-bottom:18px}
+.sales-insight-list{display:grid;gap:13px}
+.sales-insight-row{display:grid;grid-template-columns:minmax(100px,150px) 1fr 44px;gap:10px;align-items:center;font-size:12px}
+.sales-insight-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:700}
+.sales-bar-track{height:9px;border-radius:99px;background:#edf0f8;overflow:hidden}
+.sales-bar-fill{height:100%;border-radius:99px;background:linear-gradient(90deg,#695cf6,#9b8cff)}
+.sales-insight-value{text-align:right;font-weight:800;font-variant-numeric:tabular-nums}
+.sales-empty{padding:34px 16px;text-align:center;color:#7b8498}
+.sales-status{font-size:11px;color:#7b8498;margin-left:auto}
+@media(max-width:900px){.sales-chart-grid{grid-template-columns:1fr}}
+@media(max-width:600px){.sales-toolbar{padding:12px}.sales-product-filters{align-items:stretch}.sales-product-filters input,.sales-product-filters select{width:100%;min-width:0}.sales-insight-row{grid-template-columns:95px 1fr 34px;gap:7px}}
+
 </style>
 </head>
 <body>
@@ -60,6 +92,7 @@ const API='';
 let portalCodes=[];
 let salesData=null;
 let salesLoading=false;
+let salesFilters={store:"all",search:"",sort:"quantity_sold",limit:"20"};
 let deviceFilters={company:'all',lastAccess:'all',sort:'newest'};
 let token=localStorage.getItem('mlsh_portal_token')||'';let currentUser=null;let dashboard={summary:{licenses:0,active_licenses:0,companies:0,devices:0,active_devices:0},licenses:[],devices:[]};let currentPage='overview';
 const $=id=>document.getElementById(id);const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -124,19 +157,42 @@ function salesMarkup(){
  const days=d?.days||30;
  const stores=d?.stores||[];
  const connected=stores.filter(s=>s.connected);
+ const products=d?.products||[];
  const fmtMoney=v=>Number(v||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
- return `${pageHead('ANALYTICS','Vendas','Acompanhe pedidos e faturamento das contas Mercado Livre vinculadas às suas licenças.',`<button class="btn btn-ghost" data-sales-refresh>↻ Atualizar</button>`)}
- <div class="sales-toolbar"><label for="salesPeriod">Período</label><select id="salesPeriod" class="filter-control"><option value="7" ${days===7?'selected':''}>Últimos 7 dias</option><option value="30" ${days===30?'selected':''}>Últimos 30 dias</option><option value="90" ${days===90?'selected':''}>Últimos 90 dias</option></select><span class="small muted">${salesLoading?'Atualizando dados…':`${connected.length} conta(s) conectada(s)`}</span></div>
- ${salesLoading?`<div class="panel loading-panel">Consultando as vendas do Mercado Livre…</div>`:`
- <div class="grid sales-stats">${stat('Pedidos no período',d?.totals?.orders??'—','↗',connected.length?'Contas conectadas':'Conecte uma conta Mercado Livre')}${stat('Faturamento consultado',fmtMoney(connected.reduce((sum,s)=>sum+(s.revenue||0),0)),'＄','Soma dos pedidos consultados')}${stat('Lojas conectadas',connected.length,'▦',`${stores.length} empresa(s) com licença`) }${stat('Período',`${days} dias`,'◷','Janela selecionada')}</div>
- ${stores.length?`<div class="panel sales-panel"><div class="panel-head"><div><h3>Desempenho por loja</h3><div class="small muted">Dados consultados diretamente na API do Mercado Livre.</div></div></div><div class="table-wrap"><table class="table sales-table"><thead><tr><th>Empresa</th><th>Conta Mercado Livre</th><th>Pedidos</th><th>Faturamento</th><th>Status</th></tr></thead><tbody>${stores.map(s=>`<tr><td><b>${esc(firstCompanyName(s.company_name))}</b></td><td>${esc(s.nickname||'—')}<div class="device-id">${esc(s.ml_user_id||'')}</div></td><td>${s.connected?Number(s.orders||0).toLocaleString('pt-BR'):'—'}</td><td>${s.connected?fmtMoney(s.revenue):'—'}</td><td>${s.connected?'<span class="badge">Conectada</span>':`<span class="badge off">Atenção</span><div class="device-id">${esc(s.error||'Falha ao consultar')}</div>`}</td></tr>`).join('')}</tbody></table></div></div>`:`<div class="panel">${emptyState('↗','Nenhuma loja vinculada','Adicione uma licença ao portal para visualizar as empresas associadas.')}</div>`}
- <div class="notice sales-note">Para aparecerem vendas, a conta do Mercado Livre precisa estar conectada à empresa no painel atual. O faturamento soma os pedidos retornados pela API no período; quando houver mais de 500 pedidos, a contagem total é exibida, mas o faturamento é calculado sobre os 500 mais recentes.</div>`}`;
+ const maxQty=Math.max(1,...products.map(p=>Number(p.quantity_sold||0)));
+ const top=products.slice().sort((a,b)=>(b.quantity_sold||0)-(a.quantity_sold||0)).slice(0,5);
+ const topBars=top.length?`<div class="sales-insight-list">${top.map(p=>`<div class="sales-insight-row"><div class="sales-insight-name" title="${esc(p.title||p.item_id)}">${esc(p.title||p.item_id)}</div><div class="sales-bar-track"><div class="sales-bar-fill" style="width:${Math.max(2,Number(p.quantity_sold||0)/maxQty*100)}%"></div></div><div class="sales-insight-value">${Number(p.quantity_sold||0).toLocaleString('pt-BR')}</div></div>`).join('')}</div>`:`<div class="sales-empty">Os anúncios mais vendidos aparecerão aqui quando houver pedidos com itens identificados.</div>`;
+ return `${pageHead('ANALYTICS','Vendas','Entenda o desempenho das lojas, descubra seus anúncios campeões e acompanhe quantidade vendida e faturamento.',`<button class="btn btn-ghost" data-sales-refresh>↻ Atualizar dados</button>`)}
+ <div class="sales-toolbar"><label for="salesPeriod">Período</label><select id="salesPeriod" class="filter-control"><option value="7" ${days===7?'selected':''}>Últimos 7 dias</option><option value="30" ${days===30?'selected':''}>Últimos 30 dias</option><option value="90" ${days===90?'selected':''}>Últimos 90 dias</option></select><span class="sales-status">${salesLoading?'Atualizando dados…':`${connected.length} de ${stores.length} loja(s) conectada(s)`}</span></div>
+ ${salesLoading?`<div class="panel loading-panel">Consultando pedidos e anúncios do Mercado Livre…</div>`:`
+ <div class="grid sales-stats">${stat('Pedidos',d?.totals?.orders??'—','↗',`Últimos ${days} dias`)}${stat('Faturamento bruto',fmtMoney(d?.totals?.revenue||0),'＄','Valor total dos pedidos consultados')}${stat('Unidades vendidas',Number(d?.totals?.units||0).toLocaleString('pt-BR'),'▤','Soma das quantidades nos itens')}${stat('Anúncios com venda',Number(d?.totals?.products||products.length||0).toLocaleString('pt-BR'),'▦','Anúncios identificados nos pedidos')}</div>
+ <div class="sales-chart-grid"><div class="panel"><div class="panel-head"><div><h3>🏆 Anúncios mais vendidos</h3><div class="small muted">Ranking por unidades vendidas no período selecionado.</div></div></div>${topBars}</div><div class="panel"><div class="panel-head"><div><h3>Desempenho por loja</h3><div class="small muted">Pedidos e faturamento por conta conectada.</div></div></div>${stores.length?`<div class="table-wrap"><table class="table sales-table"><thead><tr><th>Loja</th><th>Pedidos</th><th>Faturamento</th></tr></thead><tbody>${stores.map(s=>`<tr><td><b>${esc(firstCompanyName(s.company_name))}</b><div class="device-id">${esc(s.nickname||'—')}</div></td><td>${s.connected?Number(s.orders||0).toLocaleString('pt-BR'):'—'}</td><td>${s.connected?fmtMoney(s.revenue):`<span class="badge off">Erro</span>`}</td></tr>`).join('')}</tbody></table></div>`:`<div class="sales-empty">Nenhuma loja vinculada.</div>`}</div></div>
+ <div class="panel sales-products-panel"><div class="panel-head"><div><h3>Todos os anúncios vendidos</h3><div class="small muted">Fotos, unidades vendidas, pedidos relacionados e faturamento estimado por anúncio.</div></div><span id="salesProductCount" class="badge">${products.length} anúncio(s)</span></div>
+ <div class="sales-product-filters"><input id="salesProductSearch" type="search" placeholder="Buscar por nome ou MLB…" value="${esc(salesFilters.search)}"><select id="salesStoreFilter" aria-label="Filtrar loja"><option value="all">Todas as lojas</option>${stores.map(s=>`<option value="${esc(s.company_id)}" ${salesFilters.store===String(s.company_id)?'selected':''}>${esc(firstCompanyName(s.company_name))}</option>`).join('')}</select><select id="salesSort" aria-label="Ordenar anúncios"><option value="quantity_sold" ${salesFilters.sort==='quantity_sold'?'selected':''}>Mais vendidos</option><option value="revenue" ${salesFilters.sort==='revenue'?'selected':''}>Maior faturamento</option><option value="orders" ${salesFilters.sort==='orders'?'selected':''}>Mais pedidos</option><option value="title" ${salesFilters.sort==='title'?'selected':''}>Nome A–Z</option></select><select id="salesLimit" aria-label="Quantidade de anúncios"><option value="20" ${salesFilters.limit==='20'?'selected':''}>20 por página</option><option value="50" ${salesFilters.limit==='50'?'selected':''}>50 por página</option><option value="100" ${salesFilters.limit==='100'?'selected':''}>100 por página</option></select></div>
+ <div class="table-wrap"><table class="sales-products-table"><thead><tr><th>Anúncio</th><th>Loja</th><th>Unidades</th><th>Pedidos</th><th>Faturamento</th><th>Preço atual</th><th>Abrir</th></tr></thead><tbody id="salesProductsBody"></tbody></table></div><div id="salesProductsFoot" class="small muted" style="padding:13px 4px 0"></div></div>
+ <div class="panel sales-panel"><div class="panel-head"><div><h3>Status das conexões</h3><div class="small muted">Se uma loja falhar, confira a autorização do Mercado Livre.</div></div></div><div class="table-wrap"><table class="table sales-table"><thead><tr><th>Empresa</th><th>Conta Mercado Livre</th><th>Status</th></tr></thead><tbody>${stores.map(s=>`<tr><td><b>${esc(firstCompanyName(s.company_name))}</b></td><td>${esc(s.nickname||'—')}<div class="device-id">${esc(s.ml_user_id||'')}</div></td><td>${s.connected?'<span class="badge">Conectada</span>':`<span class="badge off">Atenção</span><div class="device-id">${esc(s.error||'Falha ao consultar')}</div>`}</td></tr>`).join('')}</tbody></table></div></div>
+ <div class="notice sales-note">Os dados são calculados a partir dos pedidos retornados pela API do Mercado Livre. O faturamento por anúncio é uma estimativa de quantidade × preço do item no pedido e não representa lucro líquido, descontando tarifas, frete, cancelamentos ou devoluções. Fotos e preço atual dependem dos dados públicos do anúncio.</div>`}`;
+}
+function renderSalesProductRows(){
+ const body=$('salesProductsBody');if(!body)return;
+ const all=salesData?.products||[];const stores=salesData?.stores||[];
+ const query=String($('salesProductSearch')?.value||salesFilters.search||'').trim().toLowerCase();
+ const store=String($('salesStoreFilter')?.value||salesFilters.store||'all');
+ const sort=String($('salesSort')?.value||salesFilters.sort||'quantity_sold');
+ const limit=Number($('salesLimit')?.value||salesFilters.limit||20);
+ salesFilters={store,search:query,sort,limit:String(limit)};
+ let rows=all.filter(p=>(store==='all'||String(p.company_id)===store)&&(!query||String(p.title||'').toLowerCase().includes(query)||String(p.item_id||'').toLowerCase().includes(query)));
+ rows.sort((a,b)=>sort==='title'?String(a.title||'').localeCompare(String(b.title||''),'pt-BR'):Number(b[sort]||0)-Number(a[sort]||0));
+ const visible=rows.slice(0,limit);const fmtMoney=v=>Number(v||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
+ body.innerHTML=visible.length?visible.map(p=>`<tr><td><div class="product-cell"><img class="product-thumb" src="${esc(p.image||'')}" alt="" loading="lazy" onerror="this.style.visibility='hidden'"><div><div class="product-title">${esc(p.title||'Anúncio Mercado Livre')}</div><div class="product-sub">${esc(p.item_id||'')} · ${esc(p.status||'')}</div></div></div></td><td><span class="product-store">${esc(firstCompanyName(p.company_name||'Loja'))}</span></td><td><span class="product-qty">${Number(p.quantity_sold||0).toLocaleString('pt-BR')}</span></td><td>${Number(p.orders||0).toLocaleString('pt-BR')}</td><td><span class="product-revenue">${fmtMoney(p.revenue||0)}</span></td><td>${p.current_price!=null?fmtMoney(p.current_price):'—'}<div class="product-sub">Estoque: ${p.stock!=null?Number(p.stock).toLocaleString('pt-BR'):'—'}</div></td><td>${p.permalink?`<a href="${esc(p.permalink)}" target="_blank" rel="noopener noreferrer" class="btn btn-ghost" style="padding:7px 9px;text-decoration:none">Abrir ↗</a>`:'—'}</td></tr>`).join(''):`<tr><td colspan="7"><div class="sales-empty">${all.length?'Nenhum anúncio corresponde aos filtros.':'Nenhum anúncio vendido encontrado no período. Confira se as contas estão conectadas e se existem pedidos no período.'}</div></td></tr>`;
+ const count=$('salesProductCount');if(count)count.textContent=`${rows.length} anúncio(s)`;
+ const foot=$('salesProductsFoot');if(foot)foot.textContent=`Exibindo ${visible.length} de ${rows.length} anúncio(s) filtrado(s).`;
 }
 async function loadSales(days=30){
- salesLoading=true;salesData={...(salesData||{}),days,stores:salesData?.stores||[],totals:salesData?.totals||{orders:0,revenue:0}};
+ salesLoading=true;salesData={...(salesData||{}),days,stores:salesData?.stores||[],products:salesData?.products||[],totals:salesData?.totals||{orders:0,revenue:0,units:0,products:0}};
  if(currentPage==='sales')renderPage();
  try{salesData=await api('/api/portal/sales?days='+encodeURIComponent(days));}
- catch(e){salesData={days,connected:0,totals:{orders:0,revenue:0},stores:[],error:e.message};toast(e.message)}
+ catch(e){salesData={days,connected:0,totals:{orders:0,revenue:0,units:0,products:0},stores:[],products:[],error:e.message};toast(e.message)}
  finally{salesLoading=false;if(currentPage==='sales')renderPage()}
 }
 
@@ -158,6 +214,7 @@ function bindDynamicActions(){document.querySelectorAll('[data-add]').forEach(b=
  if($('deviceSortFilter'))$('deviceSortFilter').onchange=e=>{deviceFilters.sort=e.target.value;renderDeviceRows()};
  if($('devicesTableBody'))renderDeviceRows();
  document.querySelectorAll('[data-sales-refresh]').forEach(b=>b.onclick=()=>loadSales(Number($('salesPeriod')?.value||30)));
+ if($('salesProductSearch'))$('salesProductSearch').oninput=renderSalesProductRows; if($('salesStoreFilter'))$('salesStoreFilter').onchange=renderSalesProductRows; if($('salesSort'))$('salesSort').onchange=renderSalesProductRows; if($('salesLimit'))$('salesLimit').onchange=renderSalesProductRows; if($('salesProductsBody'))renderSalesProductRows();
  if($('salesPeriod'))$('salesPeriod').onchange=e=>loadSales(Number(e.target.value));document.querySelectorAll('[data-refresh]').forEach(b=>b.onclick=async()=>{try{await refreshDashboard();renderPage();toast('Dados atualizados.')}catch(e){toast(e.message)}});if($('settingsLogout'))$('settingsLogout').onclick=()=>logout();if($('supportMail'))$('supportMail').onclick=()=>{const subject=encodeURIComponent('Suporte ML SH Support');const body=encodeURIComponent(`Olá, preciso de ajuda com o Portal do Cliente.\n\nConta: ${currentUser?.email||''}\nLicenças cadastradas: ${(dashboard.summary||{}).licenses||0}\n\nDescrição do problema:\n`);location.href=`mailto:?subject=${subject}&body=${body}`}}
 async function copyText(text){try{await navigator.clipboard.writeText(text);toast('Copiado para a área de transferência.')}catch(e){const t=document.createElement('textarea');t.value=text;document.body.appendChild(t);t.select();try{document.execCommand('copy');toast('Copiado para a área de transferência.')}catch(_){toast('Não foi possível copiar automaticamente.')}t.remove()}}
 function openAddLicense(){if(!token)return; $('modalRoot').innerHTML=`<div class="modal-backdrop" id="modalBackdrop"><section class="modal"><div class="modal-head"><h2>Adicionar licença</h2><button class="modal-close" id="closeModal">×</button></div><p>Informe a chave de licença que você já possui. Vamos validar a chave e identificar a empresa automaticamente.</p><form id="addLicenseForm"><div class="field"><label for="licenseKey">Chave da licença</label><input id="licenseKey" autocomplete="off" placeholder="Cole sua chave de licença" required maxlength="200"></div><div id="licenseResult"></div><div class="modal-actions"><button type="button" class="btn btn-ghost" id="cancelModal">Cancelar</button><button class="btn btn-primary" type="submit">Validar e adicionar</button></div></form></section></div>`;$('closeModal').onclick=closeModal;$('cancelModal').onclick=closeModal;$('modalBackdrop').onclick=e=>{if(e.target.id==='modalBackdrop')closeModal()};$('addLicenseForm').onsubmit=async e=>{e.preventDefault();const form=e.currentTarget;const btn=form.querySelector('[type=submit]');btn.disabled=true;btn.textContent='Validando…';$('licenseResult').innerHTML='';try{const r=await api('/api/portal/licenses',{method:'POST',body:JSON.stringify({chave:$('licenseKey').value.trim()})});$('licenseResult').innerHTML=`<div class="alert success">Licença vinculada! Empresa identificada: <b>${esc(firstCompanyName(r.license.company?.nome||'Empresa'))}</b>.</div>`;await refreshDashboard();setTimeout(()=>{closeModal();navigate('licenses');toast('Licença adicionada com sucesso.')},700)}catch(err){$('licenseResult').innerHTML=`<div class="alert error">${esc(err.message)}</div>`}finally{btn.disabled=false;btn.textContent='Validar e adicionar'}}}
