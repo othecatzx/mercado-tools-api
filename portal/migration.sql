@@ -1,5 +1,5 @@
 -- Execute no SQL Editor do Supabase do projeto usado pelo mercado-tools-api.
--- Tabelas do portal do cliente; não altera as tabelas existentes de licenças/dispositivos.
+-- Tabelas do portal do cliente e código ML por empresa.
 create extension if not exists pgcrypto;
 
 create table if not exists public.portal_users (
@@ -25,3 +25,8 @@ create index if not exists portal_user_licenses_license_id_idx on public.portal_
 alter table public.portal_users enable row level security;
 alter table public.portal_user_licenses enable row level security;
 -- O backend acessa essas tabelas com SUPABASE_SERVICE_KEY; não crie políticas públicas.
+
+
+-- Código/agência do Mercado Livre configurado no painel administrativo da empresa.
+alter table public.companies
+  add column if not exists codigo_ml text;

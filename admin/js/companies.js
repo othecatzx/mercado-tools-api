@@ -30,6 +30,7 @@ const companiesPage = {
                             <tr>
                                 <th>Empresa</th>
                                 <th>Documento</th>
+                                <th>Código ML</th>
                                 <th>Status</th>
                                 <th>Criada em</th>
                                 <th>Ações</th>
@@ -39,7 +40,7 @@ const companiesPage = {
                         <tbody id="companiesTableBody">
 
                             <tr>
-                                <td colspan="5" class="loading">
+                                <td colspan="6" class="loading">
                                     Carregando empresas...
                                 </td>
                             </tr>
@@ -98,7 +99,7 @@ const companiesPage = {
 
             tbody.innerHTML = `
                 <tr>
-                    <td colspan="5" class="error-cell">
+                    <td colspan="6" class="error-cell">
                         Não foi possível carregar as empresas.
                     </td>
                 </tr>
@@ -118,7 +119,7 @@ const companiesPage = {
 
             tbody.innerHTML = `
                 <tr>
-                    <td colspan="5" class="empty-cell">
+                    <td colspan="6" class="empty-cell">
                         Nenhuma empresa cadastrada.
                     </td>
                 </tr>
@@ -329,6 +330,14 @@ const companiesPage = {
                     </div>
 
 
+                    <div class="form-group">
+                        <label for="companyMlCode">Código ML / agência</label>
+                        <input type="text" id="companyMlCode" maxlength="100"
+                            value="${isEdit ? this.escape(company.codigo_ml || "") : ""}"
+                            placeholder="Código desta empresa no Mercado Livre">
+                        <small>Visível no portal para clientes com licença desta empresa.</small>
+                    </div>
+
                     <div id="companyFormStatus"></div>
 
 
@@ -432,6 +441,9 @@ const companiesPage = {
                 .value
                 .trim();
 
+        const codigo_ml =
+            document.getElementById("companyMlCode").value.trim();
+
 
         const status =
             document.getElementById(
@@ -470,7 +482,8 @@ const companiesPage = {
 
                         body: JSON.stringify({
                             nome,
-                            documento
+                            documento,
+                            codigo_ml
                         })
                     }
                 );
@@ -535,6 +548,9 @@ const companiesPage = {
                 .value
                 .trim();
 
+        const codigo_ml =
+            document.getElementById("companyMlCode").value.trim();
+
 
         const status =
             document.getElementById(
@@ -573,7 +589,8 @@ const companiesPage = {
 
                         body: JSON.stringify({
                             nome,
-                            documento
+                            documento,
+                            codigo_ml
                         })
                     }
                 );
