@@ -220,28 +220,55 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
             }).eq('company_id', account.company_id);
           }
 
-          let orders = [];
-          let totalOrders = 0;
+          // Busca todos os pedidos do período. A API limita o offset; quando
+          // uma faixa excede 10.000 resultados, dividimos o período em janelas menores.
           const pageSize = 50;
-          const maxOrders = 500;
-          for (let offset = 0; offset < maxOrders; offset += pageSize) {
-            const params = new URLSearchParams({
-              seller: String(account.ml_user_id),
-              'order.date_created.from': from,
-              'order.date_created.to': to,
-              limit: String(pageSize),
-              offset: String(offset),
-              sort: 'date_desc'
-            });
-            const response = await fetch('https://api.mercadolibre.com/orders/search?' + params.toString(), {
-              headers: { Authorization: 'Bearer ' + accessToken, Accept: 'application/json' }
-            });
-            const result = await response.json();
-            if (!response.ok) throw new Error(result.message || 'Falha ao consultar pedidos');
-            totalOrders = Number(result.paging?.total || 0);
-            orders = orders.concat(result.results || []);
-            if ((result.results || []).length < pageSize || offset + pageSize >= totalOrders || offset + pageSize >= maxOrders) break;
-          }
+          const maxOffsetRange = 10000;
+          const orderMap = new Map();
+          const fetchOrdersRange = async (rangeFrom, rangeTo, depth = 0) => {
+            const fetchPage = async (offset) => {
+              const params = new URLSearchParams({
+                seller: String(account.ml_user_id),
+                'order.date_created.from': rangeFrom,
+                'order.date_created.to': rangeTo,
+                limit: String(pageSize),
+                offset: String(offset),
+                sort: 'date_desc'
+              });
+              const response = await fetch('https://api.mercadolibre.com/orders/search?' + params.toString(), {
+                headers: { Authorization: 'Bearer ' + accessToken, Accept: 'application/json' }
+              });
+              const result = await response.json();
+              if (!response.ok) throw new Error(result.message || 'Falha ao consultar pedidos');
+              return result;
+            };
+
+            const firstPage = await fetchPage(0);
+            const rangeTotal = Number(firstPage.paging?.total || 0);
+            const startMs = new Date(rangeFrom).getTime();
+            const endMs = new Date(rangeTo).getTime();
+            if (rangeTotal > maxOffsetRange && depth < 16 && endMs - startMs > 1000) {
+              const middle = new Date(Math.floor((startMs + endMs) / 2)).toISOString();
+              await fetchOrdersRange(rangeFrom, middle, depth + 1);
+              await fetchOrdersRange(middle, rangeTo, depth + 1);
+              return;
+            }
+
+            const addResults = (results) => {
+              for (const order of results || []) {
+                const id = order.id ?? `${order.date_created || ''}:${order.total_amount || 0}`;
+                orderMap.set(String(id), order);
+              }
+            };
+            addResults(firstPage.results);
+            for (let offset = pageSize; offset < Math.min(rangeTotal, maxOffsetRange); offset += pageSize) {
+              const page = await fetchPage(offset);
+              addResults(page.results);
+              if ((page.results || []).length < pageSize) break;
+            }
+          };
+          await fetchOrdersRange(from, to);
+          const orders = [...orderMap.values()];
           const revenue = orders.reduce((sum, order) => sum + Number(order.total_amount || 0), 0);
           stores.push({
             company_id: account.company_id,
@@ -249,10 +276,10 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
             nickname: account.nickname || 'Conta Mercado Livre',
             ml_user_id: account.ml_user_id,
             connected: true,
-            orders: totalOrders,
+            orders: orders.length,
             revenue,
-            orders_sampled: Math.min(totalOrders, maxOrders),
-            truncated: totalOrders > maxOrders
+            orders_sampled: orders.length,
+            truncated: false
           });
         } catch (error) {
           stores.push({

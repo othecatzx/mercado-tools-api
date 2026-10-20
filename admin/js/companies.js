@@ -189,6 +189,11 @@ const companiesPage = {
                             )}
                         </td>
 
+                        <td>
+                            ${this.escape(
+                                company.codigo_ml || "—"
+                            )}
+                        </td>
 
                         <td>
 
