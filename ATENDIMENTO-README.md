@@ -34,3 +34,10 @@
 - A seleção de várias lojas depende de essas licenças estarem ativas e vinculadas à mesma conta principal que criou o subusuário. Remover uma licença da conta administradora revoga o acesso do atendente a ela.
 - O envio de mensagens e anexos não foi testado com tokens reais do usuário. A validação realizada aqui é estática/sintática; é necessário testar no ambiente com uma conta ML autorizada.
 - Se já existirem subusuários duplicados com o mesmo e-mail em licenças diferentes, o login pode reportar ambiguidade. Os novos cadastros passam a exigir e-mail exclusivo.
+
+### Melhorias na tela de atendimento
+- O botão **Encerrar** foi removido da interface do chat.
+- **Atribuir** abre uma janela dentro do portal com os atendentes ativos que têm acesso à loja selecionada; o servidor valida a autorização também no backend.
+- Respostas rápidas e auditoria usam janelas internas, sem `alert`, `prompt` ou `confirm` do navegador. A remoção de subusuário também pede confirmação dentro do portal.
+- A atualização automática evita reconstruir o painel da conversa a cada consulta, reduzindo o efeito de piscada e preservando a conversa aberta. A consulta automática foi espaçada para 45 segundos; o botão Atualizar continua disponível.
+- Não foi adicionada migração SQL para essas melhorias.

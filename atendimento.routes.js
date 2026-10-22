@@ -69,10 +69,11 @@ module.exports = function registerAtendimentoRoutes(app, { supabase, jwt, bcrypt
       const license = await getOwnedLicense(req.portalUserId, licenseId);
       if (!license) return res.status(404).json({ ok: false, error: 'license_not_found' });
       const { data, error } = await supabase.from('support_agents')
-        .select('id,license_id,nome,email,status,permissions,allowed_company_ids,allowed_license_ids,created_at,updated_at')
-        .eq('license_id', licenseId).order('created_at', { ascending: false });
+        .select('id,license_id,nome,email,status,permissions,allowed_company_ids,allowed_license_ids,created_at,updated_at,created_by_portal_user_id')
+        .eq('created_by_portal_user_id', req.portalUserId).order('created_at', { ascending: false });
       if (error) throw error;
-      return res.json({ ok: true, agents: data || [] });
+      const agents = (data || []).filter(a => (Array.isArray(a.allowed_license_ids) && a.allowed_license_ids.length ? a.allowed_license_ids.map(String) : [String(a.license_id)]).includes(String(licenseId))).map(({ created_by_portal_user_id, ...a }) => a);
+      return res.json({ ok: true, agents });
     } catch (error) {
       console.error('Atendimento agents list error:', error.code || error.message);
       return res.status(500).json({ ok: false, error: 'server_error', message: 'Não foi possível carregar a equipe.' });
@@ -404,13 +405,30 @@ module.exports = function registerAtendimentoRoutes(app, { supabase, jwt, bcrypt
       return res.json({ ok: true, closed });
     } catch (e) { console.error('Chat status:', e.code || e.message); return res.status(500).json({ ok: false, message: 'Não foi possível atualizar o atendimento.' }); }
   });
+  app.get('/api/portal/atendimento/chat/assignable-agents', authChat, async (req, res) => {
+    try {
+      const licenseId = String(req.query.license_id || req.actor.licenseId || '');
+      const actor = await chatActor(req, res, 'conversations.assign', licenseId); if (!actor) return;
+      const ownerId = actor.owner ? req.actor.id : actor.agent.created_by_portal_user_id;
+      const { data, error } = await supabase.from('support_agents')
+        .select('id,license_id,nome,email,status,allowed_license_ids,created_by_portal_user_id')
+        .eq('created_by_portal_user_id', ownerId).eq('status', 'active').order('nome', { ascending: true });
+      if (error) throw error;
+      const agents = (data || []).filter(a => (Array.isArray(a.allowed_license_ids) && a.allowed_license_ids.length ? a.allowed_license_ids.map(String) : [String(a.license_id)]).includes(String(licenseId))).map(({ created_by_portal_user_id, allowed_license_ids, license_id, ...a }) => a);
+      return res.json({ ok: true, agents });
+    } catch (e) { console.error('Chat assignable agents:', e.code || e.message); return res.status(500).json({ ok: false, message: 'Não foi possível carregar os atendentes disponíveis.' }); }
+  });
+
   app.patch('/api/portal/atendimento/chat/conversations/:id/assign', authChat, async (req, res) => {
     try {
       const scope = await getConversationScoped(req, res, req.params.id, 'conversations.assign'); if (!scope) return; const { conversation, actor } = scope;
       const email = String(req.body?.email || '').trim().toLowerCase(); let agentId = null;
       if (email) {
-        const { data: agent, error } = await supabase.from('support_agents').select('id,email,status').eq('license_id', conversation.license_id).eq('email', email).maybeSingle();
-        if (error) throw error; if (!agent || agent.status !== 'active') return res.status(404).json({ ok: false, message: 'Atendente ativo não encontrado nesta licença.' }); agentId = agent.id;
+        const ownerId = actor.owner ? req.actor.id : actor.agent.created_by_portal_user_id;
+        const { data: candidates, error } = await supabase.from('support_agents').select('id,email,status,license_id,allowed_license_ids,created_by_portal_user_id').eq('created_by_portal_user_id', ownerId).eq('email', email).limit(10);
+        if (error) throw error;
+        const agent = (candidates || []).find(a => a.status === 'active' && (Array.isArray(a.allowed_license_ids) && a.allowed_license_ids.length ? a.allowed_license_ids.map(String) : [String(a.license_id)]).includes(String(conversation.license_id)));
+        if (!agent) return res.status(404).json({ ok: false, message: 'Atendente ativo não encontrado ou sem acesso a esta loja.' }); agentId = agent.id;
       }
       const { error } = await supabase.from('support_conversations').update({ assigned_agent_id: agentId, updated_at: new Date().toISOString() }).eq('id', conversation.id); if (error) throw error;
       await writeAudit(conversation.license_id, actor.owner ? req.actor.id : null, 'conversation.assigned', { conversation_id: conversation.id, assigned_agent_id: agentId, agent_id: actor.agent?.id || null });
