@@ -26,6 +26,26 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
     return data;
   }
 
+  async function getAgentAllowedLicenses(agent) {
+    const ids = Array.isArray(agent.allowed_license_ids) && agent.allowed_license_ids.length
+      ? [...new Set(agent.allowed_license_ids.map(String))] : [String(agent.license_id)];
+    const { data, error } = await supabase.from('licenses')
+      .select('id,status,company_id,companies(nome,status)')
+      .in('id', ids);
+    if (error) throw error;
+    const byId = new Map((data || []).map(l => [String(l.id), l]));
+    const allowed = [];
+    for (const id of ids) {
+      const l = byId.get(id);
+      if (!l || l.status !== 'active') continue;
+      const { data: ownership, error: ownershipError } = await supabase.from('portal_user_licenses')
+        .select('license_id').eq('user_id', agent.created_by_portal_user_id).eq('license_id', id).maybeSingle();
+      if (ownershipError) throw ownershipError;
+      if (ownership) allowed.push({ id: l.id, company_id: l.company_id, company_name: l.companies?.nome || 'Empresa' });
+    }
+    return allowed;
+  }
+
   app.post('/api/portal/register', async (req, res) => {
     try {
       const nome = String(req.body?.nome || '').trim().slice(0, 100);
@@ -72,7 +92,7 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
 
       // Se não existir conta principal com esse e-mail, tenta o subusuário cadastrado na equipe.
       const { data: candidates, error: agentError } = await supabase.from('support_agents')
-        .select('id,license_id,nome,email,senha_hash,status,permissions,allowed_company_ids,licenses(id,status,company_id,companies(nome))')
+        .select('id,license_id,nome,email,senha_hash,status,permissions,allowed_company_ids,allowed_license_ids,created_by_portal_user_id,licenses(id,status,company_id,companies(nome))')
         .eq('email', email);
       if (agentError) throw agentError;
       const matching = [];
@@ -84,8 +104,10 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
       }
       const agent = matching[0];
       if (!agent) return res.status(401).json({ ok: false, error: 'invalid_credentials', message: 'E-mail ou senha incorretos.' });
+      const allowed_licenses = await getAgentAllowedLicenses(agent);
+      if (!allowed_licenses.some(l => String(l.id) === String(agent.license_id))) return res.status(401).json({ ok:false, error:'account_unavailable', message:'A licença principal deste atendente não está mais vinculada ao administrador.' });
       const token = jwt.sign({ type: 'support_agent', support_agent_id: agent.id, license_id: agent.license_id, email: agent.email }, process.env.JWT_SECRET, { expiresIn: '7d' });
-      return res.json({ ok: true, token, user: { id: agent.id, nome: agent.nome, email: agent.email, status: agent.status, role: 'support_agent', license_id: agent.license_id, permissions: agent.permissions || [], allowed_company_ids: agent.allowed_company_ids || [], company_name: agent.licenses?.companies?.nome || 'Empresa' } });
+      return res.json({ ok: true, token, user: { id: agent.id, nome: agent.nome, email: agent.email, status: agent.status, role: 'support_agent', license_id: agent.license_id, permissions: agent.permissions || [], allowed_company_ids: agent.allowed_company_ids || [], allowed_license_ids: allowed_licenses.map(l=>l.id), allowed_licenses, company_name: agent.licenses?.companies?.nome || 'Empresa' } });
     } catch (error) {
       console.error('Portal login error:', error.code || error.message);
       return res.status(500).json({ ok: false, error: 'server_error', message: 'Não foi possível entrar agora.' });
@@ -101,11 +123,13 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
       if (decoded.type === 'support_agent' && decoded.support_agent_id) {
         const { data: agent, error } = await supabase.from('support_agents')
-          .select('id,license_id,nome,email,status,permissions,allowed_company_ids,licenses(id,status,companies(nome))')
+          .select('id,license_id,nome,email,status,permissions,allowed_company_ids,allowed_license_ids,created_by_portal_user_id,licenses(id,status,companies(nome))')
           .eq('id', decoded.support_agent_id).maybeSingle();
         if (error) throw error;
         if (!agent || agent.status !== 'active' || agent.licenses?.status !== 'active') return res.status(401).json({ ok: false, error: 'account_unavailable', message: 'Este subusuário ou sua licença está desativado.' });
-        return res.json({ ok: true, user: { id: agent.id, nome: agent.nome, email: agent.email, status: agent.status, role: 'support_agent', license_id: agent.license_id, permissions: agent.permissions || [], allowed_company_ids: agent.allowed_company_ids || [], company_name: agent.licenses?.companies?.nome || 'Empresa' } });
+        const allowed_licenses = await getAgentAllowedLicenses(agent);
+        if (!allowed_licenses.some(l => String(l.id) === String(agent.license_id))) return res.status(401).json({ ok:false, error:'account_unavailable', message:'A licença principal deste atendente não está mais vinculada ao administrador.' });
+        return res.json({ ok: true, user: { id: agent.id, nome: agent.nome, email: agent.email, status: agent.status, role: 'support_agent', license_id: agent.license_id, permissions: agent.permissions || [], allowed_company_ids: agent.allowed_company_ids || [], allowed_license_ids: allowed_licenses.map(l=>l.id), allowed_licenses, company_name: agent.licenses?.companies?.nome || 'Empresa' } });
       }
       if (decoded.type !== 'portal' || !decoded.portal_user_id) return res.status(401).json({ ok: false, error: 'invalid_session' });
       const user = await getPortalUser(decoded.portal_user_id);

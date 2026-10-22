@@ -69,7 +69,7 @@ module.exports = function registerAtendimentoRoutes(app, { supabase, jwt, bcrypt
       const license = await getOwnedLicense(req.portalUserId, licenseId);
       if (!license) return res.status(404).json({ ok: false, error: 'license_not_found' });
       const { data, error } = await supabase.from('support_agents')
-        .select('id,license_id,nome,email,status,permissions,allowed_company_ids,created_at,updated_at')
+        .select('id,license_id,nome,email,status,permissions,allowed_company_ids,allowed_license_ids,created_at,updated_at')
         .eq('license_id', licenseId).order('created_at', { ascending: false });
       if (error) throw error;
       return res.json({ ok: true, agents: data || [] });
@@ -91,11 +91,12 @@ module.exports = function registerAtendimentoRoutes(app, { supabase, jwt, bcrypt
       }
       const license = await getOwnedLicense(req.portalUserId, licenseId);
       if (!license) return res.status(404).json({ ok: false, error: 'license_not_found' });
-      const allowedCompanyIds = Array.isArray(req.body?.allowed_company_ids) ? [...new Set(req.body.allowed_company_ids.map(String))] : [String(license.company_id)];
-      // Nesta primeira versão, o subusuário só pode receber acesso à empresa da licença selecionada.
-      if (allowedCompanyIds.some(id => id !== String(license.company_id))) {
-        return res.status(400).json({ ok: false, error: 'company_out_of_scope', message: 'A empresa selecionada não pertence a esta licença.' });
-      }
+      const requestedLicenseIds = Array.isArray(req.body?.allowed_license_ids) ? [...new Set(req.body.allowed_license_ids.map(String))] : [licenseId];
+      if (!requestedLicenseIds.includes(licenseId)) requestedLicenseIds.unshift(licenseId);
+      if (!requestedLicenseIds.length || requestedLicenseIds.length > 100) return res.status(400).json({ ok:false, error:'invalid_store_scope', message:'Selecione pelo menos uma loja.' });
+      const allowedLicenses = [];
+      for (const id of requestedLicenseIds) { const owned = await getOwnedLicense(req.portalUserId, id); if (!owned) return res.status(400).json({ ok:false, error:'license_out_of_scope', message:'Uma das lojas selecionadas não pertence à sua conta ou está inativa.' }); allowedLicenses.push(owned); }
+      const allowedCompanyIds = [...new Set(allowedLicenses.map(l => String(l.company_id)).filter(Boolean))];
       const { data: mainUser, error: mainUserError } = await supabase.from('portal_users').select('id').ilike('email', email).maybeSingle();
       if (mainUserError) throw mainUserError;
       if (mainUser) return res.status(409).json({ ok: false, error: 'email_exists', message: 'Este e-mail já pertence a uma conta principal do portal. Use outro e-mail para o subusuário.' });
@@ -105,8 +106,8 @@ module.exports = function registerAtendimentoRoutes(app, { supabase, jwt, bcrypt
       const senha_hash = await bcrypt.hash(senha, 12);
       const { data, error } = await supabase.from('support_agents').insert({
         license_id: licenseId, nome, email, senha_hash, status: 'active',
-        permissions, allowed_company_ids: allowedCompanyIds, created_by_portal_user_id: req.portalUserId
-      }).select('id,license_id,nome,email,status,permissions,allowed_company_ids,created_at,updated_at').single();
+        permissions, allowed_company_ids: allowedCompanyIds, allowed_license_ids: requestedLicenseIds, created_by_portal_user_id: req.portalUserId
+      }).select('id,license_id,nome,email,status,permissions,allowed_company_ids,allowed_license_ids,created_at,updated_at').single();
       if (error) {
         if (error.code === '23505') return res.status(409).json({ ok: false, error: 'agent_email_exists', message: 'Este e-mail já está cadastrado nesta licença.' });
         throw error;
@@ -123,7 +124,7 @@ module.exports = function registerAtendimentoRoutes(app, { supabase, jwt, bcrypt
     try {
       const agentId = String(req.params.id || '');
       const { data: existing, error: findError } = await supabase.from('support_agents')
-        .select('id,license_id,nome,email,status,permissions,allowed_company_ids')
+        .select('id,license_id,nome,email,status,permissions,allowed_company_ids,allowed_license_ids')
         .eq('id', agentId).maybeSingle();
       if (findError) throw findError;
       if (!existing) return res.status(404).json({ ok: false, error: 'agent_not_found' });
@@ -146,8 +147,16 @@ module.exports = function registerAtendimentoRoutes(app, { supabase, jwt, bcrypt
       }
       if (req.body?.allowed_company_ids !== undefined) {
         const ids = Array.isArray(req.body.allowed_company_ids) ? [...new Set(req.body.allowed_company_ids.map(String))] : [];
-        if (ids.some(id => id !== String(license.company_id))) return res.status(400).json({ ok: false, error: 'company_out_of_scope' });
         updates.allowed_company_ids = ids;
+      }
+      if (req.body?.allowed_license_ids !== undefined) {
+        const ids = Array.isArray(req.body.allowed_license_ids) ? [...new Set(req.body.allowed_license_ids.map(String))] : [];
+        if (!ids.includes(String(existing.license_id))) ids.unshift(String(existing.license_id));
+        if (!ids.length || ids.length > 100) return res.status(400).json({ ok:false, error:'invalid_store_scope', message:'Selecione pelo menos uma loja.' });
+        const ownedLicenses = [];
+        for (const id of ids) { const owned = await getOwnedLicense(req.portalUserId, id); if (!owned) return res.status(400).json({ ok:false, error:'license_out_of_scope', message:'Uma das lojas selecionadas não pertence à sua conta ou está inativa.' }); ownedLicenses.push(owned); }
+        updates.allowed_license_ids = ids;
+        updates.allowed_company_ids = [...new Set(ownedLicenses.map(l => String(l.company_id)).filter(Boolean))];
       }
       if (req.body?.senha !== undefined) {
         const senha = String(req.body.senha);
@@ -157,7 +166,7 @@ module.exports = function registerAtendimentoRoutes(app, { supabase, jwt, bcrypt
       if (!Object.keys(updates).length) return res.status(400).json({ ok: false, error: 'nothing_to_update' });
       updates.updated_at = new Date().toISOString();
       const { data, error } = await supabase.from('support_agents').update(updates).eq('id', agentId)
-        .select('id,license_id,nome,email,status,permissions,allowed_company_ids,created_at,updated_at').single();
+        .select('id,license_id,nome,email,status,permissions,allowed_company_ids,allowed_license_ids,created_at,updated_at').single();
       if (error) throw error;
       await writeAudit(existing.license_id, req.portalUserId, 'agent.updated', { agent_id: agentId, fields: Object.keys(updates).filter(k => k !== 'senha_hash') });
       return res.json({ ok: true, agent: data });
@@ -207,14 +216,17 @@ module.exports = function registerAtendimentoRoutes(app, { supabase, jwt, bcrypt
       if (!license) { res.status(404).json({ ok: false, message: 'Licença não encontrada ou sem acesso.' }); return null; }
       return { owner: true, license, agent: null };
     }
-    if (String(req.actor.licenseId) !== String(licenseId)) { res.status(403).json({ ok: false, message: 'Este atendente não tem acesso a esta licença.' }); return null; }
     const { data: agent, error } = await supabase.from('support_agents')
-      .select('id,license_id,nome,email,status,permissions,allowed_company_ids,licenses(id,status,company_id,companies(id,nome,status))')
+      .select('id,license_id,nome,email,status,permissions,allowed_company_ids,allowed_license_ids,created_by_portal_user_id')
       .eq('id', req.actor.id).maybeSingle();
     if (error) throw error;
-    if (!agent || agent.status !== 'active' || agent.licenses?.status !== 'active') { res.status(401).json({ ok: false, message: 'Atendente ou licença desativado.' }); return null; }
+    if (!agent || agent.status !== 'active') { res.status(401).json({ ok: false, message: 'Atendente desativado.' }); return null; }
+    const allowedLicenseIds = Array.isArray(agent.allowed_license_ids) && agent.allowed_license_ids.length ? agent.allowed_license_ids.map(String) : [String(agent.license_id)];
+    if (!allowedLicenseIds.includes(String(licenseId))) { res.status(403).json({ ok: false, message: 'Este atendente não tem acesso a esta loja.' }); return null; }
+    const targetLicense = await getOwnedLicense(agent.created_by_portal_user_id, licenseId);
+    if (!targetLicense) { res.status(403).json({ ok: false, message: 'A licença desta loja não está mais vinculada à conta administradora.' }); return null; }
     if (permission && !(agent.permissions || []).includes(permission)) { res.status(403).json({ ok: false, message: 'Você não tem permissão para realizar esta ação.' }); return null; }
-    return { owner: false, license: agent.licenses, agent };
+    return { owner: false, license: targetLicense, agent };
   }
   async function mlAccountForLicense(license) {
     const { data: account, error } = await supabase.from('mercadolivre_accounts').select('*').eq('company_id', license.company_id).maybeSingle();
