@@ -136,8 +136,9 @@ module.exports = function registerAtendimentoRoutes(app, { supabase, jwt, bcrypt
       const nome = String(req.body?.nome || '').trim().slice(0, 100);
       const email = String(req.body?.email || '').trim().toLowerCase();
       const senha = String(req.body?.senha || '');
-      const permissions = validatePermissions(req.body?.permissions);
-      const menu_permissions = req.body?.menu_permissions === undefined ? ['chat'] : validateMenuPermissions(req.body.menu_permissions);
+      const canManagePermissions = req.teamActor.type === 'owner' || req.teamActor.permissions.includes('users.manage_permissions');
+      const permissions = req.body?.permissions === undefined ? (req.teamActor.type === 'agent' && !canManagePermissions ? req.teamActor.chatPermissions : null) : validatePermissions(req.body.permissions);
+      const menu_permissions = req.body?.menu_permissions === undefined ? (req.teamActor.type === 'agent' && !canManagePermissions ? ['chat'] : ['chat']) : validateMenuPermissions(req.body.menu_permissions);
       const user_management_permissions = req.body?.user_management_permissions === undefined ? [] : validateUserManagementPermissions(req.body.user_management_permissions);
       if (req.teamActor.type === 'agent' && (req.body?.permissions !== undefined || req.body?.menu_permissions !== undefined || req.body?.user_management_permissions !== undefined) && !requireTeamPermission(req, res, 'users.manage_permissions')) return;
       if (!user_management_permissions || !licenseId || !nome || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || senha.length < 8 || !permissions || !menu_permissions) {
