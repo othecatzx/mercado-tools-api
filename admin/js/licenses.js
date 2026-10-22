@@ -867,20 +867,36 @@ async updateLicense(id, modal) {
                     </div>
 
 
-                    <div class="form-group">
+                    
+<div class="form-group">
+    <label>Chave da licença</label>
 
-                        <label>
-                            Chave da licença
-                        </label>
+    <div style="position: relative;">
+        <input
+            type="text"
+            id="licenseKey"
+            placeholder="Ex: DAPHIE-2026-A8F3K2"
+            required
+            style="padding-right: 105px;"
+        >
 
-                        <input
-                            type="text"
-                            id="licenseKey"
-                            placeholder="Ex: EMPRESA-2026-001"
-                            required
-                        >
+        <button
+            type="button"
+            id="generateLicenseKey"
+            class="secondary-button small"
+            style="
+                position: absolute;
+                right: 8px;
+                top: 50%;
+                transform: translateY(-50%);
+                white-space: nowrap;
+            "
+        >
+            ✨ Gerar
+        </button>
+    </div>
+</div>
 
-                    </div>
 
 
                     <div class="form-row">
@@ -947,6 +963,49 @@ async updateLicense(id, modal) {
         `;
 
         document.body.appendChild(modal);
+
+        
+document
+    .getElementById("generateLicenseKey")
+    .addEventListener("click", () => {
+        const companySelect =
+            document.getElementById("licenseCompany");
+
+        const companyName =
+            companySelect.options[
+                companySelect.selectedIndex
+            ]?.text;
+
+        if (!companySelect.value || !companyName) {
+            alert("Selecione uma empresa primeiro.");
+            return;
+        }
+
+        // Normaliza o nome da empresa
+        const prefix = companyName
+            .normalize("NFD")
+            .replace(/[\u0300-\u036f]/g, "")
+            .toUpperCase()
+            .replace(/[^A-Z0-9]+/g, "-")
+            .replace(/^-|-$/g, "")
+            .slice(0, 20)
+            .replace(/-+$/g, "");
+
+        // Gera um código aleatório
+        const randomBytes = new Uint8Array(4);
+        crypto.getRandomValues(randomBytes);
+
+        const randomCode = Array.from(randomBytes)
+            .map(byte => byte.toString(16).padStart(2, "0"))
+            .join("")
+            .toUpperCase()
+            .slice(0, 6);
+
+        const year = new Date().getFullYear();
+
+        document.getElementById("licenseKey").value =
+            `${prefix}-${year}-${randomCode}`;
+    });
 
 
         document
