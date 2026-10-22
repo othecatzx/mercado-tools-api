@@ -26,6 +26,42 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
     return data;
   }
 
+  // Auth para telas de leitura compartilhadas com subusuários; sempre limita o escopo às licenças autorizadas.
+  async function authPortalOrAgent(req, res, next) {
+    try {
+      const header = req.headers.authorization || '';
+      const token = header.startsWith('Bearer ') ? header.slice(7) : '';
+      if (!token) return res.status(401).json({ ok: false, error: 'auth_required' });
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      if (decoded.type === 'portal' && decoded.portal_user_id) {
+        req.portalUserId = decoded.portal_user_id;
+        req.portalRole = 'portal_user';
+        return next();
+      }
+      if (decoded.type !== 'support_agent' || !decoded.support_agent_id) return res.status(401).json({ ok: false, error: 'invalid_session' });
+      const { data: agent, error } = await supabase.from('support_agents')
+        .select('id,license_id,status,menu_permissions,allowed_license_ids,created_by_portal_user_id,licenses(status)')
+        .eq('id', decoded.support_agent_id).maybeSingle();
+      if (error) throw error;
+      if (!agent || agent.status !== 'active' || agent.licenses?.status !== 'active') return res.status(401).json({ ok: false, error: 'account_unavailable', message: 'Este subusuário ou sua licença está desativado.' });
+      const allowed = await getAgentAllowedLicenses(agent);
+      if (!allowed.some(l => String(l.id) === String(agent.license_id))) return res.status(401).json({ ok: false, error: 'account_unavailable' });
+      req.portalRole = 'support_agent';
+      req.supportAgent = agent;
+      req.agentAllowedLicenses = allowed;
+      req.portalUserId = agent.created_by_portal_user_id;
+      next();
+    } catch (error) {
+      if (error.name === 'JsonWebTokenError' || error.name === 'TokenExpiredError') return res.status(401).json({ ok: false, error: 'invalid_session' });
+      console.error('Portal scoped auth error:', error.message);
+      return res.status(500).json({ ok: false, error: 'server_error' });
+    }
+  }
+
+  function scopedMenuAllowed(req, menu) {
+    return req.portalRole !== 'support_agent' || (Array.isArray(req.supportAgent?.menu_permissions) && req.supportAgent.menu_permissions.includes(menu));
+  }
+
   async function getAgentAllowedLicenses(agent) {
     const ids = Array.isArray(agent.allowed_license_ids) && agent.allowed_license_ids.length
       ? [...new Set(agent.allowed_license_ids.map(String))] : [String(agent.license_id)];
@@ -142,8 +178,18 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
     }
   });
 
-  app.get('/api/portal/licenses', authPortal, async (req, res) => {
+  app.get('/api/portal/licenses', authPortalOrAgent, async (req, res) => {
     try {
+      if (!scopedMenuAllowed(req, 'licenses')) return res.status(403).json({ ok: false, error: 'menu_not_allowed', message: 'O administrador não liberou Minhas licenças para esta conta.' });
+      if (req.portalRole === 'support_agent') {
+        const ids = req.agentAllowedLicenses.map(l => String(l.id));
+        if (!ids.length) return res.json({ ok: true, licenses: [] });
+        const { data, error } = await supabase.from('licenses')
+          .select('id,chave,status,inicio,vencimento,company_id,created_at,companies(id,nome,documento,status,codigo_ml)')
+          .in('id', ids).order('created_at', { ascending: false });
+        if (error) throw error;
+        return res.json({ ok: true, licenses: (data || []).map(l => ({ id:l.id, chave:l.chave, status:l.status, inicio:l.inicio, vencimento:l.vencimento, company_id:l.company_id, added_at:l.created_at, company:{ id:l.companies?.id, nome:l.companies?.nome || 'Empresa', documento:l.companies?.documento || null, status:l.companies?.status || 'unknown', codigo_ml:l.companies?.codigo_ml || null } })) });
+      }
       const { data, error } = await supabase.from('portal_user_licenses')
         .select('id,created_at,licenses(id,chave,status,inicio,vencimento,company_id,companies(id,nome,documento,status))')
         .eq('user_id', req.portalUserId).order('created_at', { ascending: false });
@@ -269,18 +315,26 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
   });
 
   // Vendas reais das contas do Mercado Livre conectadas às empresas licenciadas.
-  app.get('/api/portal/sales', authPortal, async (req, res) => {
+  app.get('/api/portal/sales', authPortalOrAgent, async (req, res) => {
     try {
       const days = Math.max(1, Math.min(90, Number.parseInt(req.query.days, 10) || 30));
       const offsetDays = Math.max(0, Math.min(180, Number.parseInt(req.query.offsetDays, 10) || 0));
       const summaryOnly = req.query.summaryOnly === '1';
-      const { data: links, error: linkError } = await supabase.from('portal_user_licenses')
-        .select('licenses(company_id,companies(id,nome,status))').eq('user_id', req.portalUserId);
-      if (linkError) throw linkError;
+      if (!scopedMenuAllowed(req, 'sales')) return res.status(403).json({ ok: false, error: 'menu_not_allowed', message: 'O administrador não liberou Vendas para esta conta.' });
       const companies = new Map();
-      for (const row of links || []) {
-        const c = row.licenses?.companies;
-        if (c?.id) companies.set(c.id, c);
+      if (req.portalRole === 'support_agent') {
+        const ids = req.agentAllowedLicenses.map(l => String(l.id));
+        if (ids.length) {
+          const { data: allowedLicenses, error: allowedError } = await supabase.from('licenses')
+            .select('id,company_id,companies(id,nome,status)').in('id', ids).eq('status', 'active');
+          if (allowedError) throw allowedError;
+          for (const license of allowedLicenses || []) { const c = license.companies; if (c?.id) companies.set(c.id, c); }
+        }
+      } else {
+        const { data: links, error: linkError } = await supabase.from('portal_user_licenses')
+          .select('licenses(company_id,companies(id,nome,status))').eq('user_id', req.portalUserId);
+        if (linkError) throw linkError;
+        for (const row of links || []) { const c = row.licenses?.companies; if (c?.id) companies.set(c.id, c); }
       }
       const companyIds = [...companies.keys()];
       if (!companyIds.length) return res.json({ ok: true, days, connected: 0, totals: { orders: 0, revenue: 0 }, stores: [] });
@@ -484,12 +538,42 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
     }
   });
 
-  app.get('/api/portal/dashboard', authPortal, async (req, res) => {
+  // Equipe: subusuários podem visualizar somente os atendentes ativos/inativos das lojas que lhes foram autorizadas; não podem administrar contas.
+  app.get('/api/portal/agent-team', authPortalOrAgent, async (req, res) => {
     try {
-      const { data: links, error: linkError } = await supabase.from('portal_user_licenses')
-        .select('licenses(id,chave,status,vencimento,company_id,companies(id,nome,status,codigo_ml))').eq('user_id', req.portalUserId);
-      if (linkError) throw linkError;
-      const licenses = (links || []).map(x => x.licenses).filter(Boolean);
+      if (req.portalRole !== 'support_agent' || !scopedMenuAllowed(req, 'team')) return res.status(403).json({ ok: false, error: 'menu_not_allowed' });
+      const ids = req.agentAllowedLicenses.map(l => String(l.id));
+      if (!ids.length) return res.json({ ok: true, agents: [], stores: req.agentAllowedLicenses });
+      const { data, error } = await supabase.from('support_agents')
+        .select('id,license_id,nome,email,status,permissions,menu_permissions,allowed_license_ids')
+        .eq('created_by_portal_user_id', req.supportAgent.created_by_portal_user_id).in('license_id', ids).order('nome', { ascending: true });
+      if (error) throw error;
+      const visible = (data || []).filter(a => ids.includes(String(a.license_id)) || (a.allowed_license_ids || []).some(id => ids.includes(String(id))));
+      return res.json({ ok: true, agents: visible.map(a => ({ id:a.id, license_id:a.license_id, nome:a.nome, email:a.email, status:a.status, permissions:a.permissions || [], menu_permissions:a.menu_permissions || [] })), stores: req.agentAllowedLicenses });
+    } catch (error) {
+      console.error('Portal agent team error:', error.message);
+      return res.status(500).json({ ok: false, error: 'server_error', message: 'Não foi possível carregar a equipe.' });
+    }
+  });
+
+  app.get('/api/portal/dashboard', authPortalOrAgent, async (req, res) => {
+    try {
+      let licenses = [];
+      if (req.portalRole === 'support_agent') {
+        const ids = req.agentAllowedLicenses.map(l => String(l.id));
+        if (ids.length) {
+          const { data, error } = await supabase.from('licenses')
+            .select('id,chave,status,vencimento,company_id,created_at,companies(id,nome,status,codigo_ml)')
+            .in('id', ids).eq('status', 'active');
+          if (error) throw error;
+          licenses = data || [];
+        }
+      } else {
+        const { data: links, error: linkError } = await supabase.from('portal_user_licenses')
+          .select('licenses(id,chave,status,vencimento,company_id,companies(id,nome,status,codigo_ml))').eq('user_id', req.portalUserId);
+        if (linkError) throw linkError;
+        licenses = (links || []).map(x => x.licenses).filter(Boolean);
+      }
       const companyMap = new Map();
       licenses.forEach(l => { if (l.companies?.id) companyMap.set(l.companies.id, l.companies); });
       const companyIds = [...companyMap.keys()];
@@ -500,7 +584,11 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
         devices = (data || []).map(d => ({ ...d, company_name: companyMap.get(d.company_id)?.nome || 'Empresa' }));
       }
       const activeLicenses = licenses.filter(l => l.status === 'active' && (!l.vencimento || new Date(l.vencimento).getTime() >= Date.now())).length;
-      return res.json({ ok: true, summary: { licenses: licenses.length, active_licenses: activeLicenses, companies: companyIds.length, devices: devices.length, active_devices: devices.filter(d => d.status === 'active').length }, licenses: licenses.map(l => ({ id: l.id, chave: l.chave, status: l.status, vencimento: l.vencimento, company_id: l.company_id, company: l.companies?.nome || 'Empresa não identificada', codigo_ml: l.companies?.codigo_ml || null })), devices });
+      const agentMenus = req.portalRole === 'support_agent' ? (req.supportAgent.menu_permissions || []) : null;
+      const visibleLicenses = req.portalRole !== 'support_agent' || agentMenus.includes('licenses') ? licenses.map(l => ({ id: l.id, chave: l.chave, status: l.status, vencimento: l.vencimento, company_id: l.company_id, company: l.companies?.nome || 'Empresa não identificada', codigo_ml: l.companies?.codigo_ml || null })) : [];
+      const visibleDevices = req.portalRole !== 'support_agent' || agentMenus.includes('devices') ? devices : [];
+      const summary = req.portalRole === 'support_agent' && !agentMenus.includes('overview') ? { licenses: agentMenus.includes('licenses') ? visibleLicenses.length : 0, active_licenses: 0, companies: 0, devices: agentMenus.includes('devices') ? visibleDevices.length : 0, active_devices: 0 } : { licenses: licenses.length, active_licenses: activeLicenses, companies: companyIds.length, devices: devices.length, active_devices: devices.filter(d => d.status === 'active').length };
+      return res.json({ ok: true, summary, licenses: visibleLicenses, devices: visibleDevices });
     } catch (error) {
       console.error('Portal dashboard error:', error.message);
       return res.status(500).json({ ok: false, error: 'server_error', message: 'Não foi possível carregar o painel.' });
