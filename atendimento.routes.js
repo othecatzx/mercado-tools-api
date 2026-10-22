@@ -17,6 +17,45 @@ module.exports = function registerAtendimentoRoutes(app, { supabase, jwt, bcrypt
     }
   }
 
+  async function authTeam(req, res, next) {
+    try {
+      const header = req.headers.authorization || '';
+      const token = header.startsWith('Bearer ') ? header.slice(7) : '';
+      if (!token) return res.status(401).json({ ok: false, error: 'auth_required' });
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      if (decoded.type === 'portal' && decoded.portal_user_id) {
+        req.portalUserId = decoded.portal_user_id;
+        req.teamActor = { type: 'owner', id: decoded.portal_user_id };
+        return next();
+      }
+      if (decoded.type === 'support_agent' && decoded.support_agent_id) {
+        const { data: agent, error } = await supabase.from('support_agents')
+          .select('id,license_id,status,created_by_portal_user_id,allowed_license_ids,user_management_permissions,permissions')
+          .eq('id', decoded.support_agent_id).maybeSingle();
+        if (error) throw error;
+        if (!agent || agent.status !== 'active' || !agent.created_by_portal_user_id) return res.status(401).json({ ok: false, error: 'invalid_session' });
+        req.portalUserId = agent.created_by_portal_user_id;
+        req.teamActor = { type: 'agent', id: agent.id, licenseId: agent.license_id, permissions: Array.isArray(agent.user_management_permissions) ? agent.user_management_permissions : [], chatPermissions: Array.isArray(agent.permissions) ? agent.permissions : [], allowedLicenseIds: (agent.allowed_license_ids || [agent.license_id]).map(String) };
+        return next();
+      }
+      return res.status(401).json({ ok: false, error: 'invalid_session' });
+    } catch (_) { return res.status(401).json({ ok: false, error: 'invalid_session' }); }
+  }
+
+  function requireTeamPermission(req, res, permission) {
+    if (req.teamActor?.type === 'owner') return true;
+    if (req.teamActor?.permissions?.includes(permission)) return true;
+    res.status(403).json({ ok: false, error: 'permission_denied', message: 'O dono da licença não autorizou esta ação.' });
+    return false;
+  }
+
+  const userManagementKeys = new Set(['users.view','users.create','users.edit','users.delete','users.manage_permissions']);
+  function validateUserManagementPermissions(input) {
+    if (!Array.isArray(input)) return null;
+    const values = [...new Set(input.map(v => String(v)))];
+    return values.every(v => userManagementKeys.has(v)) ? values : null;
+  }
+
   async function getOwnedLicense(portalUserId, licenseId) {
     const { data, error } = await supabase.from('portal_user_licenses')
       .select('license_id,licenses(id,chave,status,company_id,companies(id,nome,status))')
@@ -54,7 +93,7 @@ module.exports = function registerAtendimentoRoutes(app, { supabase, jwt, bcrypt
     if (error) console.error('Atendimento audit log failed:', error.code || error.message);
   }
 
-  app.get('/api/portal/atendimento/licenses', authPortal, async (req, res) => {
+  app.get('/api/portal/atendimento/licenses', authTeam, async (req, res) => {
     try {
       const { data, error } = await supabase.from('portal_user_licenses')
         .select('licenses(id,status,company_id,companies(id,nome,status))')
@@ -62,21 +101,24 @@ module.exports = function registerAtendimentoRoutes(app, { supabase, jwt, bcrypt
       if (error) throw error;
       const licenses = (data || []).map(row => row.licenses).filter(l => l && l.status === 'active')
         .map(l => ({ id: l.id, company_id: l.company_id, company_name: l.companies?.nome || 'Empresa', company_status: l.companies?.status || 'unknown' }));
-      return res.json({ ok: true, licenses });
+      const scopedLicenses = req.teamActor?.type === 'agent' ? licenses.filter(l => req.teamActor.allowedLicenseIds.includes(String(l.id))) : licenses;
+      return res.json({ ok: true, licenses: scopedLicenses });
     } catch (error) {
       console.error('Atendimento licenses error:', error.code || error.message);
       return res.status(500).json({ ok: false, error: 'server_error', message: 'Não foi possível carregar as licenças.' });
     }
   });
 
-  app.get('/api/portal/atendimento/agents', authPortal, async (req, res) => {
+  app.get('/api/portal/atendimento/agents', authTeam, async (req, res) => {
     try {
+      if (!requireTeamPermission(req, res, 'users.view')) return;
       const licenseId = String(req.query.license_id || '');
       if (!licenseId) return res.status(400).json({ ok: false, error: 'license_required' });
+      if (req.teamActor.type === 'agent' && !req.teamActor.allowedLicenseIds.includes(licenseId)) return res.status(403).json({ ok:false, error:'license_out_of_scope' });
       const license = await getOwnedLicense(req.portalUserId, licenseId);
       if (!license) return res.status(404).json({ ok: false, error: 'license_not_found' });
       const { data, error } = await supabase.from('support_agents')
-        .select('id,license_id,nome,email,status,permissions,menu_permissions,allowed_company_ids,allowed_license_ids,created_at,updated_at,created_by_portal_user_id')
+        .select('id,license_id,nome,email,status,permissions,menu_permissions,user_management_permissions,allowed_company_ids,allowed_license_ids,created_at,updated_at,created_by_portal_user_id')
         .eq('created_by_portal_user_id', req.portalUserId).order('created_at', { ascending: false });
       if (error) throw error;
       const agents = (data || []).filter(a => (Array.isArray(a.allowed_license_ids) && a.allowed_license_ids.length ? a.allowed_license_ids.map(String) : [String(a.license_id)]).includes(String(licenseId))).map(({ created_by_portal_user_id, ...a }) => a);
@@ -87,20 +129,27 @@ module.exports = function registerAtendimentoRoutes(app, { supabase, jwt, bcrypt
     }
   });
 
-  app.post('/api/portal/atendimento/agents', authPortal, async (req, res) => {
+  app.post('/api/portal/atendimento/agents', authTeam, async (req, res) => {
     try {
+      if (!requireTeamPermission(req, res, 'users.create')) return;
       const licenseId = String(req.body?.license_id || '');
       const nome = String(req.body?.nome || '').trim().slice(0, 100);
       const email = String(req.body?.email || '').trim().toLowerCase();
       const senha = String(req.body?.senha || '');
       const permissions = validatePermissions(req.body?.permissions);
       const menu_permissions = req.body?.menu_permissions === undefined ? ['chat'] : validateMenuPermissions(req.body.menu_permissions);
-      if (!licenseId || !nome || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || senha.length < 8 || !permissions || !menu_permissions) {
+      const user_management_permissions = req.body?.user_management_permissions === undefined ? [] : validateUserManagementPermissions(req.body.user_management_permissions);
+      if (req.teamActor.type === 'agent' && (req.body?.permissions !== undefined || req.body?.menu_permissions !== undefined || req.body?.user_management_permissions !== undefined) && !requireTeamPermission(req, res, 'users.manage_permissions')) return;
+      if (!user_management_permissions || !licenseId || !nome || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || senha.length < 8 || !permissions || !menu_permissions) {
         return res.status(400).json({ ok: false, error: 'invalid_fields', message: 'Informe nome, e-mail válido, senha com pelo menos 8 caracteres e permissões válidas.' });
       }
       const license = await getOwnedLicense(req.portalUserId, licenseId);
       if (!license) return res.status(404).json({ ok: false, error: 'license_not_found' });
+      if (req.teamActor.type === 'agent' && !req.teamActor.allowedLicenseIds.includes(licenseId)) return res.status(403).json({ ok:false, error:'license_out_of_scope' });
+      if (req.teamActor.type === 'agent' && user_management_permissions.some(p => !req.teamActor.permissions.includes(p))) return res.status(403).json({ ok:false, error:'permission_escalation', message:'Você não pode conceder permissões que não possui.' });
+      if (req.teamActor.type === 'agent' && permissions.some(p => !req.teamActor.chatPermissions?.includes(p))) return res.status(403).json({ ok:false, error:'permission_escalation', message:'Você não pode conceder permissões de atendimento que não possui.' });
       const requestedLicenseIds = Array.isArray(req.body?.allowed_license_ids) ? [...new Set(req.body.allowed_license_ids.map(String))] : [licenseId];
+      if (req.teamActor.type === 'agent' && requestedLicenseIds.some(id => !req.teamActor.allowedLicenseIds.includes(id))) return res.status(403).json({ ok:false, error:'license_out_of_scope' });
       if (!requestedLicenseIds.includes(licenseId)) requestedLicenseIds.unshift(licenseId);
       if (!requestedLicenseIds.length || requestedLicenseIds.length > 100) return res.status(400).json({ ok:false, error:'invalid_store_scope', message:'Selecione pelo menos uma loja.' });
       const allowedLicenses = [];
@@ -115,8 +164,8 @@ module.exports = function registerAtendimentoRoutes(app, { supabase, jwt, bcrypt
       const senha_hash = await bcrypt.hash(senha, 12);
       const { data, error } = await supabase.from('support_agents').insert({
         license_id: licenseId, nome, email, senha_hash, status: 'active',
-        permissions, menu_permissions, allowed_company_ids: allowedCompanyIds, allowed_license_ids: requestedLicenseIds, created_by_portal_user_id: req.portalUserId
-      }).select('id,license_id,nome,email,status,permissions,menu_permissions,allowed_company_ids,allowed_license_ids,created_at,updated_at').single();
+        permissions, menu_permissions, user_management_permissions, allowed_company_ids: allowedCompanyIds, allowed_license_ids: requestedLicenseIds, created_by_portal_user_id: req.portalUserId
+      }).select('id,license_id,nome,email,status,permissions,menu_permissions,user_management_permissions,allowed_company_ids,allowed_license_ids,created_at,updated_at').single();
       if (error) {
         if (error.code === '23505') return res.status(409).json({ ok: false, error: 'agent_email_exists', message: 'Este e-mail já está cadastrado nesta licença.' });
         throw error;
@@ -129,14 +178,17 @@ module.exports = function registerAtendimentoRoutes(app, { supabase, jwt, bcrypt
     }
   });
 
-  app.patch('/api/portal/atendimento/agents/:id', authPortal, async (req, res) => {
+  app.patch('/api/portal/atendimento/agents/:id', authTeam, async (req, res) => {
     try {
       const agentId = String(req.params.id || '');
       const { data: existing, error: findError } = await supabase.from('support_agents')
-        .select('id,license_id,nome,email,status,permissions,allowed_company_ids,allowed_license_ids')
+        .select('id,license_id,nome,email,status,permissions,menu_permissions,user_management_permissions,allowed_company_ids,allowed_license_ids,created_by_portal_user_id')
         .eq('id', agentId).maybeSingle();
       if (findError) throw findError;
       if (!existing) return res.status(404).json({ ok: false, error: 'agent_not_found' });
+      if (req.teamActor.type === 'agent' && (!req.teamActor.allowedLicenseIds.includes(String(existing.license_id)) || existing.created_by_portal_user_id !== req.portalUserId || String(existing.id) === String(req.teamActor.id))) return res.status(404).json({ ok: false, error: 'agent_not_found' });
+      if (req.body?.status !== undefined || req.body?.nome !== undefined || req.body?.senha !== undefined) { if (!requireTeamPermission(req, res, 'users.edit')) return; }
+      if (req.body?.permissions !== undefined || req.body?.menu_permissions !== undefined || req.body?.user_management_permissions !== undefined || req.body?.allowed_license_ids !== undefined || req.body?.allowed_company_ids !== undefined) { if (!requireTeamPermission(req, res, 'users.manage_permissions')) return; }
       const license = await getOwnedLicense(req.portalUserId, existing.license_id);
       if (!license) return res.status(404).json({ ok: false, error: 'agent_not_found' });
       const updates = {};
@@ -152,12 +204,20 @@ module.exports = function registerAtendimentoRoutes(app, { supabase, jwt, bcrypt
       if (req.body?.permissions !== undefined) {
         const permissions = validatePermissions(req.body.permissions);
         if (!permissions) return res.status(400).json({ ok: false, error: 'invalid_permissions' });
+        if (req.teamActor.type === 'agent' && permissions.some(p => !req.teamActor.chatPermissions.includes(p))) return res.status(403).json({ ok:false, error:'permission_escalation', message:'Você não pode conceder permissões de atendimento que não possui.' });
         updates.permissions = permissions;
       }
       if (req.body?.menu_permissions !== undefined) {
         const menu_permissions = validateMenuPermissions(req.body.menu_permissions);
         if (!menu_permissions) return res.status(400).json({ ok: false, error: 'invalid_menu_permissions', message: 'Seleção de menus inválida.' });
+        if (req.teamActor.type === 'agent' && menu_permissions.some(p => !['chat','team'].includes(p))) return res.status(403).json({ ok:false, error:'permission_escalation', message:'Você não pode liberar menus que não possui.' });
         updates.menu_permissions = menu_permissions;
+      }
+      if (req.body?.user_management_permissions !== undefined) {
+        const user_management_permissions = validateUserManagementPermissions(req.body.user_management_permissions);
+        if (!user_management_permissions) return res.status(400).json({ ok: false, error: 'invalid_user_management_permissions' });
+        if (req.teamActor.type === 'agent' && user_management_permissions.some(p => !req.teamActor.permissions.includes(p))) return res.status(403).json({ ok:false, error:'permission_escalation', message:'Você não pode conceder permissões que não possui.' });
+        updates.user_management_permissions = user_management_permissions;
       }
       if (req.body?.allowed_company_ids !== undefined) {
         const ids = Array.isArray(req.body.allowed_company_ids) ? [...new Set(req.body.allowed_company_ids.map(String))] : [];
@@ -166,6 +226,7 @@ module.exports = function registerAtendimentoRoutes(app, { supabase, jwt, bcrypt
       if (req.body?.allowed_license_ids !== undefined) {
         const ids = Array.isArray(req.body.allowed_license_ids) ? [...new Set(req.body.allowed_license_ids.map(String))] : [];
         if (!ids.includes(String(existing.license_id))) ids.unshift(String(existing.license_id));
+        if (req.teamActor.type === 'agent' && ids.some(id => !req.teamActor.allowedLicenseIds.includes(id))) return res.status(403).json({ ok:false, error:'license_out_of_scope' });
         if (!ids.length || ids.length > 100) return res.status(400).json({ ok:false, error:'invalid_store_scope', message:'Selecione pelo menos uma loja.' });
         const ownedLicenses = [];
         for (const id of ids) { const owned = await getOwnedLicense(req.portalUserId, id); if (!owned) return res.status(400).json({ ok:false, error:'license_out_of_scope', message:'Uma das lojas selecionadas não pertence à sua conta ou está inativa.' }); ownedLicenses.push(owned); }
@@ -180,7 +241,7 @@ module.exports = function registerAtendimentoRoutes(app, { supabase, jwt, bcrypt
       if (!Object.keys(updates).length) return res.status(400).json({ ok: false, error: 'nothing_to_update' });
       updates.updated_at = new Date().toISOString();
       const { data, error } = await supabase.from('support_agents').update(updates).eq('id', agentId)
-        .select('id,license_id,nome,email,status,permissions,menu_permissions,allowed_company_ids,allowed_license_ids,created_at,updated_at').single();
+        .select('id,license_id,nome,email,status,permissions,menu_permissions,user_management_permissions,allowed_company_ids,allowed_license_ids,created_at,updated_at').single();
       if (error) throw error;
       await writeAudit(existing.license_id, req.portalUserId, 'agent.updated', { agent_id: agentId, fields: Object.keys(updates).filter(k => k !== 'senha_hash') });
       return res.json({ ok: true, agent: data });
@@ -190,13 +251,14 @@ module.exports = function registerAtendimentoRoutes(app, { supabase, jwt, bcrypt
     }
   });
 
-  app.delete('/api/portal/atendimento/agents/:id', authPortal, async (req, res) => {
+  app.delete('/api/portal/atendimento/agents/:id', authTeam, async (req, res) => {
     try {
+      if (!requireTeamPermission(req, res, 'users.delete')) return;
       const agentId = String(req.params.id || '');
       const { data: existing, error: findError } = await supabase.from('support_agents')
-        .select('id,license_id,email').eq('id', agentId).maybeSingle();
+        .select('id,license_id,email,created_by_portal_user_id').eq('id', agentId).maybeSingle();
       if (findError) throw findError;
-      if (!existing || !(await getOwnedLicense(req.portalUserId, existing.license_id))) return res.status(404).json({ ok: false, error: 'agent_not_found' });
+      if (!existing || (req.teamActor.type === 'agent' && (!req.teamActor.allowedLicenseIds.includes(String(existing.license_id)) || existing.created_by_portal_user_id !== req.portalUserId || String(existing.id) === String(req.teamActor.id))) || !(await getOwnedLicense(req.portalUserId, existing.license_id))) return res.status(404).json({ ok: false, error: 'agent_not_found' });
       const { error } = await supabase.from('support_agents').delete().eq('id', agentId);
       if (error) throw error;
       await writeAudit(existing.license_id, req.portalUserId, 'agent.deleted', { agent_id: agentId, email: existing.email });

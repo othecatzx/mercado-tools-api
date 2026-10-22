@@ -54,3 +54,15 @@ alter table public.support_agents
 ```
 
 Importante: nesta etapa a seleção controla somente a visibilidade dos menus. Ela **não** concede acesso funcional às APIs/páginas de licenças, dispositivos, códigos ML ou equipe para subusuários. O atendimento continua seguindo as permissões de ação já existentes.
+
+
+## Permissões para gerenciar subusuários
+
+A tela Equipe de atendimento permite ao dono da licença configurar, por subusuário, as permissões `users.view`, `users.create`, `users.edit`, `users.delete` e `users.manage_permissions`. A API verifica essas permissões no servidor e limita o acesso às licenças autorizadas.
+
+Execute também no SQL Editor do Supabase (se ainda não executou a migração atualizada):
+
+```sql
+alter table public.support_agents
+  add column if not exists user_management_permissions jsonb not null default '[]'::jsonb;
+```

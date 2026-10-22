@@ -107,3 +107,8 @@ alter table public.support_quick_replies enable row level security;
 -- Nesta etapa, a permissão controla a visibilidade; não libera APIs/páginas internas.
 alter table public.support_agents
   add column if not exists menu_permissions jsonb not null default '["chat"]'::jsonb;
+
+
+-- Permissões para gerenciar subusuários (configuradas pelo dono da licença).
+alter table public.support_agents
+  add column if not exists user_management_permissions jsonb not null default '[]'::jsonb;
