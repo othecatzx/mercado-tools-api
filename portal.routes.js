@@ -58,26 +58,62 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
       const email = String(req.body?.email || '').trim().toLowerCase();
       const senha = String(req.body?.senha || '');
       if (!email || !senha) return res.status(400).json({ ok: false, error: 'missing_credentials', message: 'Informe e-mail e senha.' });
+
+      // Primeiro preserva o login normal de cliente/administrador do portal.
       const { data: user, error } = await supabase.from('portal_users').select('*').eq('email', email).maybeSingle();
       if (error) throw error;
-      if (!user || user.status !== 'active' || !(await bcrypt.compare(senha, user.senha_hash))) {
-        return res.status(401).json({ ok: false, error: 'invalid_credentials', message: 'E-mail ou senha incorretos.' });
+      if (user) {
+        if (user.status !== 'active' || !(await bcrypt.compare(senha, user.senha_hash))) {
+          return res.status(401).json({ ok: false, error: 'invalid_credentials', message: 'E-mail ou senha incorretos.' });
+        }
+        const token = jwt.sign({ type: 'portal', portal_user_id: user.id, email: user.email }, process.env.JWT_SECRET, { expiresIn: '7d' });
+        return res.json({ ok: true, token, user: { id: user.id, nome: user.nome, email: user.email, status: user.status, created_at: user.created_at, role: 'portal_user' } });
       }
-      const token = jwt.sign({ type: 'portal', portal_user_id: user.id, email: user.email }, process.env.JWT_SECRET, { expiresIn: '7d' });
-      return res.json({ ok: true, token, user: { id: user.id, nome: user.nome, email: user.email, status: user.status, created_at: user.created_at } });
+
+      // Se não existir conta principal com esse e-mail, tenta o subusuário cadastrado na equipe.
+      const { data: candidates, error: agentError } = await supabase.from('support_agents')
+        .select('id,license_id,nome,email,senha_hash,status,permissions,allowed_company_ids,licenses(id,status,company_id,companies(nome))')
+        .eq('email', email);
+      if (agentError) throw agentError;
+      const matching = [];
+      for (const agent of (candidates || [])) {
+        if (agent.status === 'active' && agent.licenses?.status === 'active' && await bcrypt.compare(senha, agent.senha_hash)) matching.push(agent);
+      }
+      if (matching.length > 1) {
+        return res.status(409).json({ ok: false, error: 'agent_email_ambiguous', message: 'Este e-mail está cadastrado em mais de uma equipe. Peça ao administrador para usar um e-mail exclusivo para este subusuário.' });
+      }
+      const agent = matching[0];
+      if (!agent) return res.status(401).json({ ok: false, error: 'invalid_credentials', message: 'E-mail ou senha incorretos.' });
+      const token = jwt.sign({ type: 'support_agent', support_agent_id: agent.id, license_id: agent.license_id, email: agent.email }, process.env.JWT_SECRET, { expiresIn: '7d' });
+      return res.json({ ok: true, token, user: { id: agent.id, nome: agent.nome, email: agent.email, status: agent.status, role: 'support_agent', license_id: agent.license_id, permissions: agent.permissions || [], allowed_company_ids: agent.allowed_company_ids || [], company_name: agent.licenses?.companies?.nome || 'Empresa' } });
     } catch (error) {
-      console.error('Portal login error:', error.message);
+      console.error('Portal login error:', error.code || error.message);
       return res.status(500).json({ ok: false, error: 'server_error', message: 'Não foi possível entrar agora.' });
     }
   });
 
-  app.get('/api/portal/me', authPortal, async (req, res) => {
+  // /me aceita os dois tipos de sessão; os endpoints administrativos continuam exigindo token type=portal.
+  app.get('/api/portal/me', async (req, res) => {
     try {
-      const user = await getPortalUser(req.portalUserId);
+      const header = req.headers.authorization || '';
+      const token = header.startsWith('Bearer ') ? header.slice(7) : '';
+      if (!token) return res.status(401).json({ ok: false, error: 'auth_required' });
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      if (decoded.type === 'support_agent' && decoded.support_agent_id) {
+        const { data: agent, error } = await supabase.from('support_agents')
+          .select('id,license_id,nome,email,status,permissions,allowed_company_ids,licenses(id,status,companies(nome))')
+          .eq('id', decoded.support_agent_id).maybeSingle();
+        if (error) throw error;
+        if (!agent || agent.status !== 'active' || agent.licenses?.status !== 'active') return res.status(401).json({ ok: false, error: 'account_unavailable', message: 'Este subusuário ou sua licença está desativado.' });
+        return res.json({ ok: true, user: { id: agent.id, nome: agent.nome, email: agent.email, status: agent.status, role: 'support_agent', license_id: agent.license_id, permissions: agent.permissions || [], allowed_company_ids: agent.allowed_company_ids || [], company_name: agent.licenses?.companies?.nome || 'Empresa' } });
+      }
+      if (decoded.type !== 'portal' || !decoded.portal_user_id) return res.status(401).json({ ok: false, error: 'invalid_session' });
+      const user = await getPortalUser(decoded.portal_user_id);
       if (!user || user.status !== 'active') return res.status(401).json({ ok: false, error: 'account_unavailable' });
-      return res.json({ ok: true, user });
+      return res.json({ ok: true, user: { ...user, role: 'portal_user' } });
     } catch (error) {
-      console.error('Portal me error:', error.message);
+      if (error.name === 'JsonWebTokenError' || error.name === 'TokenExpiredError') return res.status(401).json({ ok: false, error: 'invalid_session' });
+      console.error('Portal me error:', error.code || error.message);
       return res.status(500).json({ ok: false, error: 'server_error' });
     }
   });
