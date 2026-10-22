@@ -193,19 +193,48 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
 
   // Códigos da Agência: mostra todas as empresas vinculadas à conta do portal,
   // buscando primeiro o código capturado diariamente em company_ml_codes.
-  app.get('/api/portal/codes', authPortal, async (req, res) => {
+  app.get('/api/portal/codes', async (req, res) => {
     try {
-      const { data: links, error: linkError } = await supabase.from('portal_user_licenses')
-        .select('licenses(company_id,companies(id,nome,codigo_ml,status))')
-        .eq('user_id', req.portalUserId);
-      if (linkError) throw linkError;
+      const header = req.headers.authorization || '';
+      const bearer = header.startsWith('Bearer ') ? header.slice(7) : '';
+      if (!bearer) return res.status(401).json({ ok: false, error: 'auth_required' });
+      let decoded;
+      try { decoded = jwt.verify(bearer, process.env.JWT_SECRET); }
+      catch (_) { return res.status(401).json({ ok: false, error: 'invalid_session' }); }
 
-      const companies = new Map();
-      for (const row of links || []) {
-        const company = row.licenses?.companies;
-        if (company?.id && !companies.has(String(company.id))) {
-          companies.set(String(company.id), company);
+      let companies = new Map();
+      if (decoded.type === 'portal' && decoded.portal_user_id) {
+        const { data: links, error: linkError } = await supabase.from('portal_user_licenses')
+          .select('licenses(company_id,companies(id,nome,codigo_ml,status))')
+          .eq('user_id', decoded.portal_user_id);
+        if (linkError) throw linkError;
+        for (const row of links || []) {
+          const company = row.licenses?.companies;
+          if (company?.id && !companies.has(String(company.id))) companies.set(String(company.id), company);
         }
+      } else if (decoded.type === 'support_agent' && decoded.support_agent_id) {
+        const { data: agent, error: agentError } = await supabase.from('support_agents')
+          .select('id,license_id,status,menu_permissions,allowed_license_ids,created_by_portal_user_id')
+          .eq('id', decoded.support_agent_id).maybeSingle();
+        if (agentError) throw agentError;
+        if (!agent || agent.status !== 'active') return res.status(403).json({ ok: false, error: 'agent_inactive' });
+        if (!Array.isArray(agent.menu_permissions) || !agent.menu_permissions.includes('codes')) return res.status(403).json({ ok: false, error: 'menu_not_allowed', message: 'O administrador não liberou Códigos ML para esta conta.' });
+        const ids = Array.isArray(agent.allowed_license_ids) && agent.allowed_license_ids.length ? [...new Set(agent.allowed_license_ids.map(String))] : [String(agent.license_id)];
+        const { data: ownedLinks, error: ownedError } = await supabase.from('portal_user_licenses')
+          .select('license_id').eq('user_id', agent.created_by_portal_user_id).in('license_id', ids);
+        if (ownedError) throw ownedError;
+        const ownedIds = [...new Set((ownedLinks || []).map(x => String(x.license_id)))];
+        if (!ownedIds.length) return res.json({ ok: true, codes: [] });
+        const { data: licenses, error: licensesError } = await supabase.from('licenses')
+          .select('id,status,company_id,companies(id,nome,codigo_ml,status)')
+          .in('id', ownedIds).eq('status', 'active');
+        if (licensesError) throw licensesError;
+        for (const license of licenses || []) {
+          const company = license.companies;
+          if (company?.id && !companies.has(String(company.id))) companies.set(String(company.id), company);
+        }
+      } else {
+        return res.status(401).json({ ok: false, error: 'invalid_session' });
       }
       const companyIds = [...companies.keys()];
       if (!companyIds.length) return res.json({ ok: true, codes: [] });
