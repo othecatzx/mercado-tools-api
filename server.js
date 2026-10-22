@@ -44,6 +44,7 @@ const supabaseEan = createClient(
 
 // Portal SaaS do cliente: cadastro, login, vinculação de licenças e painel.
 require("./portal.routes")(app, { supabase, jwt, bcrypt });
+require("./atendimento.routes")(app, { supabase, jwt, bcrypt });
 
 function verificarAdmin(req, res, next) {
     try {
