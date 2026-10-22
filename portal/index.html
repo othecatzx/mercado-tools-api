@@ -460,3 +460,79 @@ setInterval(()=>{if(token&&currentPage==='chat'&&!document.hidden)loadChatConver
 boot();
 </script>
 </body></html>
+<style>
+/* Correção de superfícies da página Vendas no tema escuro */
+html[data-theme="dark"] .sales-toolbar,
+html[data-theme="dark"] .sales-products-panel,
+html[data-theme="dark"] .sales-products-panel.panel,
+html[data-theme="dark"] .sales-compare-grid .stat-card,
+html[data-theme="dark"] .sales-chart-grid .panel {
+  background: var(--panel) !important;
+  color: var(--ink) !important;
+  border-color: var(--line) !important;
+}
+html[data-theme="dark"] .sales-toolbar .filter-control,
+html[data-theme="dark"] .sales-product-filters input,
+html[data-theme="dark"] .sales-product-filters select,
+html[data-theme="dark"] .sales-toolbar input,
+html[data-theme="dark"] .sales-toolbar select {
+  background: var(--field) !important;
+  color: var(--ink) !important;
+  border-color: var(--line) !important;
+}
+html[data-theme="dark"] .sales-products-table,
+html[data-theme="dark"] .sales-products-table tbody,
+html[data-theme="dark"] .sales-products-table tr,
+html[data-theme="dark"] .sales-products-table td {
+  background-color: transparent !important;
+  color: var(--ink);
+}
+html[data-theme="dark"] .sales-products-table th {
+  background: var(--panel-2) !important;
+  color: var(--muted) !important;
+  border-bottom: 1px solid var(--line);
+}
+html[data-theme="dark"] .sales-products-table td {
+  border-bottom-color: var(--line) !important;
+}
+html[data-theme="dark"] .sales-products-table tbody tr:hover {
+  background: var(--table-hover) !important;
+}
+html[data-theme="dark"] .product-title,
+html[data-theme="dark"] .product-qty,
+html[data-theme="dark"] .sales-insight-name,
+html[data-theme="dark"] .sales-insight-value,
+html[data-theme="dark"] .sales-products-panel .panel-head h3 {
+  color: var(--ink) !important;
+}
+html[data-theme="dark"] .product-sub,
+html[data-theme="dark"] .sales-empty,
+html[data-theme="dark"] .sales-status,
+html[data-theme="dark"] .sales-compare-grid .sales-compare-sub,
+html[data-theme="dark"] .stat-compare-old {
+  color: var(--muted) !important;
+}
+html[data-theme="dark"] .product-thumb {
+  background: var(--panel-2) !important;
+  border-color: var(--line) !important;
+}
+html[data-theme="dark"] .product-store {
+  background: var(--panel-2) !important;
+  color: var(--ink) !important;
+}
+html[data-theme="dark"] .sales-bar-track {
+  background: var(--panel-2) !important;
+}
+html[data-theme="dark"] .sales-pagination button {
+  background: var(--panel-2) !important;
+  color: var(--ink) !important;
+  border-color: var(--line) !important;
+}
+html[data-theme="dark"] .sales-pagination .page-current {
+  background: var(--soft) !important;
+  border-color: color-mix(in srgb, var(--purple) 45%, var(--line)) !important;
+}
+html[data-theme="dark"] .sales-change.up { background: #12372e !important; color: #72e0b4 !important; }
+html[data-theme="dark"] .sales-change.down { background: #3a1d2a !important; color: #ffb2bf !important; }
+html[data-theme="dark"] .sales-change.flat { background: var(--panel-2) !important; color: var(--muted) !important; }
+</style>
