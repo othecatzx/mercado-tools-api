@@ -982,14 +982,14 @@ document
         }
 
         // Normaliza o nome da empresa
-        const prefix = companyName
-            .normalize("NFD")
-            .replace(/[\u0300-\u036f]/g, "")
-            .toUpperCase()
-            .replace(/[^A-Z0-9]+/g, "-")
-            .replace(/^-|-$/g, "")
-            .slice(0, 20)
-            .replace(/-+$/g, "");
+const prefix = companyName
+    .trim()
+    .split(/\s+/)[0]
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^A-Z0-9]/gi, "")
+    .toUpperCase();
+
 
         // Gera um código aleatório
         const randomBytes = new Uint8Array(4);
