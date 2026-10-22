@@ -361,7 +361,7 @@ module.exports = function registerAtendimentoRoutes(app, { supabase, jwt, bcrypt
       let result = null;
       try { result = await refreshConversationFromMl(actor.license, conversation, false); }
       catch (e) { console.warn('Refresh messages failed:', e.message); }
-      const { data, error } = await supabase.from('support_messages').select('id,external_message_id,sender_id,sender_role,text,status,attachments,created_at').eq('license_id', conversation.license_id).eq('conversation_id', conversation.id).order('created_at', { ascending: true }).limit(500);
+      const { data, error } = await supabase.from('support_messages').select('id,external_message_id,sender_id,sender_role,text,status,attachments,raw,created_at').eq('license_id', conversation.license_id).eq('conversation_id', conversation.id).order('created_at', { ascending: true }).limit(500);
       if (error) throw error;
       const messages = (data || []).map(m => ({ ...m, sender_name: m.sender_role === 'seller' ? 'Sua loja' : (conversation.buyer_name || 'Comprador') }));
       return res.json({ ok: true, messages, ml_status: result?.payload?.conversation_status?.status || conversation.ml_status });
