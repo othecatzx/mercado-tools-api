@@ -101,3 +101,9 @@ create index if not exists support_quick_replies_license_idx
 alter table public.support_conversations enable row level security;
 alter table public.support_messages enable row level security;
 alter table public.support_quick_replies enable row level security;
+
+
+-- Menus que cada subusuário pode visualizar na barra lateral do portal.
+-- Nesta etapa, a permissão controla a visibilidade; não libera APIs/páginas internas.
+alter table public.support_agents
+  add column if not exists menu_permissions jsonb not null default '["chat"]'::jsonb;

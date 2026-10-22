@@ -40,6 +40,13 @@ module.exports = function registerAtendimentoRoutes(app, { supabase, jwt, bcrypt
     return values.every(v => permissionKeys.has(v)) ? values : null;
   }
 
+  const menuKeys = new Set(['overview','licenses','devices','sales','codes','team','chat']);
+  function validateMenuPermissions(input) {
+    if (!Array.isArray(input)) return null;
+    const values = [...new Set(input.map(v => String(v)))];
+    return values.every(v => menuKeys.has(v)) ? values : null;
+  }
+
   async function writeAudit(licenseId, actorId, action, details = {}) {
     const { error } = await supabase.from('support_audit_logs').insert({
       license_id: licenseId, actor_portal_user_id: actorId, action, details
@@ -69,7 +76,7 @@ module.exports = function registerAtendimentoRoutes(app, { supabase, jwt, bcrypt
       const license = await getOwnedLicense(req.portalUserId, licenseId);
       if (!license) return res.status(404).json({ ok: false, error: 'license_not_found' });
       const { data, error } = await supabase.from('support_agents')
-        .select('id,license_id,nome,email,status,permissions,allowed_company_ids,allowed_license_ids,created_at,updated_at,created_by_portal_user_id')
+        .select('id,license_id,nome,email,status,permissions,menu_permissions,allowed_company_ids,allowed_license_ids,created_at,updated_at,created_by_portal_user_id')
         .eq('created_by_portal_user_id', req.portalUserId).order('created_at', { ascending: false });
       if (error) throw error;
       const agents = (data || []).filter(a => (Array.isArray(a.allowed_license_ids) && a.allowed_license_ids.length ? a.allowed_license_ids.map(String) : [String(a.license_id)]).includes(String(licenseId))).map(({ created_by_portal_user_id, ...a }) => a);
@@ -87,7 +94,8 @@ module.exports = function registerAtendimentoRoutes(app, { supabase, jwt, bcrypt
       const email = String(req.body?.email || '').trim().toLowerCase();
       const senha = String(req.body?.senha || '');
       const permissions = validatePermissions(req.body?.permissions);
-      if (!licenseId || !nome || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || senha.length < 8 || !permissions) {
+      const menu_permissions = req.body?.menu_permissions === undefined ? ['chat'] : validateMenuPermissions(req.body.menu_permissions);
+      if (!licenseId || !nome || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || senha.length < 8 || !permissions || !menu_permissions) {
         return res.status(400).json({ ok: false, error: 'invalid_fields', message: 'Informe nome, e-mail válido, senha com pelo menos 8 caracteres e permissões válidas.' });
       }
       const license = await getOwnedLicense(req.portalUserId, licenseId);
@@ -107,8 +115,8 @@ module.exports = function registerAtendimentoRoutes(app, { supabase, jwt, bcrypt
       const senha_hash = await bcrypt.hash(senha, 12);
       const { data, error } = await supabase.from('support_agents').insert({
         license_id: licenseId, nome, email, senha_hash, status: 'active',
-        permissions, allowed_company_ids: allowedCompanyIds, allowed_license_ids: requestedLicenseIds, created_by_portal_user_id: req.portalUserId
-      }).select('id,license_id,nome,email,status,permissions,allowed_company_ids,allowed_license_ids,created_at,updated_at').single();
+        permissions, menu_permissions, allowed_company_ids: allowedCompanyIds, allowed_license_ids: requestedLicenseIds, created_by_portal_user_id: req.portalUserId
+      }).select('id,license_id,nome,email,status,permissions,menu_permissions,allowed_company_ids,allowed_license_ids,created_at,updated_at').single();
       if (error) {
         if (error.code === '23505') return res.status(409).json({ ok: false, error: 'agent_email_exists', message: 'Este e-mail já está cadastrado nesta licença.' });
         throw error;
@@ -146,6 +154,11 @@ module.exports = function registerAtendimentoRoutes(app, { supabase, jwt, bcrypt
         if (!permissions) return res.status(400).json({ ok: false, error: 'invalid_permissions' });
         updates.permissions = permissions;
       }
+      if (req.body?.menu_permissions !== undefined) {
+        const menu_permissions = validateMenuPermissions(req.body.menu_permissions);
+        if (!menu_permissions) return res.status(400).json({ ok: false, error: 'invalid_menu_permissions', message: 'Seleção de menus inválida.' });
+        updates.menu_permissions = menu_permissions;
+      }
       if (req.body?.allowed_company_ids !== undefined) {
         const ids = Array.isArray(req.body.allowed_company_ids) ? [...new Set(req.body.allowed_company_ids.map(String))] : [];
         updates.allowed_company_ids = ids;
@@ -167,7 +180,7 @@ module.exports = function registerAtendimentoRoutes(app, { supabase, jwt, bcrypt
       if (!Object.keys(updates).length) return res.status(400).json({ ok: false, error: 'nothing_to_update' });
       updates.updated_at = new Date().toISOString();
       const { data, error } = await supabase.from('support_agents').update(updates).eq('id', agentId)
-        .select('id,license_id,nome,email,status,permissions,allowed_company_ids,allowed_license_ids,created_at,updated_at').single();
+        .select('id,license_id,nome,email,status,permissions,menu_permissions,allowed_company_ids,allowed_license_ids,created_at,updated_at').single();
       if (error) throw error;
       await writeAudit(existing.license_id, req.portalUserId, 'agent.updated', { agent_id: agentId, fields: Object.keys(updates).filter(k => k !== 'senha_hash') });
       return res.json({ ok: true, agent: data });
