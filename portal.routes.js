@@ -366,52 +366,65 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
       for (const account of accounts) {
         try {
           const accessToken = await ensureMlToken(account);
-          // Use search_type=scan: offset pagination stops at 1,000 IDs and silently
-          // hides eligible listings beyond that point for high-volume sellers.
-          let ids = [], scrollId = null, pageCount = 0;
-          do {
-            const url = new URL(`https://api.mercadolibre.com/users/${encodeURIComponent(account.ml_user_id)}/items/search`);
-            const params = new URLSearchParams({ status: 'active', search_type: 'scan', limit: '100' });
-            if (scrollId) params.set('scroll_id', scrollId);
-            url.search = params.toString();
-            const r = await fetch(url, { headers: { Authorization: 'Bearer ' + accessToken, Accept: 'application/json' } });
-            const data = await r.json();
-            if (!r.ok) throw new Error(data.message || 'Falha ao consultar anúncios com paginação scan.');
-            const page = Array.isArray(data.results) ? data.results : [];
-            if (!page.length) { scrollId = null; break; }
-            ids.push(...page);
-            pageCount++;
-            scrollId = data.scroll_id || null;
-            // Safety guard against a malformed/repeating cursor or unexpectedly huge account.
-            if (pageCount >= 1000) throw new Error('A consulta ultrapassou 100.000 anúncios; interrompida por segurança.');
-          } while (scrollId);
-
+          const allIds = new Set();
+          let pagesScanned = 0;
+          // Busca anúncios ativos E pausados. Anúncios pausados também podem
+          // precisar da troca de frete; nunca os reativamos automaticamente.
+          for (const status of ['active', 'paused']) {
+            let scrollId = null, pageGuard = 0;
+            do {
+              const url = new URL(`https://api.mercadolibre.com/users/${encodeURIComponent(account.ml_user_id)}/items/search`);
+              const params = new URLSearchParams({ status, search_type: 'scan', limit: '100' });
+              if (scrollId) params.set('scroll_id', scrollId);
+              url.search = params.toString();
+              const response = await fetch(url, { headers: { Authorization: 'Bearer ' + accessToken, Accept: 'application/json' } });
+              const data = await response.json();
+              if (!response.ok) throw new Error(data.message || `Falha ao consultar anúncios ${status}.`);
+              const page = Array.isArray(data.results) ? data.results : [];
+              for (const id of page) allIds.add(id);
+              pagesScanned++;
+              pageGuard++;
+              const nextScroll = data.scroll_id || null;
+              if (!page.length || !nextScroll || nextScroll === scrollId) scrollId = null;
+              else scrollId = nextScroll;
+              if (pageGuard >= 1000) throw new Error('A consulta ultrapassou 100.000 anúncios por status; interrompida por segurança.');
+            } while (scrollId);
+          }
+          const ids = [...allIds];
           for (let i = 0; i < ids.length; i += 20) {
             const batch = ids.slice(i, i + 20);
-            // Mercado Livre replaced /items?ids= with /items/bulk?ids=.
-            const r = await fetch('https://api.mercadolibre.com/items/bulk?ids=' + encodeURIComponent(batch.join(',')), { headers: { Authorization: 'Bearer ' + accessToken, Accept: 'application/json' } });
-            const data = await r.json();
-            if (!r.ok) throw new Error(data.message || 'Falha ao carregar detalhes dos anúncios.');
+            const response = await fetch('https://api.mercadolibre.com/items?ids=' + encodeURIComponent(batch.join(',')), { headers: { Authorization: 'Bearer ' + accessToken, Accept: 'application/json' } });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.message || 'Falha ao carregar detalhes dos anúncios.');
             for (const entry of data || []) {
               const item = entry.body;
-              const statusCode = entry.status_code ?? entry.code;
-              if (statusCode !== 200 || !item || Number(item.price) > 78.99 || Number(item.price) <= 0) continue;
-              if (item.status !== 'active' || item.shipping?.free_shipping !== true) continue;
-              items.push({ id: item.id, title: item.title, price: item.price, currency_id: item.currency_id || 'BRL', permalink: item.permalink, thumbnail: item.thumbnail, company_id: account.company_id, company_name: account.company_name, seller_id: account.ml_user_id, shipping_mode: item.shipping?.mode || '', logistic_type: item.shipping?.logistic_type || '', mandatory_free_shipping: (item.shipping?.tags || []).includes('mandatory_free_shipping') });
+              if (entry.code !== 200 || !item || Number(item.price) > 78.99 || Number(item.price) <= 0) continue;
+              if (!['active', 'paused'].includes(item.status) || item.shipping?.free_shipping !== true) continue;
+              const tags = item.shipping?.tags || [];
+              const catalogFamily = Boolean(item.catalog_product_id || item.catalog_listing || item.family_name || item.parent_item_id);
+              items.push({
+                id: item.id, title: item.title, price: item.price, currency_id: item.currency_id || 'BRL',
+                permalink: item.permalink, thumbnail: item.thumbnail, status: item.status,
+                company_id: account.company_id, company_name: account.company_name, seller_id: account.ml_user_id,
+                shipping_mode: item.shipping?.mode || '', logistic_type: item.shipping?.logistic_type || '',
+                mandatory_free_shipping: tags.includes('mandatory_free_shipping'),
+                catalog_product_id: item.catalog_product_id || null, catalog_listing: Boolean(item.catalog_listing),
+                family_name: item.family_name || null, parent_item_id: item.parent_item_id || null,
+                catalog_family: catalogFamily
+              });
             }
           }
-          stores.push({ company_id: account.company_id, company_name: account.company_name, nickname: account.nickname || 'Conta Mercado Livre', connected: true, total_scanned: ids.length, pages_scanned: pageCount });
+          stores.push({ company_id: account.company_id, company_name: account.company_name, nickname: account.nickname || 'Conta Mercado Livre', connected: true, total_scanned: ids.length, pages_scanned: pagesScanned });
         } catch (e) { stores.push({ company_id: account.company_id, company_name: account.company_name, nickname: account.nickname || 'Conta Mercado Livre', connected: false, error: e.message }); }
       }
-      return res.json({ ok: true, items, stores, max_price: 78.99 });
+      return res.json({ ok: true, items, stores, max_price: 78.99, included_statuses: ['active', 'paused'] });
     } catch (error) {
       console.error('Portal shipping items error:', error.message);
       return res.status(500).json({ ok: false, error: 'server_error', message: error.message || 'Não foi possível carregar os anúncios.' });
     }
   });
 
-
-  // Diagnóstico de um anúncio específico para explicar por que ele não aparece na lista.
+  // Diagnóstico individual, incluindo estado pausado e dados de catálogo/família.
   app.get('/api/portal/shipping-items/diagnose/:id', authPortalOrAgent, async (req, res) => {
     try {
       if (!scopedMenuAllowed(req, 'shipping')) return res.status(403).json({ ok: false, error: 'menu_not_allowed', message: 'O administrador não liberou esta ferramenta para sua conta.' });
@@ -428,16 +441,20 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
           if (!response.ok) { checked.push({ company_name: account.company_name, error: item.message || `HTTP ${response.status}` }); continue; }
           if (String(item.seller_id) !== String(account.ml_user_id)) continue;
           const reasons = [];
-          if (item.status !== 'active') reasons.push(`Status não é ativo (${item.status || 'desconhecido'}).`);
+          if (!['active', 'paused'].includes(item.status)) reasons.push(`Status não suportado para alteração (${item.status || 'desconhecido'}).`);
           if (!(Number(item.price) > 0 && Number(item.price) <= 78.99)) reasons.push(`Preço fora do limite (R$ ${Number(item.price || 0).toFixed(2)}; máximo R$ 78,99).`);
           if (item.shipping?.free_shipping !== true) reasons.push('O campo shipping.free_shipping não está true.');
           if ((item.shipping?.tags || []).includes('mandatory_free_shipping')) reasons.push('O Mercado Livre marca este anúncio com frete grátis obrigatório.');
+          const catalogFamily = Boolean(item.catalog_product_id || item.catalog_listing || item.family_name || item.parent_item_id);
           checked.push({
             found: true, id: item.id, title: item.title, price: item.price, status: item.status,
             free_shipping: item.shipping?.free_shipping, mode: item.shipping?.mode || null,
             logistic_type: item.shipping?.logistic_type || null, tags: item.shipping?.tags || [],
             seller_id: item.seller_id, company_id: account.company_id, company_name: account.company_name,
-            eligible: reasons.length === 0, reasons: reasons.length ? reasons : ['O anúncio atende aos filtros atuais.'],
+            catalog_family: catalogFamily, catalog_product_id: item.catalog_product_id || null,
+            catalog_listing: Boolean(item.catalog_listing), family_name: item.family_name || null,
+            parent_item_id: item.parent_item_id || null,
+            eligible: reasons.length === 0, reasons: reasons.length ? reasons : ['O anúncio atende aos filtros de preço, status e frete. A alteração ainda depende da validação do Mercado Livre.'],
             permalink: item.permalink
           });
         } catch (e) { checked.push({ company_name: account.company_name, error: e.message }); }
@@ -468,12 +485,12 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
             const check = await fetch(`https://api.mercadolibre.com/items/${encodeURIComponent(id)}`, { headers: { Authorization: 'Bearer ' + accessToken, Accept: 'application/json' } });
             const item = await check.json();
             if (!check.ok || String(item.seller_id) !== String(account.ml_user_id)) continue;
-            if (Number(item.price) > 78.99 || item.shipping?.free_shipping !== true || item.status !== 'active') { result.skipped.push({ id, reason: 'O anúncio não atende mais aos filtros.' }); continue; }
+            if (Number(item.price) > 78.99 || item.shipping?.free_shipping !== true || !['active', 'paused'].includes(item.status)) { result.skipped.push({ id, reason: 'O anúncio não atende aos filtros de preço, status ou frete.' }); continue; }
             if ((item.shipping?.tags || []).includes('mandatory_free_shipping')) { result.skipped.push({ id, reason: 'O Mercado Livre exige frete grátis neste anúncio.' }); continue; }
             const update = await fetch(`https://api.mercadolibre.com/items/${encodeURIComponent(id)}`, { method: 'PUT', headers: { Authorization: 'Bearer ' + accessToken, 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify({ shipping: { free_shipping: false } }) });
             const updated = await update.json();
             if (!update.ok) throw new Error(updated.message || updated.error || 'O Mercado Livre recusou a alteração.');
-            result.success.push({ id, title: item.title });
+            result.success.push({ id, title: item.title, status: item.status, catalog_family: Boolean(item.catalog_product_id || item.catalog_listing || item.family_name || item.parent_item_id), note: item.status === 'paused' ? 'Frete alterado sem reativar o anúncio.' : undefined });
           } catch (e) { result.failed.push({ id, error: e.message }); }
         }
       }
