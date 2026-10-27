@@ -314,6 +314,127 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
     }
   });
 
+  // Anúncios de baixo valor com frete grátis opcional: permite transferir o custo ao comprador.
+  async function getShippingAccounts(req) {
+    const companies = new Map();
+    if (req.portalRole === 'support_agent') {
+      const ids = req.agentAllowedLicenses.map(l => String(l.id));
+      if (ids.length) {
+        const { data, error } = await supabase.from('licenses')
+          .select('id,company_id,companies(id,nome,status)').in('id', ids).eq('status', 'active');
+        if (error) throw error;
+        for (const l of data || []) if (l.companies?.id) companies.set(String(l.company_id), l.companies);
+      }
+    } else {
+      const { data, error } = await supabase.from('portal_user_licenses')
+        .select('licenses(company_id,companies(id,nome,status))').eq('user_id', req.portalUserId);
+      if (error) throw error;
+      for (const row of data || []) { const c = row.licenses?.companies; if (c?.id) companies.set(String(row.licenses.company_id), c); }
+    }
+    const ids = [...companies.keys()];
+    if (!ids.length) return [];
+    const { data: accounts, error } = await supabase.from('mercadolivre_accounts')
+      .select('company_id,ml_user_id,nickname,access_token,refresh_token,token_expires_at')
+      .in('company_id', ids);
+    if (error) throw error;
+    return (accounts || []).map(a => ({ ...a, company_name: companies.get(String(a.company_id))?.nome || 'Empresa' }));
+  }
+
+  async function ensureMlToken(account) {
+    let accessToken = account.access_token;
+    const expiresAt = account.token_expires_at ? new Date(account.token_expires_at).getTime() : 0;
+    if (expiresAt && expiresAt <= Date.now() + 120000) {
+      if (!account.refresh_token || !process.env.ML_CLIENT_ID || !process.env.ML_CLIENT_SECRET) throw new Error('Token expirado; reconecte a conta Mercado Livre.');
+      const response = await fetch('https://api.mercadolibre.com/oauth/token', {
+        method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
+        body: new URLSearchParams({ grant_type: 'refresh_token', client_id: process.env.ML_CLIENT_ID, client_secret: process.env.ML_CLIENT_SECRET, refresh_token: account.refresh_token })
+      });
+      const refreshed = await response.json();
+      if (!response.ok) throw new Error(refreshed.message || 'Não foi possível renovar o token do Mercado Livre.');
+      accessToken = refreshed.access_token;
+      await supabase.from('mercadolivre_accounts').update({ access_token: refreshed.access_token, refresh_token: refreshed.refresh_token || account.refresh_token, token_expires_at: new Date(Date.now() + Number(refreshed.expires_in || 0) * 1000).toISOString(), updated_at: new Date().toISOString() }).eq('company_id', account.company_id);
+    }
+    if (!accessToken) throw new Error('Conta sem token de acesso.');
+    return accessToken;
+  }
+
+  app.get('/api/portal/shipping-items', authPortalOrAgent, async (req, res) => {
+    try {
+      if (!scopedMenuAllowed(req, 'shipping')) return res.status(403).json({ ok: false, error: 'menu_not_allowed', message: 'O administrador não liberou esta ferramenta para sua conta.' });
+      const accounts = await getShippingAccounts(req);
+      const items = [], stores = [];
+      for (const account of accounts) {
+        try {
+          const accessToken = await ensureMlToken(account);
+          let offset = 0, ids = [];
+          while (offset < 1000) {
+            const url = new URL(`https://api.mercadolibre.com/users/${encodeURIComponent(account.ml_user_id)}/items/search`);
+            url.search = new URLSearchParams({ status: 'active', limit: '50', offset: String(offset) }).toString();
+            const r = await fetch(url, { headers: { Authorization: 'Bearer ' + accessToken, Accept: 'application/json' } });
+            const data = await r.json();
+            if (!r.ok) throw new Error(data.message || 'Falha ao consultar anúncios.');
+            const page = data.results || []; ids.push(...page);
+            if (page.length < 50 || offset + 50 >= Number(data.paging?.total || 0)) break;
+            offset += 50;
+          }
+          for (let i = 0; i < ids.length; i += 20) {
+            const batch = ids.slice(i, i + 20);
+            const r = await fetch('https://api.mercadolibre.com/items?ids=' + encodeURIComponent(batch.join(',')), { headers: { Authorization: 'Bearer ' + accessToken, Accept: 'application/json' } });
+            const data = await r.json();
+            if (!r.ok) throw new Error(data.message || 'Falha ao carregar detalhes dos anúncios.');
+            for (const entry of data || []) {
+              const item = entry.body;
+              if (entry.code !== 200 || !item || Number(item.price) > 78.99 || Number(item.price) <= 0) continue;
+              if (item.status !== 'active' || item.shipping?.free_shipping !== true) continue;
+              items.push({ id: item.id, title: item.title, price: item.price, currency_id: item.currency_id || 'BRL', permalink: item.permalink, thumbnail: item.thumbnail, company_id: account.company_id, company_name: account.company_name, seller_id: account.ml_user_id, shipping_mode: item.shipping?.mode || '', logistic_type: item.shipping?.logistic_type || '', mandatory_free_shipping: (item.shipping?.tags || []).includes('mandatory_free_shipping') });
+            }
+          }
+          stores.push({ company_id: account.company_id, company_name: account.company_name, nickname: account.nickname || 'Conta Mercado Livre', connected: true, total_scanned: ids.length });
+        } catch (e) { stores.push({ company_id: account.company_id, company_name: account.company_name, nickname: account.nickname || 'Conta Mercado Livre', connected: false, error: e.message }); }
+      }
+      return res.json({ ok: true, items, stores, max_price: 78.99 });
+    } catch (error) {
+      console.error('Portal shipping items error:', error.message);
+      return res.status(500).json({ ok: false, error: 'server_error', message: error.message || 'Não foi possível carregar os anúncios.' });
+    }
+  });
+
+  app.post('/api/portal/shipping-items/buyer-pays', authPortalOrAgent, async (req, res) => {
+    try {
+      if (!scopedMenuAllowed(req, 'shipping')) return res.status(403).json({ ok: false, error: 'menu_not_allowed', message: 'O administrador não liberou esta ferramenta para sua conta.' });
+      const requested = (Array.isArray(req.body?.items) ? req.body.items : []).map(x => ({ id: String(x?.id || '').trim(), company_id: String(x?.company_id || '').trim() })).filter(x => /^MLB\d+$/.test(x.id) && x.company_id).filter((x, i, a) => a.findIndex(y => y.id === x.id && y.company_id === x.company_id) === i).slice(0, 200);
+      if (!requested.length) return res.status(400).json({ ok: false, error: 'empty_selection', message: 'Selecione pelo menos um anúncio válido.' });
+      const accounts = await getShippingAccounts(req);
+      const result = { success: [], failed: [], skipped: [] };
+      for (const account of accounts) {
+        const assigned = requested.filter(item => String(item.company_id) === String(account.company_id));
+        if (!assigned.length) continue;
+        let accessToken;
+        try { accessToken = await ensureMlToken(account); } catch (e) { for (const item of assigned) result.failed.push({ id: item.id, error: e.message }); continue; }
+        for (const selected of assigned) {
+          const id = selected.id;
+          try {
+            const check = await fetch(`https://api.mercadolibre.com/items/${encodeURIComponent(id)}`, { headers: { Authorization: 'Bearer ' + accessToken, Accept: 'application/json' } });
+            const item = await check.json();
+            if (!check.ok || String(item.seller_id) !== String(account.ml_user_id)) continue;
+            if (Number(item.price) > 78.99 || item.shipping?.free_shipping !== true || item.status !== 'active') { result.skipped.push({ id, reason: 'O anúncio não atende mais aos filtros.' }); continue; }
+            if ((item.shipping?.tags || []).includes('mandatory_free_shipping')) { result.skipped.push({ id, reason: 'O Mercado Livre exige frete grátis neste anúncio.' }); continue; }
+            const update = await fetch(`https://api.mercadolibre.com/items/${encodeURIComponent(id)}`, { method: 'PUT', headers: { Authorization: 'Bearer ' + accessToken, 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify({ shipping: { free_shipping: false } }) });
+            const updated = await update.json();
+            if (!update.ok) throw new Error(updated.message || updated.error || 'O Mercado Livre recusou a alteração.');
+            result.success.push({ id, title: item.title });
+          } catch (e) { result.failed.push({ id, error: e.message }); }
+        }
+      }
+      const processed = new Set([...result.success.map(x => x.id), ...result.failed.map(x => x.id), ...result.skipped.map(x => x.id)]);
+      for (const item of requested) if (!processed.has(item.id)) result.failed.push({ id: item.id, error: 'Não foi possível identificar a conta Mercado Livre proprietária deste anúncio.' });
+      return res.json({ ok: true, ...result });
+    } catch (error) {
+      console.error('Portal shipping update error:', error.message);
+      return res.status(500).json({ ok: false, error: 'server_error', message: error.message || 'Não foi possível alterar os anúncios.' });
+    }
+  });
+
   // Vendas reais das contas do Mercado Livre conectadas às empresas licenciadas.
   app.get('/api/portal/sales', authPortalOrAgent, async (req, res) => {
     try {
