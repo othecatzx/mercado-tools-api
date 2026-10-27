@@ -22,3 +22,7 @@
 
 ## Observação importante
 A ferramenta não altera o status do anúncio e não o reativa automaticamente. Anúncios de catálogo/família podem ter regras próprias do Mercado Livre; nesses casos, a API poderá recusar a mudança e o portal mostrará o erro individual.
+
+
+## Ajuste posterior: somente anúncios ativos
+A listagem da página Frete comprador agora consulta exclusivamente anúncios com status `active`. O diagnóstico individual continua aceitando MLBs pausados para explicar por que não entram na lista. A operação em lote também valida status ativo antes de alterar.

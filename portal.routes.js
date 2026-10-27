@@ -377,7 +377,7 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
           const allIds = new Set();
           let pagesScanned = 0;
           let scanTruncated = false;
-          for (const status of ['active', 'paused']) {
+          for (const status of ['active']) {
             let scrollId = null;
             const seenPageSignatures = new Set();
             let statusPages = 0;
@@ -422,7 +422,7 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
               for (const entry of data || []) {
                 const item = entry.body;
                 if (entry.code !== 200 || !item || Number(item.price) > 78.99 || Number(item.price) <= 0) continue;
-                if (!['active', 'paused'].includes(item.status) || item.shipping?.free_shipping !== true) continue;
+                if (item.status !== 'active' || item.shipping?.free_shipping !== true) continue;
                 const tags = item.shipping?.tags || [];
                 const catalogFamily = Boolean(item.catalog_product_id || item.catalog_listing || item.family_name || item.parent_item_id);
                 items.push({
@@ -443,7 +443,7 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
           stores.push({ company_id: account.company_id, company_name: account.company_name, nickname: account.nickname || 'Conta Mercado Livre', connected: false, error: e.name === 'TimeoutError' ? 'O Mercado Livre demorou demais para responder. Tente atualizar novamente.' : e.message, duration_ms: Date.now() - storeStartedAt });
         }
       }
-      return res.json({ ok: true, items, stores, max_price: 78.99, included_statuses: ['active', 'paused'], partial: stores.some(s => !s.connected || s.scan_truncated) });
+      return res.json({ ok: true, items, stores, max_price: 78.99, included_statuses: ['active'], partial: stores.some(s => !s.connected || s.scan_truncated) });
     } catch (error) {
       console.error('Portal shipping items error:', error.message);
       return res.status(500).json({ ok: false, error: 'server_error', message: error.message || 'Não foi possível carregar os anúncios.' });
@@ -467,7 +467,7 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
           if (!response.ok) { checked.push({ company_name: account.company_name, error: item.message || `HTTP ${response.status}` }); continue; }
           if (String(item.seller_id) !== String(account.ml_user_id)) continue;
           const reasons = [];
-          if (!['active', 'paused'].includes(item.status)) reasons.push(`Status não suportado para alteração (${item.status || 'desconhecido'}).`);
+          if (item.status !== 'active') reasons.push(`Status não suportado para alteração (${item.status || 'desconhecido'}).`);
           if (!(Number(item.price) > 0 && Number(item.price) <= 78.99)) reasons.push(`Preço fora do limite (R$ ${Number(item.price || 0).toFixed(2)}; máximo R$ 78,99).`);
           if (item.shipping?.free_shipping !== true) reasons.push('O campo shipping.free_shipping não está true.');
           if ((item.shipping?.tags || []).includes('mandatory_free_shipping')) reasons.push('O Mercado Livre marca este anúncio com frete grátis obrigatório.');
@@ -511,7 +511,7 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
             const check = await fetch(`https://api.mercadolibre.com/items/${encodeURIComponent(id)}`, { headers: { Authorization: 'Bearer ' + accessToken, Accept: 'application/json' } });
             const item = await check.json();
             if (!check.ok || String(item.seller_id) !== String(account.ml_user_id)) continue;
-            if (Number(item.price) > 78.99 || item.shipping?.free_shipping !== true || !['active', 'paused'].includes(item.status)) { result.skipped.push({ id, reason: 'O anúncio não atende aos filtros de preço, status ou frete.' }); continue; }
+            if (Number(item.price) > 78.99 || item.shipping?.free_shipping !== true || item.status !== 'active') { result.skipped.push({ id, reason: 'O anúncio não atende aos filtros de preço, status ativo ou frete.' }); continue; }
             if ((item.shipping?.tags || []).includes('mandatory_free_shipping')) { result.skipped.push({ id, reason: 'O Mercado Livre exige frete grátis neste anúncio.' }); continue; }
             const update = await fetch(`https://api.mercadolibre.com/items/${encodeURIComponent(id)}`, { method: 'PUT', headers: { Authorization: 'Bearer ' + accessToken, 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify({ shipping: { free_shipping: false } }) });
             const updated = await update.json();
