@@ -363,61 +363,87 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
       if (!scopedMenuAllowed(req, 'shipping')) return res.status(403).json({ ok: false, error: 'menu_not_allowed', message: 'O administrador não liberou esta ferramenta para sua conta.' });
       const accounts = await getShippingAccounts(req);
       const items = [], stores = [];
+      // Cada loja tem prazo total; nenhuma paginação pode prender a tela indefinidamente.
       for (const account of accounts) {
+        const storeStartedAt = Date.now();
+        const storeDeadline = storeStartedAt + 90000;
+        const requestMl = (url, options = {}) => {
+          const remaining = storeDeadline - Date.now();
+          if (remaining <= 0) throw new Error('Tempo limite de 90 segundos atingido nesta loja; consulta parcial interrompida.');
+          return fetch(url, { ...options, signal: AbortSignal.timeout(Math.min(18000, remaining)) });
+        };
         try {
           const accessToken = await ensureMlToken(account);
           const allIds = new Set();
           let pagesScanned = 0;
-          // Busca anúncios ativos E pausados. Anúncios pausados também podem
-          // precisar da troca de frete; nunca os reativamos automaticamente.
+          let scanTruncated = false;
           for (const status of ['active', 'paused']) {
-            let scrollId = null, pageGuard = 0;
-            do {
+            let scrollId = null;
+            const seenPageSignatures = new Set();
+            let statusPages = 0;
+            while (statusPages < 60) {
               const url = new URL(`https://api.mercadolibre.com/users/${encodeURIComponent(account.ml_user_id)}/items/search`);
               const params = new URLSearchParams({ status, search_type: 'scan', limit: '100' });
               if (scrollId) params.set('scroll_id', scrollId);
               url.search = params.toString();
-              const response = await fetch(url, { headers: { Authorization: 'Bearer ' + accessToken, Accept: 'application/json' } });
+              const response = await requestMl(url, { headers: { Authorization: 'Bearer ' + accessToken, Accept: 'application/json' } });
               const data = await response.json();
-              if (!response.ok) throw new Error(data.message || `Falha ao consultar anúncios ${status}.`);
+              if (!response.ok) throw new Error(data.message || `Falha ao consultar anúncios ${status} (HTTP ${response.status}).`);
               const page = Array.isArray(data.results) ? data.results : [];
+              if (!page.length) break;
+              // Alguns retornos mantêm o mesmo scroll_id; a assinatura evita repetir uma página sem interromper a paginação válida.
+              const signature = page.join(',');
+              if (seenPageSignatures.has(signature)) break;
+              seenPageSignatures.add(signature);
               for (const id of page) allIds.add(id);
               pagesScanned++;
-              pageGuard++;
+              statusPages++;
               const nextScroll = data.scroll_id || null;
-              if (!page.length || !nextScroll || nextScroll === scrollId) scrollId = null;
-              else scrollId = nextScroll;
-              if (pageGuard >= 1000) throw new Error('A consulta ultrapassou 100.000 anúncios por status; interrompida por segurança.');
-            } while (scrollId);
+              if (!nextScroll) break;
+              scrollId = nextScroll;
+            }
+            if (statusPages >= 60) scanTruncated = true;
           }
+
           const ids = [...allIds];
-          for (let i = 0; i < ids.length; i += 20) {
-            const batch = ids.slice(i, i + 20);
-            const response = await fetch('https://api.mercadolibre.com/items?ids=' + encodeURIComponent(batch.join(',')), { headers: { Authorization: 'Bearer ' + accessToken, Accept: 'application/json' } });
-            const data = await response.json();
-            if (!response.ok) throw new Error(data.message || 'Falha ao carregar detalhes dos anúncios.');
-            for (const entry of data || []) {
-              const item = entry.body;
-              if (entry.code !== 200 || !item || Number(item.price) > 78.99 || Number(item.price) <= 0) continue;
-              if (!['active', 'paused'].includes(item.status) || item.shipping?.free_shipping !== true) continue;
-              const tags = item.shipping?.tags || [];
-              const catalogFamily = Boolean(item.catalog_product_id || item.catalog_listing || item.family_name || item.parent_item_id);
-              items.push({
-                id: item.id, title: item.title, price: item.price, currency_id: item.currency_id || 'BRL',
-                permalink: item.permalink, thumbnail: item.thumbnail, status: item.status,
-                company_id: account.company_id, company_name: account.company_name, seller_id: account.ml_user_id,
-                shipping_mode: item.shipping?.mode || '', logistic_type: item.shipping?.logistic_type || '',
-                mandatory_free_shipping: tags.includes('mandatory_free_shipping'),
-                catalog_product_id: item.catalog_product_id || null, catalog_listing: Boolean(item.catalog_listing),
-                family_name: item.family_name || null, parent_item_id: item.parent_item_id || null,
-                catalog_family: catalogFamily
+          // Detalhes em grupos pequenos e paralelos, evitando dezenas de chamadas sequenciais.
+          const batches = [];
+          for (let i = 0; i < ids.length; i += 20) batches.push(ids.slice(i, i + 20));
+          for (let i = 0; i < batches.length; i += 4) {
+            const responses = await Promise.all(batches.slice(i, i + 4).map(async batch => {
+              const response = await requestMl('https://api.mercadolibre.com/items?ids=' + encodeURIComponent(batch.join(',')), {
+                headers: { Authorization: 'Bearer ' + accessToken, Accept: 'application/json' }
               });
+              const data = await response.json();
+              if (!response.ok) throw new Error(data.message || `Falha ao carregar detalhes dos anúncios (HTTP ${response.status}).`);
+              return data;
+            }));
+            for (const data of responses) {
+              for (const entry of data || []) {
+                const item = entry.body;
+                if (entry.code !== 200 || !item || Number(item.price) > 78.99 || Number(item.price) <= 0) continue;
+                if (!['active', 'paused'].includes(item.status) || item.shipping?.free_shipping !== true) continue;
+                const tags = item.shipping?.tags || [];
+                const catalogFamily = Boolean(item.catalog_product_id || item.catalog_listing || item.family_name || item.parent_item_id);
+                items.push({
+                  id: item.id, title: item.title, price: item.price, currency_id: item.currency_id || 'BRL',
+                  permalink: item.permalink, thumbnail: item.thumbnail, status: item.status,
+                  company_id: account.company_id, company_name: account.company_name, seller_id: account.ml_user_id,
+                  shipping_mode: item.shipping?.mode || '', logistic_type: item.shipping?.logistic_type || '',
+                  mandatory_free_shipping: tags.includes('mandatory_free_shipping'),
+                  catalog_product_id: item.catalog_product_id || null, catalog_listing: Boolean(item.catalog_listing),
+                  family_name: item.family_name || null, parent_item_id: item.parent_item_id || null,
+                  catalog_family: catalogFamily
+                });
+              }
             }
           }
-          stores.push({ company_id: account.company_id, company_name: account.company_name, nickname: account.nickname || 'Conta Mercado Livre', connected: true, total_scanned: ids.length, pages_scanned: pagesScanned });
-        } catch (e) { stores.push({ company_id: account.company_id, company_name: account.company_name, nickname: account.nickname || 'Conta Mercado Livre', connected: false, error: e.message }); }
+          stores.push({ company_id: account.company_id, company_name: account.company_name, nickname: account.nickname || 'Conta Mercado Livre', connected: true, total_scanned: ids.length, pages_scanned: pagesScanned, eligible_count: items.filter(x => String(x.company_id) === String(account.company_id)).length, scan_truncated: scanTruncated, duration_ms: Date.now() - storeStartedAt, warning: scanTruncated ? 'Limite de 6.000 anúncios por status atingido; consulta parcial.' : null });
+        } catch (e) {
+          stores.push({ company_id: account.company_id, company_name: account.company_name, nickname: account.nickname || 'Conta Mercado Livre', connected: false, error: e.name === 'TimeoutError' ? 'O Mercado Livre demorou demais para responder. Tente atualizar novamente.' : e.message, duration_ms: Date.now() - storeStartedAt });
+        }
       }
-      return res.json({ ok: true, items, stores, max_price: 78.99, included_statuses: ['active', 'paused'] });
+      return res.json({ ok: true, items, stores, max_price: 78.99, included_statuses: ['active', 'paused'], partial: stores.some(s => !s.connected || s.scan_truncated) });
     } catch (error) {
       console.error('Portal shipping items error:', error.message);
       return res.status(500).json({ ok: false, error: 'server_error', message: error.message || 'Não foi possível carregar os anúncios.' });
