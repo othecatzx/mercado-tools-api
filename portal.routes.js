@@ -582,12 +582,13 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
       let to, from, todayLocalDate = null;
       if (todayOnly) {
         // Esta tela é uma FILA OPERACIONAL, não um relatório de vendas criadas hoje.
-        // Busca pedidos dos últimos 10 dias para encontrar vendas antigas que ainda
-        // estão aguardando separação. A situação é determinada pelo envio atual.
+        // A página do Mercado Livre considera vendas dos últimos 2 meses. Buscamos
+        // a mesma janela para não perder etiquetas impressas ou envios Flex antigos
+        // que continuam aguardando despacho. A situação é determinada pelo envio atual.
         const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date(now));
         const dateParts = Object.fromEntries(parts.map(part => [part.type, part.value]));
         todayLocalDate = `${dateParts.year}-${dateParts.month}-${dateParts.day}`;
-        from = new Date(now - 10 * 86400000).toISOString();
+        from = new Date(now - 60 * 86400000).toISOString();
         to = new Date(now).toISOString();
       } else {
         to = new Date(now - offsetDays * 86400000).toISOString();
@@ -727,37 +728,49 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
                 ...(Array.isArray(order.tags) ? order.tags : []),
                 ...(Array.isArray(shipping.tags) ? shipping.tags : [])
               ].map(tag => String(tag || '').toLowerCase());
-              const printedSubstatuses = new Set(['printed', 'label_printed', 'printed_label', 'label_printed_by_seller']);
+              const shippingLogisticType = String(shipping.logistic_type || orderShipping.logistic_type || '').toLowerCase();
+              const shippingMode = String(shipping.mode || orderShipping.mode || '').toLowerCase();
+              const printedSubstatuses = new Set([
+                'printed', 'label_printed', 'printed_label', 'label_printed_by_seller',
+                'label_printed_by_seller', 'printed_by_seller'
+              ]);
               const blockedShippingStates = new Set(['in_hub', 'buffered']);
-              const cancellationStatuses = new Set(['cancelled', 'canceled', 'pending_cancel']);
+              const cancellationStatuses = new Set(['cancelled', 'canceled']);
+              const cancellationSubstatuses = new Set(['cancelled', 'canceled', 'cancelled_by_seller', 'cancelled_by_buyer']);
               const returnOrClaimTags = new Set([
                 'return', 'returned', 'returning', 'return_in_process', 'returning_to_seller',
                 'refund', 'refunded', 'partially_refunded', 'claim', 'has_claim', 'claim_opened', 'dispute'
               ]);
               const hasReturnOrClaim = shipmentType === 'return' || orderTags.some(tag => returnOrClaimTags.has(tag));
-              // Devolução e mediação não são cancelamentos operacionais da venda.
-              const isCancelled = cancellationStatuses.has(orderStatus) && !hasReturnOrClaim;
               const delivered = shippingStatus === 'delivered' || shippingSubstatus === 'delivered'
                 || Boolean(shipping.date_delivered || shipment.date_delivered || shipping.status_history?.date_delivered || shipment.status_history?.date_delivered);
               const dispatched = ['shipped', 'in_transit'].includes(shippingStatus);
               const isForwardShipment = shipmentType !== 'return';
+              // Não basta order.status=cancelled: pedidos com devolução/reembolso,
+              // reclamação ou envio ainda ativo não devem virar "Cancelado" na fila.
+              // Exigimos também confirmação de cancelamento no envio ou no detalhe.
+              const hasExplicitCancellation = cancellationStatuses.has(shippingStatus)
+                || cancellationSubstatuses.has(shippingSubstatus);
+              const isCancelled = cancellationStatuses.has(orderStatus) && hasExplicitCancellation
+                && !hasReturnOrClaim && !delivered && !dispatched;
               const isBlockedShipping = !isForwardShipment || hasReturnOrClaim || blockedShippingStates.has(shippingSubstatus) || delivered || dispatched
-                || ['cancelled', 'canceled'].includes(shippingStatus);
+                || cancellationStatuses.has(shippingStatus);
               const eligibleOrder = ['paid', 'confirmed'].includes(orderStatus);
-              // Só classificamos etiqueta impressa quando o envio ainda está em preparação.
-              // Isso impede que substatus antigo "printed" prevaleça sobre um envio entregue.
+              // Etiquetas impressas permanecem na fila até o envio ser despachado.
+              // Isso inclui Agência e Flex (logistic_type=self_service), sem depender
+              // de o pedido ter sido atualizado exatamente hoje.
               const preparationStatus = ['pending', 'handling', 'ready_to_ship'].includes(shippingStatus);
+              const hasPrintedLabel = printedSubstatuses.has(shippingSubstatus)
+                || orderTags.some(tag => printedSubstatuses.has(tag));
               const alreadySeparated = !isCancelled && eligibleOrder && isForwardShipment && preparationStatus
-                && !isBlockedShipping && printedSubstatuses.has(shippingSubstatus);
+                && !isBlockedShipping && hasPrintedLabel;
               const needsSeparation = !isCancelled && eligibleOrder && isForwardShipment && Boolean(orderShipping.id)
                 && preparationStatus && !isBlockedShipping && !alreadySeparated;
-              // Na fila de hoje, etiquetas impressas e cancelamentos só entram se
-              // a última atualização do pedido ocorreu na data local atual.
-              const cancelledDate = shipment.status_history?.date_cancelled || order.date_last_updated || order.date_closed;
-              const separatedDate = shipment.status_history?.date_ready_to_ship || shipment.last_updated || order.date_last_updated || order.date_closed;
-              const cancelledToday = isCancelled && localDay(cancelledDate) === todayLocalDate;
-              const separatedToday = alreadySeparated && localDay(separatedDate) === todayLocalDate;
-              const showInOperationsQueue = !todayOnly || needsSeparation || separatedToday || cancelledToday;
+              // A fila cobre a janela de 2 meses usada na página do Mercado Livre.
+              // Etiquetas impressas antigas continuam visíveis enquanto não despachadas.
+              const cancelledDate = shipment.status_history?.date_cancelled || order.date_last_updated || order.date_closed || order.date_created;
+              const cancelledInWindow = isCancelled && localDay(cancelledDate) >= localDay(from);
+              const showInOperationsQueue = !todayOnly || needsSeparation || alreadySeparated || cancelledInWindow;
               const statusLabels = { paid: 'Pago', confirmed: 'Confirmado', payment_required: 'Pagamento pendente', payment_in_process: 'Pagamento em análise', cancelled: 'Cancelado' };
               const separationLabel = isCancelled ? 'Cancelado' : alreadySeparated ? 'Separado — etiqueta impressa' : needsSeparation ? 'Precisa separar' : (statusLabels[orderStatus] || order.status || 'Em andamento');
               const shipmentSubstatusLabels = { ready_to_print: 'Etiqueta pronta para impressão', invoice_pending: 'Pronta para emitir NF-e da venda', printed: 'Etiqueta impressa', waiting_for_label_generation: 'Aguardando geração da etiqueta', ready_to_ship: 'Pronto para envio' };
@@ -786,8 +799,11 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
                   status_label: separationLabel,
                   total_amount: Number(order.total_amount || 0), currency_id: order.currency_id || 'BRL',
                   shipping_id: orderShipping.id ? String(orderShipping.id) : '', shipping_status: shippingStatus,
-                  shipping_substatus: shippingSubstatus, needs_separation: needsSeparation,
-                  already_separated: alreadySeparated, separated_today: separatedToday,
+                  shipping_substatus: shippingSubstatus,
+                  shipping_logistic_type: shippingLogisticType, shipping_mode: shippingMode,
+                  shipping_tags: orderTags,
+                  needs_separation: needsSeparation,
+                  already_separated: alreadySeparated,
                   shipping_status_label: shipmentSubstatusLabels[shippingSubstatus] || shippingSubstatus,
                   products: orderProducts,
                   units: orderProducts.reduce((sum, product) => sum + product.quantity, 0)
