@@ -669,13 +669,6 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
           // pedidos ainda abertos, mesmo que a venda tenha sido feita em outro dia.
           // A data da venda NÃO define se precisa separar: isso vem do envio atual.
           await fetchOrdersRange(from, to, 0, 'order.date_created');
-          // Complemento pontual: pedidos antigos que foram cancelados hoje podem
-          // ficar fora da janela por data de criação. Busca apenas os atualizados
-          // hoje e mescla pelo ID, sem alterar a regra da fila operacional.
-          if (todayOnly && todayLocalDate) {
-            const todayStart = new Date(`${todayLocalDate}T00:00:00-03:00`).toISOString();
-            await fetchOrdersRange(todayStart, to, 0, 'order.date_last_updated');
-          }
           let orders = [...orderMap.values()];
           const localDay = value => {
             if (!value) return '';
@@ -702,45 +695,104 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
             };
             await Promise.all(Array.from({ length: Math.min(6, shipmentIds.length) }, () => shipmentWorker()));
 
+            // Carrega título, SKU e foto dos anúncios exibidos na fila operacional.
+            const queueItemIds = [...new Set(orders
+              .filter(order => ['paid', 'confirmed', 'cancelled'].includes(String(order.status || '').toLowerCase()))
+              .flatMap(order => (order.order_items || []).map(line => String(line.item?.id || line.item_id || '').trim()))
+              .filter(Boolean))];
+            const itemDetails = new Map();
+            let itemIndex = 0;
+            const itemWorker = async () => {
+              while (itemIndex < queueItemIds.length) {
+                const itemId = queueItemIds[itemIndex++];
+                try {
+                  const itemResponse = await fetch('https://api.mercadolibre.com/items/' + encodeURIComponent(itemId), {
+                    headers: { Authorization: 'Bearer ' + accessToken, Accept: 'application/json' }
+                  });
+                  if (itemResponse.ok) itemDetails.set(itemId, await itemResponse.json());
+                } catch (_) { /* Os dados do pedido continuam disponíveis sem os detalhes do anúncio. */ }
+              }
+            };
+            await Promise.all(Array.from({ length: Math.min(8, queueItemIds.length) }, () => itemWorker()));
+
             for (const order of orders) {
               const orderShipping = order.shipping || {};
               const shipment = shipmentDetails.get(String(orderShipping.id || '')) || {};
               const shipping = { ...orderShipping, ...shipment };
-              const isCancelled = String(order.status || '').toLowerCase() === 'cancelled';
+              const orderStatus = String(order.status || '').toLowerCase();
               const shippingStatus = String(shipping.status || '').toLowerCase();
               const shippingSubstatus = String(shipping.substatus || '').toLowerCase();
-              const orderStatus = String(order.status || '').toLowerCase();
+              const shipmentType = String(shipping.type || '').toLowerCase();
+              const orderTags = [
+                ...(Array.isArray(order.tags) ? order.tags : []),
+                ...(Array.isArray(shipping.tags) ? shipping.tags : [])
+              ].map(tag => String(tag || '').toLowerCase());
               const printedSubstatuses = new Set(['printed', 'label_printed', 'printed_label', 'label_printed_by_seller']);
-              const shippedStatuses = new Set(['shipped', 'in_transit', 'delivered']);
-              // No Mercado Envios Flex, a etiqueta pode ficar em ready_to_ship
-              // sem usar o substatus 'printed'. Considera separada quando o envio
-              // é Flex e já atingiu o estado operacional ready_to_ship.
-              const isFlex = String(shipping.logistic_type || orderShipping.logistic_type || '').toLowerCase() === 'self_service'
-                || String(shipping.mode || orderShipping.mode || '').toLowerCase() === 'flex';
-              const flexReadyToShip = isFlex && (shippingStatus === 'ready_to_ship' || shippingSubstatus === 'ready_to_ship');
-              const alreadySeparated = !isCancelled && (printedSubstatuses.has(shippingSubstatus) || shippedStatuses.has(shippingStatus) || flexReadyToShip);
+              const blockedShippingStates = new Set(['in_hub', 'buffered']);
+              const cancellationStatuses = new Set(['cancelled', 'canceled', 'pending_cancel']);
+              const returnOrClaimTags = new Set([
+                'return', 'returned', 'returning', 'return_in_process', 'returning_to_seller',
+                'refund', 'refunded', 'partially_refunded', 'claim', 'has_claim', 'claim_opened', 'dispute'
+              ]);
+              const hasReturnOrClaim = shipmentType === 'return' || orderTags.some(tag => returnOrClaimTags.has(tag));
+              // Devolução e mediação não são cancelamentos operacionais da venda.
+              const isCancelled = cancellationStatuses.has(orderStatus) && !hasReturnOrClaim;
+              const delivered = shippingStatus === 'delivered' || shippingSubstatus === 'delivered'
+                || Boolean(shipping.date_delivered || shipment.date_delivered || shipping.status_history?.date_delivered || shipment.status_history?.date_delivered);
+              const dispatched = ['shipped', 'in_transit'].includes(shippingStatus);
+              const isForwardShipment = shipmentType !== 'return';
+              const isBlockedShipping = !isForwardShipment || hasReturnOrClaim || blockedShippingStates.has(shippingSubstatus) || delivered || dispatched
+                || ['cancelled', 'canceled'].includes(shippingStatus);
               const eligibleOrder = ['paid', 'confirmed'].includes(orderStatus);
-              const needsSeparation = !isCancelled && eligibleOrder && Boolean(orderShipping.id) && !alreadySeparated;
-              // Cancelamentos são exibidos quando ocorreram/foram atualizados hoje;
-              // pedidos a separar ou já separados entram independentemente da data da venda.
-              const cancelledToday = isCancelled && localDay(order.date_last_updated || order.date_closed) === todayLocalDate;
-              const showInOperationsQueue = !todayOnly || needsSeparation || alreadySeparated || cancelledToday;
+              // Só classificamos etiqueta impressa quando o envio ainda está em preparação.
+              // Isso impede que substatus antigo "printed" prevaleça sobre um envio entregue.
+              const preparationStatus = ['pending', 'handling', 'ready_to_ship'].includes(shippingStatus);
+              const alreadySeparated = !isCancelled && eligibleOrder && isForwardShipment && preparationStatus
+                && !isBlockedShipping && printedSubstatuses.has(shippingSubstatus);
+              const needsSeparation = !isCancelled && eligibleOrder && isForwardShipment && Boolean(orderShipping.id)
+                && preparationStatus && !isBlockedShipping && !alreadySeparated;
+              // Na fila de hoje, etiquetas impressas e cancelamentos só entram se
+              // a última atualização do pedido ocorreu na data local atual.
+              const cancelledDate = shipment.status_history?.date_cancelled || order.date_last_updated || order.date_closed;
+              const separatedDate = shipment.status_history?.date_ready_to_ship || shipment.last_updated || order.date_last_updated || order.date_closed;
+              const cancelledToday = isCancelled && localDay(cancelledDate) === todayLocalDate;
+              const separatedToday = alreadySeparated && localDay(separatedDate) === todayLocalDate;
+              const showInOperationsQueue = !todayOnly || needsSeparation || separatedToday || cancelledToday;
               const statusLabels = { paid: 'Pago', confirmed: 'Confirmado', payment_required: 'Pagamento pendente', payment_in_process: 'Pagamento em análise', cancelled: 'Cancelado' };
               const separationLabel = isCancelled ? 'Cancelado' : alreadySeparated ? 'Separado — etiqueta impressa' : needsSeparation ? 'Precisa separar' : (statusLabels[orderStatus] || order.status || 'Em andamento');
               const shipmentSubstatusLabels = { ready_to_print: 'Etiqueta pronta para impressão', invoice_pending: 'Pronta para emitir NF-e da venda', printed: 'Etiqueta impressa', waiting_for_label_generation: 'Aguardando geração da etiqueta', ready_to_ship: 'Pronto para envio' };
-              if (showInOperationsQueue) allOrders.push({
-                id: String(order.id || ''), company_id: account.company_id,
-                company_name: company?.nome || 'Empresa', nickname: account.nickname || 'Conta Mercado Livre',
-                date_created: order.date_created || null, date_last_updated: order.date_last_updated || null, status: order.status || '',
-                status_detail: order.status_detail || '', status_group: isCancelled ? 'cancelled' : 'other',
-                status_label: separationLabel,
-                total_amount: Number(order.total_amount || 0), currency_id: order.currency_id || 'BRL',
-                shipping_id: orderShipping.id ? String(orderShipping.id) : '', shipping_status: shippingStatus,
-                shipping_substatus: shippingSubstatus, needs_separation: needsSeparation,
-                already_separated: alreadySeparated,
-                shipping_status_label: shipmentSubstatusLabels[shippingSubstatus] || shippingSubstatus,
-                units: (order.order_items || []).reduce((sum, line) => sum + Math.max(0, Number(line.quantity || 0)), 0)
-              });
+              if (showInOperationsQueue) {
+                const orderProducts = (order.order_items || []).map(line => {
+                  const item = line.item || {};
+                  const itemId = String(item.id || line.item_id || '').trim();
+                  const detail = itemDetails.get(itemId) || {};
+                  const attrs = detail.attributes || [];
+                  const skuAttr = attrs.find(attribute => ['SELLER_SKU', 'SELLER_CUSTOM_FIELD'].includes(String(attribute.id || '').toUpperCase()));
+                  const variation = (detail.variations || []).find(v => String(v.id || '') === String(item.variation_id || line.variation_id || '')) || {};
+                  const variationSku = (variation.attributes || []).find(attribute => String(attribute.id || '').toUpperCase() === 'SELLER_SKU');
+                  return {
+                    item_id: itemId,
+                    title: item.title || detail.title || 'Produto sem título',
+                    sku: item.seller_sku || line.seller_sku || detail.seller_custom_field || detail.seller_sku || skuAttr?.value_name || variation.seller_custom_field || variationSku?.value_name || '',
+                    image: detail.secure_thumbnail || detail.thumbnail || detail.pictures?.[0]?.secure_url || detail.pictures?.[0]?.url || '',
+                    quantity: Math.max(0, Number(line.quantity || 0))
+                  };
+                });
+                allOrders.push({
+                  id: String(order.id || ''), company_id: account.company_id,
+                  company_name: company?.nome || 'Empresa', nickname: account.nickname || 'Conta Mercado Livre',
+                  date_created: order.date_created || null, date_last_updated: order.date_last_updated || null, status: order.status || '',
+                  status_detail: order.status_detail || '', status_group: isCancelled ? 'cancelled' : 'other',
+                  status_label: separationLabel,
+                  total_amount: Number(order.total_amount || 0), currency_id: order.currency_id || 'BRL',
+                  shipping_id: orderShipping.id ? String(orderShipping.id) : '', shipping_status: shippingStatus,
+                  shipping_substatus: shippingSubstatus, needs_separation: needsSeparation,
+                  already_separated: alreadySeparated, separated_today: separatedToday,
+                  shipping_status_label: shipmentSubstatusLabels[shippingSubstatus] || shippingSubstatus,
+                  products: orderProducts,
+                  units: orderProducts.reduce((sum, product) => sum + product.quantity, 0)
+                });
+              }
             }
           }
           const accountQueueOrders = todayOnly ? allOrders.filter(order => String(order.company_id) === String(account.company_id)) : orders;
