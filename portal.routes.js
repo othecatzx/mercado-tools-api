@@ -733,13 +733,14 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
               const printedSubstatuses = new Set([
                 'printed', 'label_printed', 'printed_label', 'label_printed_by_seller',
                 'label_printed_by_seller', 'printed_by_seller',
-                // O Mercado Livre também usa este substatus quando a etiqueta
-                // já foi emitida e o pacote está pronto para ser coletado.
-                'ready_to_pickup', 'ready_for_pickup'
+                'ready_to_pickup', 'ready_for_pickup', 'waiting_for_pickup', 'ready_to_collect'
               ]);
               const blockedShippingStates = new Set(['in_hub', 'buffered']);
               const cancellationStatuses = new Set(['cancelled', 'canceled']);
-              const cancellationSubstatuses = new Set(['cancelled', 'canceled', 'cancelled_by_seller', 'cancelled_by_buyer']);
+              const cancellationSubstatuses = new Set(['cancelled_by_seller', 'cancelled_by_buyer']);
+              // in_packing_list significa que o pacote já está em preparação/a caminho;
+              // nunca deve aparecer como 'Precisa separar'.
+              const alreadyInPackingList = shippingStatus === 'in_packing_list' || shippingSubstatus === 'in_packing_list';
               const returnOrClaimTags = new Set([
                 'return', 'returned', 'returning', 'return_in_process', 'returning_to_seller',
                 'refund', 'refunded', 'partially_refunded', 'claim', 'has_claim', 'claim_opened', 'dispute'
@@ -752,8 +753,10 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
               // Não basta order.status=cancelled: pedidos com devolução/reembolso,
               // reclamação ou envio ainda ativo não devem virar "Cancelado" na fila.
               // Exigimos também confirmação de cancelamento no envio ou no detalhe.
-              const hasExplicitCancellation = cancellationStatuses.has(shippingStatus)
-                || cancellationSubstatuses.has(shippingSubstatus);
+              const hasExplicitCancellation = cancellationSubstatuses.has(shippingSubstatus)
+                || Boolean(shipment.status_history?.date_cancelled || shipping.status_history?.date_cancelled || shipment.date_cancelled || shipping.date_cancelled);
+              // O status genérico 'cancelled' sozinho não basta: só aceitamos
+              // cancelamento confirmado por substatus de comprador/vendedor ou data de cancelamento.
               const isCancelled = cancellationStatuses.has(orderStatus) && hasExplicitCancellation
                 && !hasReturnOrClaim && !delivered && !dispatched;
               const isBlockedShipping = !isForwardShipment || hasReturnOrClaim || blockedShippingStates.has(shippingSubstatus) || delivered || dispatched
@@ -762,8 +765,7 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
               // Etiquetas impressas permanecem na fila até o envio ser despachado.
               // Isso inclui Agência e Flex (logistic_type=self_service), sem depender
               // de o pedido ter sido atualizado exatamente hoje.
-              const preparationStatus = ['pending', 'handling', 'ready_to_ship'].includes(shippingStatus)
-                || ['ready_to_pickup', 'ready_for_pickup'].includes(shippingSubstatus);
+              const preparationStatus = (['pending', 'handling', 'ready_to_ship'].includes(shippingStatus) || printedSubstatuses.has(shippingSubstatus)) && !alreadyInPackingList;
               const hasPrintedLabel = printedSubstatuses.has(shippingSubstatus)
                 || orderTags.some(tag => printedSubstatuses.has(tag));
               const alreadySeparated = !isCancelled && eligibleOrder && isForwardShipment && preparationStatus
@@ -772,12 +774,12 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
                 && preparationStatus && !isBlockedShipping && !alreadySeparated;
               // A fila cobre a janela de 2 meses usada na página do Mercado Livre.
               // Etiquetas impressas antigas continuam visíveis enquanto não despachadas.
-              const cancelledDate = shipment.status_history?.date_cancelled || order.date_last_updated || order.date_closed || order.date_created;
-              const cancelledInWindow = isCancelled && localDay(cancelledDate) >= localDay(from);
+              const cancelledDate = shipment.status_history?.date_cancelled || shipping.status_history?.date_cancelled || shipment.date_cancelled || shipping.date_cancelled;
+              const cancelledInWindow = isCancelled && Boolean(cancelledDate) && localDay(cancelledDate) >= localDay(from);
               const showInOperationsQueue = !todayOnly || needsSeparation || alreadySeparated || cancelledInWindow;
               const statusLabels = { paid: 'Pago', confirmed: 'Confirmado', payment_required: 'Pagamento pendente', payment_in_process: 'Pagamento em análise', cancelled: 'Cancelado' };
               const separationLabel = isCancelled ? 'Cancelado' : alreadySeparated ? 'Separado — etiqueta impressa' : needsSeparation ? 'Precisa separar' : (statusLabels[orderStatus] || order.status || 'Em andamento');
-              const shipmentSubstatusLabels = { ready_to_print: 'Etiqueta pronta para impressão', invoice_pending: 'Pronta para emitir NF-e da venda', printed: 'Etiqueta impressa', ready_to_pickup: 'Pronto para coleta', ready_for_pickup: 'Pronto para coleta', waiting_for_label_generation: 'Aguardando geração da etiqueta', ready_to_ship: 'Pronto para envio' };
+              const shipmentSubstatusLabels = { ready_to_print: 'Etiqueta pronta para impressão', invoice_pending: 'Pronta para emitir NF-e da venda', printed: 'Etiqueta impressa', waiting_for_label_generation: 'Aguardando geração da etiqueta', ready_to_ship: 'Pronto para envio' };
               if (showInOperationsQueue) {
                 const orderProducts = (order.order_items || []).map(line => {
                   const item = line.item || {};
