@@ -586,12 +586,11 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
       if (todayOnly) {
         // Esta tela é uma FILA OPERACIONAL, não um relatório de vendas criadas hoje.
         // A página do Mercado Livre considera vendas dos últimos 2 meses. Buscamos
-        // a mesma janela para não perder etiquetas impressas ou envios Flex antigos
-        // que continuam aguardando despacho. A situação é determinada pelo envio atual.
+        // uma janela de 4 dias para limitar o volume consultado. A situação é determinada pelo envio atual.
         const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date(now));
         const dateParts = Object.fromEntries(parts.map(part => [part.type, part.value]));
         todayLocalDate = `${dateParts.year}-${dateParts.month}-${dateParts.day}`;
-        from = new Date(now - 60 * 86400000).toISOString();
+        from = new Date(now - 4 * 86400000).toISOString();
         to = new Date(now).toISOString();
       } else {
         to = new Date(now - offsetDays * 86400000).toISOString();
