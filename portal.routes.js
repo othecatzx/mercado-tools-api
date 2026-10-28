@@ -812,11 +812,8 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
                 && !cancellationStatuses.has(String(previousQueueHistory.last_order_status || '').toLowerCase());
               const cancellationAlreadyRecorded = previousQueueHistory?.was_in_queue === true
                 && Boolean(previousQueueHistory.cancelled_at);
-              // Só classifica como cancelado quando pedido e envio confirmam o cancelamento.
-              const shippingConfirmsCancellation = cancellationStatuses.has(shippingStatus)
-                || cancellationSubstatuses.has(shippingSubstatus);
               const isCancelled = cancellationStatuses.has(orderStatus)
-                && shippingConfirmsCancellation
+                && (wasPreviouslyInQueue || cancellationAlreadyRecorded)
                 && !hasReturnOrClaim && !delivered && !dispatched;
               const isBlockedShipping = !isForwardShipment || hasReturnOrClaim || blockedShippingStates.has(shippingSubstatus) || delivered || dispatched
                 || cancellationStatuses.has(shippingStatus);
@@ -827,10 +824,8 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
               const preparationStatus = (['pending', 'handling', 'ready_to_ship'].includes(shippingStatus) || printedSubstatuses.has(shippingSubstatus)) && !alreadyInPackingList;
               const hasPrintedLabel = printedSubstatuses.has(shippingSubstatus)
                 || orderTags.some(tag => printedSubstatuses.has(tag));
-              // "Pronto para coleta" já indica etiqueta emitida e pacote aguardando coleta.
-              // Mantém o pedido em Já separados mesmo quando o SLA aponta data futura.
               const alreadySeparated = !isCancelled && eligibleOrder && isForwardShipment && preparationStatus
-                && !isBlockedShipping && hasPrintedLabel;
+                && !isBlockedShipping && hasPrintedLabel && dispatchDateAllowsQueue;
               const needsSeparation = !isCancelled && eligibleOrder && isForwardShipment && Boolean(orderShipping.id)
                 && preparationStatus && !isBlockedShipping && !alreadySeparated && dispatchDateAllowsQueue;
               // A fila operacional consulta somente os últimos 4 dias.
@@ -851,7 +846,7 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
               }
               const statusLabels = { paid: 'Pago', confirmed: 'Confirmado', payment_required: 'Pagamento pendente', payment_in_process: 'Pagamento em análise', cancelled: 'Cancelado' };
               const separationLabel = isCancelled ? 'Cancelado' : alreadySeparated ? 'Separado — etiqueta impressa' : needsSeparation ? 'Precisa separar' : (statusLabels[orderStatus] || order.status || 'Em andamento');
-              const shipmentSubstatusLabels = { ready_to_print: 'Etiqueta pronta para impressão', invoice_pending: 'Pronta para emitir NF-e da venda', printed: 'Etiqueta impressa', ready_for_pickup: 'Pronto para coleta', ready_to_pickup: 'Pronto para coleta', waiting_for_pickup: 'Aguardando coleta', waiting_for_label_generation: 'Aguardando geração da etiqueta', ready_to_ship: 'Pronto para envio' };
+              const shipmentSubstatusLabels = { ready_to_print: 'Etiqueta pronta para impressão', invoice_pending: 'Pronta para emitir NF-e da venda', printed: 'Etiqueta impressa', waiting_for_label_generation: 'Aguardando geração da etiqueta', ready_to_ship: 'Pronto para envio' };
               if (showInOperationsQueue) {
                 const orderProducts = (order.order_items || []).map(line => {
                   const item = line.item || {};
