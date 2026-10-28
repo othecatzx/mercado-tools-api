@@ -581,14 +581,14 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
       const now = Date.now();
       let to, from, todayLocalDate = null;
       if (todayOnly) {
-        // Usa o dia civil inteiro de São Paulo. A busca do Mercado Livre
-        // considera o filtro de data até a hora e pode descartar minutos/segundos;
-        // por isso consultamos até o fim do dia e filtramos localmente.
+        // Esta tela é uma FILA OPERACIONAL, não um relatório de vendas criadas hoje.
+        // Busca pedidos de até 180 dias para encontrar vendas antigas que ainda
+        // estão aguardando separação. A situação é determinada pelo envio atual.
         const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date(now));
         const dateParts = Object.fromEntries(parts.map(part => [part.type, part.value]));
         todayLocalDate = `${dateParts.year}-${dateParts.month}-${dateParts.day}`;
-        from = `${todayLocalDate}T00:00:00.000-03:00`;
-        to = `${todayLocalDate}T23:59:59.999-03:00`;
+        from = new Date(now - 180 * 86400000).toISOString();
+        to = new Date(now).toISOString();
       } else {
         to = new Date(now - offsetDays * 86400000).toISOString();
         from = new Date(now - (offsetDays + days) * 86400000).toISOString();
@@ -665,21 +665,17 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
               if ((page.results || []).length < pageSize) break;
             }
           };
-          // date_created cobre as vendas iniciadas hoje; date_closed também
-          // captura pedidos cujo checkout/fechamento ocorreu hoje, mesmo que
-          // tenham sido criados antes da virada do dia. O Map elimina duplicados.
+          // Busca por data de criação em uma janela histórica para localizar
+          // pedidos ainda abertos, mesmo que a venda tenha sido feita em outro dia.
+          // A data da venda NÃO define se precisa separar: isso vem do envio atual.
           await fetchOrdersRange(from, to, 0, 'order.date_created');
-          if (todayOnly) await fetchOrdersRange(from, to, 0, 'order.date_closed');
           let orders = [...orderMap.values()];
-          if (todayOnly && todayLocalDate) {
-            const localDay = value => {
-              if (!value) return '';
-              const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date(value));
-              const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
-              return `${values.year}-${values.month}-${values.day}`;
-            };
-            orders = orders.filter(order => localDay(order.date_created) === todayLocalDate || localDay(order.date_closed) === todayLocalDate);
-          }
+          const localDay = value => {
+            if (!value) return '';
+            const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date(value));
+            const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
+            return `${values.year}-${values.month}-${values.day}`;
+          };
           if (!summaryOnly) {
             // O /orders/search frequentemente retorna apenas o ID do envio. Consultamos
             // /shipments/{id} para obter status e substatus reais da etiqueta.
@@ -712,13 +708,17 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
               const alreadySeparated = !isCancelled && (printedSubstatuses.has(shippingSubstatus) || shippedStatuses.has(shippingStatus));
               const eligibleOrder = ['paid', 'confirmed'].includes(orderStatus);
               const needsSeparation = !isCancelled && eligibleOrder && Boolean(orderShipping.id) && !alreadySeparated;
+              // Cancelamentos são exibidos quando ocorreram/foram atualizados hoje;
+              // pedidos a separar ou já separados entram independentemente da data da venda.
+              const cancelledToday = isCancelled && localDay(order.date_last_updated || order.date_closed) === todayLocalDate;
+              const showInOperationsQueue = !todayOnly || needsSeparation || alreadySeparated || cancelledToday;
               const statusLabels = { paid: 'Pago', confirmed: 'Confirmado', payment_required: 'Pagamento pendente', payment_in_process: 'Pagamento em análise', cancelled: 'Cancelado' };
               const separationLabel = isCancelled ? 'Cancelado' : alreadySeparated ? 'Separado — etiqueta impressa' : needsSeparation ? 'Precisa separar' : (statusLabels[orderStatus] || order.status || 'Em andamento');
               const shipmentSubstatusLabels = { ready_to_print: 'Etiqueta pronta para impressão', invoice_pending: 'Pronta para emitir NF-e da venda', printed: 'Etiqueta impressa', waiting_for_label_generation: 'Aguardando geração da etiqueta', ready_to_ship: 'Pronto para envio' };
-              allOrders.push({
+              if (showInOperationsQueue) allOrders.push({
                 id: String(order.id || ''), company_id: account.company_id,
                 company_name: company?.nome || 'Empresa', nickname: account.nickname || 'Conta Mercado Livre',
-                date_created: order.date_created || null, status: order.status || '',
+                date_created: order.date_created || null, date_last_updated: order.date_last_updated || null, status: order.status || '',
                 status_detail: order.status_detail || '', status_group: isCancelled ? 'cancelled' : 'other',
                 status_label: separationLabel,
                 total_amount: Number(order.total_amount || 0), currency_id: order.currency_id || 'BRL',
@@ -730,7 +730,8 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
               });
             }
           }
-          const revenue = orders.reduce((sum, order) => sum + Number(order.total_amount || 0), 0);
+          const accountQueueOrders = todayOnly ? allOrders.filter(order => String(order.company_id) === String(account.company_id)) : orders;
+          const revenue = accountQueueOrders.reduce((sum, order) => sum + (order.status_group === 'cancelled' ? 0 : Number(order.total_amount || 0)), 0);
           const productMap = new Map();
           for (const order of orders) {
             for (const line of (order.order_items || [])) {
@@ -792,9 +793,9 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
             nickname: account.nickname || 'Conta Mercado Livre',
             ml_user_id: account.ml_user_id,
             connected: true,
-            orders: orders.length,
+            orders: accountQueueOrders.length,
             revenue,
-            orders_sampled: orders.length,
+            orders_sampled: accountQueueOrders.length,
             truncated: false,
             units: storeProducts.reduce((sum, product) => sum + product.quantity_sold, 0),
             products: storeProducts.length
