@@ -767,7 +767,7 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
               const hasReturnOrClaim = shipmentType === 'return' || orderTags.some(tag => returnOrClaimTags.has(tag));
               const delivered = shippingStatus === 'delivered' || shippingSubstatus === 'delivered'
                 || Boolean(shipping.date_delivered || shipment.date_delivered || shipping.status_history?.date_delivered || shipment.status_history?.date_delivered);
-              const dispatched = ['shipped', 'in_transit'].includes(shippingStatus);
+              const dispatched = ['picked_up', 'shipped', 'in_transit'].includes(shippingStatus);
               const isForwardShipment = shipmentType !== 'return';
               // Cancelado operacional é uma mudança de status: o pedido precisa
               // ter sido visto anteriormente em uma das duas filas ativas.
@@ -794,8 +794,8 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
                 && !isBlockedShipping && hasPrintedLabel;
               const needsSeparation = !isCancelled && eligibleOrder && isForwardShipment && Boolean(orderShipping.id)
                 && preparationStatus && !isBlockedShipping && !alreadySeparated;
-              // A fila cobre a janela de 2 meses usada na página do Mercado Livre.
-              // Etiquetas impressas antigas continuam visíveis enquanto não despachadas.
+              // A fila operacional consulta somente os últimos 4 dias.
+              // Etiquetas impressas continuam visíveis enquanto não forem coletadas/despachadas.
               const cancelledInWindow = isCancelled;
               const showInOperationsQueue = !todayOnly || needsSeparation || alreadySeparated || cancelledInWindow;
               // Guarda o histórico somente quando o pedido realmente entrou na
