@@ -756,9 +756,11 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
               // Não basta order.status=cancelled: pedidos com devolução/reembolso,
               // reclamação ou envio ainda ativo não devem virar "Cancelado" na fila.
               // Exigimos também confirmação de cancelamento no envio ou no detalhe.
-              const hasExplicitCancellation = cancellationSubstatuses.has(shippingSubstatus) || explicitOrderCancellation;
-              // O status genérico 'cancelled' sozinho não basta: só aceitamos
-              // cancelamento confirmado por substatus de comprador/vendedor ou data de cancelamento.
+              const hasExplicitCancellation = cancellationStatuses.has(shippingStatus)
+                || cancellationSubstatuses.has(shippingSubstatus) || explicitOrderCancellation
+                || Boolean(shipment.status_history?.date_cancelled || shipping.status_history?.date_cancelled || shipment.date_cancelled || shipping.date_cancelled);
+              // O pedido cancelado é a fonte principal. O envio pode confirmar pelo status,
+              // substatus ou histórico; não exigimos um único código específico da API.
               const isCancelled = cancellationStatuses.has(orderStatus) && hasExplicitCancellation
                 && !hasReturnOrClaim && !delivered && !dispatched;
               const isBlockedShipping = !isForwardShipment || hasReturnOrClaim || droppedOff || blockedShippingStates.has(shippingSubstatus) || delivered || dispatched
@@ -776,8 +778,10 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
                 && preparationStatus && !isBlockedShipping && !alreadySeparated;
               // A fila cobre a janela de 2 meses usada na página do Mercado Livre.
               // Etiquetas impressas antigas continuam visíveis enquanto não despachadas.
-              const cancelledDate = shipment.status_history?.date_cancelled || shipping.status_history?.date_cancelled || shipment.date_cancelled || shipping.date_cancelled;
-              const cancelledInWindow = isCancelled && Boolean(cancelledDate) && localDay(cancelledDate) >= localDay(from);
+              const cancelledDate = shipment.status_history?.date_cancelled || shipping.status_history?.date_cancelled
+                || shipment.date_cancelled || shipping.date_cancelled || order.date_last_updated || order.date_created;
+              const cancelledInWindow = isCancelled && Boolean(cancelledDate)
+                && localDay(cancelledDate) >= localDay(from) && localDay(cancelledDate) <= localDay(to);
               const showInOperationsQueue = !droppedOff && (needsSeparation || alreadySeparated || cancelledInWindow);
               const statusLabels = { paid: 'Pago', confirmed: 'Confirmado', payment_required: 'Pagamento pendente', payment_in_process: 'Pagamento em análise', cancelled: 'Cancelado' };
               const separationLabel = isCancelled ? 'Cancelado' : alreadySeparated ? 'Separado — etiqueta impressa' : needsSeparation ? 'Precisa separar' : (statusLabels[orderStatus] || order.status || 'Em andamento');
