@@ -767,7 +767,9 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
               const hasReturnOrClaim = shipmentType === 'return' || orderTags.some(tag => returnOrClaimTags.has(tag));
               const delivered = shippingStatus === 'delivered' || shippingSubstatus === 'delivered'
                 || Boolean(shipping.date_delivered || shipment.date_delivered || shipping.status_history?.date_delivered || shipment.status_history?.date_delivered);
-              const dispatched = ['picked_up', 'shipped', 'in_transit'].includes(shippingStatus);
+              const dispatched =
+  ['picked_up', 'shipped', 'in_transit'].includes(shippingStatus) ||
+  ['picked_up', 'shipped', 'in_transit'].includes(shippingSubstatus);
               const isForwardShipment = shipmentType !== 'return';
               // Cancelado operacional é uma mudança de status: o pedido precisa
               // ter sido visto anteriormente em uma das duas filas ativas.
