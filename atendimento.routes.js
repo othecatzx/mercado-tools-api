@@ -30,12 +30,13 @@ module.exports = function registerAtendimentoRoutes(app, { supabase, jwt, bcrypt
       }
       if (decoded.type === 'support_agent' && decoded.support_agent_id) {
         const { data: agent, error } = await supabase.from('support_agents')
-          .select('id,license_id,status,created_by_portal_user_id,allowed_license_ids,user_management_permissions,permissions')
+          .select('id,license_id,status,created_by_portal_user_id,allowed_license_ids,user_management_permissions,permissions,menu_permissions')
           .eq('id', decoded.support_agent_id).maybeSingle();
         if (error) throw error;
         if (!agent || agent.status !== 'active' || !agent.created_by_portal_user_id) return res.status(401).json({ ok: false, error: 'invalid_session' });
+        if (!Array.isArray(agent.menu_permissions) || !agent.menu_permissions.includes('team')) return res.status(403).json({ ok: false, error: 'menu_not_allowed', message: 'O administrador não liberou Equipe de atendimento para esta conta.' });
         req.portalUserId = agent.created_by_portal_user_id;
-        req.teamActor = { type: 'agent', id: agent.id, licenseId: agent.license_id, permissions: Array.isArray(agent.user_management_permissions) ? agent.user_management_permissions : [], chatPermissions: Array.isArray(agent.permissions) ? agent.permissions : [], allowedLicenseIds: (agent.allowed_license_ids || [agent.license_id]).map(String) };
+        req.teamActor = { type: 'agent', id: agent.id, licenseId: agent.license_id, permissions: Array.isArray(agent.user_management_permissions) ? agent.user_management_permissions : [], menuPermissions: Array.isArray(agent.menu_permissions) ? agent.menu_permissions : ['chat'], chatPermissions: Array.isArray(agent.permissions) ? agent.permissions : [], allowedLicenseIds: (agent.allowed_license_ids || [agent.license_id]).map(String) };
         return next();
       }
       return res.status(401).json({ ok: false, error: 'invalid_session' });
@@ -79,7 +80,13 @@ module.exports = function registerAtendimentoRoutes(app, { supabase, jwt, bcrypt
     return values.every(v => permissionKeys.has(v)) ? values : null;
   }
 
-  const menuKeys = new Set(['overview','licenses','devices','sales','codes','team','chat']);
+  const menuKeys = new Set(['overview','licenses','devices','orders','sales','shipping','codes','team','chat','support','settings']);
+
+  function agentCanGrantMenu(actor, menu) {
+    const ownMenus = Array.isArray(actor?.menuPermissions) ? actor.menuPermissions : [];
+    // Compatibilidade: antes da permissão "Pedidos", o menu "Vendas" liberava a tela de pedidos.
+    return ownMenus.includes(menu) || (menu === 'orders' && ownMenus.includes('sales'));
+  }
   function validateMenuPermissions(input) {
     if (!Array.isArray(input)) return null;
     const values = [...new Set(input.map(v => String(v)))];
@@ -138,12 +145,13 @@ module.exports = function registerAtendimentoRoutes(app, { supabase, jwt, bcrypt
       const senha = String(req.body?.senha || '');
       const canManagePermissions = req.teamActor.type === 'owner' || req.teamActor.permissions.includes('users.manage_permissions');
       const permissions = req.body?.permissions === undefined ? (req.teamActor.type === 'agent' && !canManagePermissions ? req.teamActor.chatPermissions : null) : validatePermissions(req.body.permissions);
-      const menu_permissions = req.body?.menu_permissions === undefined ? (req.teamActor.type === 'agent' && !canManagePermissions ? ['chat'] : ['chat']) : validateMenuPermissions(req.body.menu_permissions);
+      const menu_permissions = req.body?.menu_permissions === undefined ? (req.teamActor.type === 'agent' && !canManagePermissions ? req.teamActor.menuPermissions : ['chat']) : validateMenuPermissions(req.body.menu_permissions);
       const user_management_permissions = req.body?.user_management_permissions === undefined ? [] : validateUserManagementPermissions(req.body.user_management_permissions);
       if (req.teamActor.type === 'agent' && (req.body?.permissions !== undefined || req.body?.menu_permissions !== undefined || req.body?.user_management_permissions !== undefined) && !requireTeamPermission(req, res, 'users.manage_permissions')) return;
       if (!user_management_permissions || !licenseId || !nome || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || senha.length < 8 || !permissions || !menu_permissions) {
         return res.status(400).json({ ok: false, error: 'invalid_fields', message: 'Informe nome, e-mail válido, senha com pelo menos 8 caracteres e permissões válidas.' });
       }
+      if (req.teamActor.type === 'agent' && menu_permissions.some(menu => !agentCanGrantMenu(req.teamActor, menu))) return res.status(403).json({ ok:false, error:'permission_escalation', message:'Você não pode liberar menus que não possui.' });
       const license = await getOwnedLicense(req.portalUserId, licenseId);
       if (!license) return res.status(404).json({ ok: false, error: 'license_not_found' });
       if (req.teamActor.type === 'agent' && !req.teamActor.allowedLicenseIds.includes(licenseId)) return res.status(403).json({ ok:false, error:'license_out_of_scope' });
@@ -211,7 +219,7 @@ module.exports = function registerAtendimentoRoutes(app, { supabase, jwt, bcrypt
       if (req.body?.menu_permissions !== undefined) {
         const menu_permissions = validateMenuPermissions(req.body.menu_permissions);
         if (!menu_permissions) return res.status(400).json({ ok: false, error: 'invalid_menu_permissions', message: 'Seleção de menus inválida.' });
-        if (req.teamActor.type === 'agent' && menu_permissions.some(p => !['chat','team'].includes(p))) return res.status(403).json({ ok:false, error:'permission_escalation', message:'Você não pode liberar menus que não possui.' });
+        if (req.teamActor.type === 'agent' && menu_permissions.some(p => !agentCanGrantMenu(req.teamActor, p))) return res.status(403).json({ ok:false, error:'permission_escalation', message:'Você não pode liberar menus que não possui.' });
         updates.menu_permissions = menu_permissions;
       }
       if (req.body?.user_management_permissions !== undefined) {
@@ -294,10 +302,11 @@ module.exports = function registerAtendimentoRoutes(app, { supabase, jwt, bcrypt
       return { owner: true, license, agent: null };
     }
     const { data: agent, error } = await supabase.from('support_agents')
-      .select('id,license_id,nome,email,status,permissions,allowed_company_ids,allowed_license_ids,created_by_portal_user_id')
+      .select('id,license_id,nome,email,status,permissions,menu_permissions,allowed_company_ids,allowed_license_ids,created_by_portal_user_id')
       .eq('id', req.actor.id).maybeSingle();
     if (error) throw error;
     if (!agent || agent.status !== 'active') { res.status(401).json({ ok: false, message: 'Atendente desativado.' }); return null; }
+    if (!Array.isArray(agent.menu_permissions) || !agent.menu_permissions.includes('chat')) { res.status(403).json({ ok: false, message: 'O administrador não liberou Atendimento para esta conta.' }); return null; }
     const allowedLicenseIds = Array.isArray(agent.allowed_license_ids) && agent.allowed_license_ids.length ? agent.allowed_license_ids.map(String) : [String(agent.license_id)];
     if (!allowedLicenseIds.includes(String(licenseId))) { res.status(403).json({ ok: false, message: 'Este atendente não tem acesso a esta loja.' }); return null; }
     const targetLicense = await getOwnedLicense(agent.created_by_portal_user_id, licenseId);
