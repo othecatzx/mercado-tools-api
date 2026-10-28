@@ -532,6 +532,7 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
   // Vendas reais das contas do Mercado Livre conectadas às empresas licenciadas.
   app.get('/api/portal/sales', authPortalOrAgent, async (req, res) => {
     try {
+      const todayOnly = req.query.today === '1';
       const days = Math.max(1, Math.min(90, Number.parseInt(req.query.days, 10) || 30));
       const offsetDays = Math.max(0, Math.min(180, Number.parseInt(req.query.offsetDays, 10) || 0));
       const summaryOnly = req.query.summaryOnly === '1';
@@ -578,8 +579,18 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
         }
       }
       const now = Date.now();
-      const to = new Date(now - offsetDays * 86400000).toISOString();
-      const from = new Date(now - (offsetDays + days) * 86400000).toISOString();
+      let to, from;
+      if (todayOnly) {
+        // O painel operacional usa o dia civil de São Paulo, não o dia UTC do servidor.
+        const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date(now));
+        const dateParts = Object.fromEntries(parts.map(part => [part.type, part.value]));
+        const localDate = `${dateParts.year}-${dateParts.month}-${dateParts.day}`;
+        from = new Date(`${localDate}T00:00:00-03:00`).toISOString();
+        to = new Date(now).toISOString();
+      } else {
+        to = new Date(now - offsetDays * 86400000).toISOString();
+        from = new Date(now - (offsetDays + days) * 86400000).toISOString();
+      }
 
       for (const account of accounts || []) {
         const company = companies.get(account.company_id);
@@ -655,22 +666,51 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
           await fetchOrdersRange(from, to);
           const orders = [...orderMap.values()];
           if (!summaryOnly) {
+            // O /orders/search frequentemente retorna apenas o ID do envio. Consultamos
+            // /shipments/{id} para obter status e substatus reais da etiqueta.
+            const shipmentIds = [...new Set(orders.map(order => String(order.shipping?.id || '')).filter(Boolean))];
+            const shipmentDetails = new Map();
+            let shipmentIndex = 0;
+            const shipmentWorker = async () => {
+              while (shipmentIndex < shipmentIds.length) {
+                const shipmentId = shipmentIds[shipmentIndex++];
+                try {
+                  const shipmentResponse = await fetch('https://api.mercadolibre.com/shipments/' + encodeURIComponent(shipmentId), {
+                    headers: { Authorization: 'Bearer ' + accessToken, Accept: 'application/json' }
+                  });
+                  if (shipmentResponse.ok) shipmentDetails.set(shipmentId, await shipmentResponse.json());
+                } catch (_) { /* Mantém os dados do pedido quando o detalhe do envio falhar. */ }
+              }
+            };
+            await Promise.all(Array.from({ length: Math.min(6, shipmentIds.length) }, () => shipmentWorker()));
+
             for (const order of orders) {
-              const shipping = order.shipping || {};
+              const orderShipping = order.shipping || {};
+              const shipment = shipmentDetails.get(String(orderShipping.id || '')) || {};
+              const shipping = { ...orderShipping, ...shipment };
               const isCancelled = String(order.status || '').toLowerCase() === 'cancelled';
               const shippingStatus = String(shipping.status || '').toLowerCase();
+              const shippingSubstatus = String(shipping.substatus || '').toLowerCase();
               const orderStatus = String(order.status || '').toLowerCase();
-              const needsSeparation = !isCancelled && orderStatus === 'paid' && shippingStatus === 'ready_to_ship';
+              const printedSubstatuses = new Set(['printed', 'label_printed', 'printed_label', 'label_printed_by_seller']);
+              const shippedStatuses = new Set(['shipped', 'in_transit', 'delivered']);
+              const alreadySeparated = !isCancelled && (printedSubstatuses.has(shippingSubstatus) || shippedStatuses.has(shippingStatus));
+              const eligibleOrder = ['paid', 'confirmed'].includes(orderStatus);
+              const needsSeparation = !isCancelled && eligibleOrder && Boolean(orderShipping.id) && !alreadySeparated;
               const statusLabels = { paid: 'Pago', confirmed: 'Confirmado', payment_required: 'Pagamento pendente', payment_in_process: 'Pagamento em análise', cancelled: 'Cancelado' };
+              const separationLabel = isCancelled ? 'Cancelado' : alreadySeparated ? 'Separado — etiqueta impressa' : needsSeparation ? 'Precisa separar' : (statusLabels[orderStatus] || order.status || 'Em andamento');
+              const shipmentSubstatusLabels = { ready_to_print: 'Etiqueta pronta para impressão', invoice_pending: 'Pronta para emitir NF-e da venda', printed: 'Etiqueta impressa', waiting_for_label_generation: 'Aguardando geração da etiqueta', ready_to_ship: 'Pronto para envio' };
               allOrders.push({
                 id: String(order.id || ''), company_id: account.company_id,
                 company_name: company?.nome || 'Empresa', nickname: account.nickname || 'Conta Mercado Livre',
                 date_created: order.date_created || null, status: order.status || '',
                 status_detail: order.status_detail || '', status_group: isCancelled ? 'cancelled' : 'other',
-                status_label: statusLabels[orderStatus] || order.status || 'Em andamento',
+                status_label: separationLabel,
                 total_amount: Number(order.total_amount || 0), currency_id: order.currency_id || 'BRL',
-                shipping_id: shipping.id ? String(shipping.id) : '', shipping_status: shippingStatus,
-                shipping_substatus: shipping.substatus || '', needs_separation: needsSeparation,
+                shipping_id: orderShipping.id ? String(orderShipping.id) : '', shipping_status: shippingStatus,
+                shipping_substatus: shippingSubstatus, needs_separation: needsSeparation,
+                already_separated: alreadySeparated,
+                shipping_status_label: shipmentSubstatusLabels[shippingSubstatus] || shippingSubstatus,
                 units: (order.order_items || []).reduce((sum, line) => sum + Math.max(0, Number(line.quantity || 0)), 0)
               });
             }
@@ -704,7 +744,7 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
           totalUnits += storeProducts.reduce((sum, product) => sum + product.quantity_sold, 0);
           // Enrich the best-selling listings with photos, current price, stock and direct link.
           // Limit detail lookups to the top 100 per account to keep the endpoint responsive.
-          const enrichmentTargets = summaryOnly ? [] : storeProducts.slice().sort((a, b) => b.quantity_sold - a.quantity_sold).slice(0, 100);
+          const enrichmentTargets = (summaryOnly || todayOnly) ? [] : storeProducts.slice().sort((a, b) => b.quantity_sold - a.quantity_sold).slice(0, 100);
           let enrichIndex = 0;
           const enrichWorker = async () => {
             while (enrichIndex < enrichmentTargets.length) {
@@ -760,7 +800,7 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
       allProducts.sort((a, b) => Number(b.quantity_sold || 0) - Number(a.quantity_sold || 0));
       allOrders.sort((a, b) => new Date(b.date_created || 0).getTime() - new Date(a.date_created || 0).getTime());
       return res.json({
-        ok: true, days, connected: stores.filter(s => s.connected).length,
+        ok: true, days: todayOnly ? 1 : days, today: todayOnly, connected: stores.filter(s => s.connected).length,
         totals: {
           orders: stores.reduce((sum, s) => sum + (s.orders || 0), 0),
           revenue: stores.reduce((sum, s) => sum + (s.revenue || 0), 0),
