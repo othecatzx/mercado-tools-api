@@ -582,12 +582,12 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
       let to, from, todayLocalDate = null;
       if (todayOnly) {
         // Esta tela é uma FILA OPERACIONAL, não um relatório de vendas criadas hoje.
-        // Busca pedidos de até 180 dias para encontrar vendas antigas que ainda
+        // Busca pedidos dos últimos 10 dias para encontrar vendas antigas que ainda
         // estão aguardando separação. A situação é determinada pelo envio atual.
         const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date(now));
         const dateParts = Object.fromEntries(parts.map(part => [part.type, part.value]));
         todayLocalDate = `${dateParts.year}-${dateParts.month}-${dateParts.day}`;
-        from = new Date(now - 180 * 86400000).toISOString();
+        from = new Date(now - 10 * 86400000).toISOString();
         to = new Date(now).toISOString();
       } else {
         to = new Date(now - offsetDays * 86400000).toISOString();
