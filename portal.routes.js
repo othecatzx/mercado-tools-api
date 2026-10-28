@@ -561,6 +561,7 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
 
       const stores = [];
       const allProducts = [];
+      const allOrders = [];
       let totalUnits = 0;
       const connectedCompanyIds = new Set((accounts || []).map(a => String(a.company_id)));
       for (const [companyId, company] of companies.entries()) {
@@ -653,6 +654,27 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
           };
           await fetchOrdersRange(from, to);
           const orders = [...orderMap.values()];
+          if (!summaryOnly) {
+            for (const order of orders) {
+              const shipping = order.shipping || {};
+              const isCancelled = String(order.status || '').toLowerCase() === 'cancelled';
+              const shippingStatus = String(shipping.status || '').toLowerCase();
+              const orderStatus = String(order.status || '').toLowerCase();
+              const needsSeparation = !isCancelled && orderStatus === 'paid' && shippingStatus === 'ready_to_ship';
+              const statusLabels = { paid: 'Pago', confirmed: 'Confirmado', payment_required: 'Pagamento pendente', payment_in_process: 'Pagamento em análise', cancelled: 'Cancelado' };
+              allOrders.push({
+                id: String(order.id || ''), company_id: account.company_id,
+                company_name: company?.nome || 'Empresa', nickname: account.nickname || 'Conta Mercado Livre',
+                date_created: order.date_created || null, status: order.status || '',
+                status_detail: order.status_detail || '', status_group: isCancelled ? 'cancelled' : 'other',
+                status_label: statusLabels[orderStatus] || order.status || 'Em andamento',
+                total_amount: Number(order.total_amount || 0), currency_id: order.currency_id || 'BRL',
+                shipping_id: shipping.id ? String(shipping.id) : '', shipping_status: shippingStatus,
+                shipping_substatus: shipping.substatus || '', needs_separation: needsSeparation,
+                units: (order.order_items || []).reduce((sum, line) => sum + Math.max(0, Number(line.quantity || 0)), 0)
+              });
+            }
+          }
           const revenue = orders.reduce((sum, order) => sum + Number(order.total_amount || 0), 0);
           const productMap = new Map();
           for (const order of orders) {
@@ -736,6 +758,7 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
         }
       }
       allProducts.sort((a, b) => Number(b.quantity_sold || 0) - Number(a.quantity_sold || 0));
+      allOrders.sort((a, b) => new Date(b.date_created || 0).getTime() - new Date(a.date_created || 0).getTime());
       return res.json({
         ok: true, days, connected: stores.filter(s => s.connected).length,
         totals: {
@@ -745,6 +768,7 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
           products: allProducts.length
         },
         stores,
+        orders: summaryOnly ? [] : allOrders,
         products: allProducts
       });
     } catch (error) {
