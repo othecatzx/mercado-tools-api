@@ -698,6 +698,30 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
             };
             await Promise.all(Array.from({ length: Math.min(6, shipmentIds.length) }, () => shipmentWorker()));
 
+            // Na fila operacional, considera também o prazo oficial de despacho do SLA.
+            // Pedidos com expected_date em dias futuros não entram na fila de hoje.
+            // Se o endpoint de SLA falhar ou não retornar expected_date, preservamos
+            // o comportamento anterior para não esconder pedidos por falha temporária da API.
+            const shipmentSlas = new Map();
+            if (todayOnly) {
+              let slaIndex = 0;
+              const slaWorker = async () => {
+                while (slaIndex < shipmentIds.length) {
+                  const shipmentId = shipmentIds[slaIndex++];
+                  try {
+                    const slaResponse = await fetch('https://api.mercadolibre.com/shipments/' + encodeURIComponent(shipmentId) + '/sla', {
+                      headers: { Authorization: 'Bearer ' + accessToken, Accept: 'application/json' }
+                    });
+                    if (slaResponse.ok) {
+                      const sla = await slaResponse.json();
+                      if (sla && typeof sla === 'object') shipmentSlas.set(shipmentId, sla);
+                    }
+                  } catch (_) { /* SLA indisponível: mantém a regra anterior para este envio. */ }
+                }
+              };
+              await Promise.all(Array.from({ length: Math.min(6, shipmentIds.length) }, () => slaWorker()));
+            }
+
             // Carrega título, SKU e foto dos anúncios exibidos na fila operacional.
             const queueItemIds = [...new Set(orders
               .filter(order => ['paid', 'confirmed', 'cancelled'].includes(String(order.status || '').toLowerCase()))
@@ -737,8 +761,16 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
 
             for (const order of orders) {
               const orderShipping = order.shipping || {};
-              const shipment = shipmentDetails.get(String(orderShipping.id || '')) || {};
+              const shipmentId = String(orderShipping.id || '');
+              const shipment = shipmentDetails.get(shipmentId) || {};
               const shipping = { ...orderShipping, ...shipment };
+              const shipmentSla = shipmentSlas.get(shipmentId) || {};
+              const dispatchDeadline = shipmentSla.expected_date || null;
+              const dispatchDeadlineDay = dispatchDeadline ? localDay(dispatchDeadline) : '';
+              // Mostra hoje e prazos vencidos. Se o SLA informa uma data futura,
+              // o pedido fica fora da fila operacional até chegar o dia do despacho.
+              const dispatchDateAllowsQueue = !todayOnly || !dispatchDeadlineDay
+                || !todayLocalDate || dispatchDeadlineDay <= todayLocalDate;
               const orderStatus = String(order.status || '').toLowerCase();
               const shippingStatus = String(shipping.status || '').toLowerCase();
               const shippingSubstatus = String(shipping.substatus || '').toLowerCase();
@@ -793,9 +825,9 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
               const hasPrintedLabel = printedSubstatuses.has(shippingSubstatus)
                 || orderTags.some(tag => printedSubstatuses.has(tag));
               const alreadySeparated = !isCancelled && eligibleOrder && isForwardShipment && preparationStatus
-                && !isBlockedShipping && hasPrintedLabel;
+                && !isBlockedShipping && hasPrintedLabel && dispatchDateAllowsQueue;
               const needsSeparation = !isCancelled && eligibleOrder && isForwardShipment && Boolean(orderShipping.id)
-                && preparationStatus && !isBlockedShipping && !alreadySeparated;
+                && preparationStatus && !isBlockedShipping && !alreadySeparated && dispatchDateAllowsQueue;
               // A fila operacional consulta somente os últimos 4 dias.
               // Etiquetas impressas continuam visíveis enquanto não forem coletadas/despachadas.
               const cancelledInWindow = isCancelled;
@@ -841,6 +873,8 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
                   total_amount: Number(order.total_amount || 0), currency_id: order.currency_id || 'BRL',
                   shipping_id: orderShipping.id ? String(orderShipping.id) : '', shipping_status: shippingStatus,
                   shipping_substatus: shippingSubstatus,
+                  dispatch_deadline: dispatchDeadline,
+                  dispatch_sla_status: shipmentSla.status || '',
                   shipping_logistic_type: shippingLogisticType, shipping_mode: shippingMode,
                   shipping_tags: orderTags,
                   needs_separation: needsSeparation,
