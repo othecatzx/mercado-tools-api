@@ -732,7 +732,10 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
               const shippingMode = String(shipping.mode || orderShipping.mode || '').toLowerCase();
               const printedSubstatuses = new Set([
                 'printed', 'label_printed', 'printed_label', 'label_printed_by_seller',
-                'label_printed_by_seller', 'printed_by_seller'
+                'label_printed_by_seller', 'printed_by_seller',
+                // O Mercado Livre também usa este substatus quando a etiqueta
+                // já foi emitida e o pacote está pronto para ser coletado.
+                'ready_to_pickup', 'ready_for_pickup'
               ]);
               const blockedShippingStates = new Set(['in_hub', 'buffered']);
               const cancellationStatuses = new Set(['cancelled', 'canceled']);
@@ -759,7 +762,8 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
               // Etiquetas impressas permanecem na fila até o envio ser despachado.
               // Isso inclui Agência e Flex (logistic_type=self_service), sem depender
               // de o pedido ter sido atualizado exatamente hoje.
-              const preparationStatus = ['pending', 'handling', 'ready_to_ship'].includes(shippingStatus);
+              const preparationStatus = ['pending', 'handling', 'ready_to_ship'].includes(shippingStatus)
+                || ['ready_to_pickup', 'ready_for_pickup'].includes(shippingSubstatus);
               const hasPrintedLabel = printedSubstatuses.has(shippingSubstatus)
                 || orderTags.some(tag => printedSubstatuses.has(tag));
               const alreadySeparated = !isCancelled && eligibleOrder && isForwardShipment && preparationStatus
@@ -773,7 +777,7 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
               const showInOperationsQueue = !todayOnly || needsSeparation || alreadySeparated || cancelledInWindow;
               const statusLabels = { paid: 'Pago', confirmed: 'Confirmado', payment_required: 'Pagamento pendente', payment_in_process: 'Pagamento em análise', cancelled: 'Cancelado' };
               const separationLabel = isCancelled ? 'Cancelado' : alreadySeparated ? 'Separado — etiqueta impressa' : needsSeparation ? 'Precisa separar' : (statusLabels[orderStatus] || order.status || 'Em andamento');
-              const shipmentSubstatusLabels = { ready_to_print: 'Etiqueta pronta para impressão', invoice_pending: 'Pronta para emitir NF-e da venda', printed: 'Etiqueta impressa', waiting_for_label_generation: 'Aguardando geração da etiqueta', ready_to_ship: 'Pronto para envio' };
+              const shipmentSubstatusLabels = { ready_to_print: 'Etiqueta pronta para impressão', invoice_pending: 'Pronta para emitir NF-e da venda', printed: 'Etiqueta impressa', ready_to_pickup: 'Pronto para coleta', ready_for_pickup: 'Pronto para coleta', waiting_for_label_generation: 'Aguardando geração da etiqueta', ready_to_ship: 'Pronto para envio' };
               if (showInOperationsQueue) {
                 const orderProducts = (order.order_items || []).map(line => {
                   const item = line.item || {};
