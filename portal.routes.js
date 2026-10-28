@@ -738,6 +738,9 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
               const blockedShippingStates = new Set(['in_hub', 'buffered']);
               const cancellationStatuses = new Set(['cancelled', 'canceled']);
               const cancellationSubstatuses = new Set(['cancelled_by_seller', 'cancelled_by_buyer']);
+              const orderStatusDetail = String(order.status_detail || '').toLowerCase();
+              const explicitOrderCancellation = cancellationSubstatuses.has(orderStatusDetail) || orderStatusDetail.includes('cancelled_by_buyer') || orderStatusDetail.includes('cancelled_by_seller');
+              const droppedOff = shippingStatus === 'dropped_off' || shippingSubstatus === 'dropped_off';
               // in_packing_list significa que o pacote já está em preparação/a caminho;
               // nunca deve aparecer como 'Precisa separar'.
               const alreadyInPackingList = shippingStatus === 'in_packing_list' || shippingSubstatus === 'in_packing_list';
@@ -753,13 +756,12 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
               // Não basta order.status=cancelled: pedidos com devolução/reembolso,
               // reclamação ou envio ainda ativo não devem virar "Cancelado" na fila.
               // Exigimos também confirmação de cancelamento no envio ou no detalhe.
-              const hasExplicitCancellation = cancellationSubstatuses.has(shippingSubstatus)
-                || Boolean(shipment.status_history?.date_cancelled || shipping.status_history?.date_cancelled || shipment.date_cancelled || shipping.date_cancelled);
+              const hasExplicitCancellation = cancellationSubstatuses.has(shippingSubstatus) || explicitOrderCancellation;
               // O status genérico 'cancelled' sozinho não basta: só aceitamos
               // cancelamento confirmado por substatus de comprador/vendedor ou data de cancelamento.
               const isCancelled = cancellationStatuses.has(orderStatus) && hasExplicitCancellation
                 && !hasReturnOrClaim && !delivered && !dispatched;
-              const isBlockedShipping = !isForwardShipment || hasReturnOrClaim || blockedShippingStates.has(shippingSubstatus) || delivered || dispatched
+              const isBlockedShipping = !isForwardShipment || hasReturnOrClaim || droppedOff || blockedShippingStates.has(shippingSubstatus) || delivered || dispatched
                 || cancellationStatuses.has(shippingStatus);
               const eligibleOrder = ['paid', 'confirmed'].includes(orderStatus);
               // Etiquetas impressas permanecem na fila até o envio ser despachado.
@@ -776,7 +778,7 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
               // Etiquetas impressas antigas continuam visíveis enquanto não despachadas.
               const cancelledDate = shipment.status_history?.date_cancelled || shipping.status_history?.date_cancelled || shipment.date_cancelled || shipping.date_cancelled;
               const cancelledInWindow = isCancelled && Boolean(cancelledDate) && localDay(cancelledDate) >= localDay(from);
-              const showInOperationsQueue = !todayOnly || needsSeparation || alreadySeparated || cancelledInWindow;
+              const showInOperationsQueue = !droppedOff && (needsSeparation || alreadySeparated || cancelledInWindow);
               const statusLabels = { paid: 'Pago', confirmed: 'Confirmado', payment_required: 'Pagamento pendente', payment_in_process: 'Pagamento em análise', cancelled: 'Cancelado' };
               const separationLabel = isCancelled ? 'Cancelado' : alreadySeparated ? 'Separado — etiqueta impressa' : needsSeparation ? 'Precisa separar' : (statusLabels[orderStatus] || order.status || 'Em andamento');
               const shipmentSubstatusLabels = { ready_to_print: 'Etiqueta pronta para impressão', invoice_pending: 'Pronta para emitir NF-e da venda', printed: 'Etiqueta impressa', waiting_for_label_generation: 'Aguardando geração da etiqueta', ready_to_ship: 'Pronto para envio' };
