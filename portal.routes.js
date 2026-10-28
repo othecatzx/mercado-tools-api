@@ -665,10 +665,23 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
               if ((page.results || []).length < pageSize) break;
             }
           };
-          // Busca por data de criação em uma janela histórica para localizar
-          // pedidos ainda abertos, mesmo que a venda tenha sido feita em outro dia.
-          // A data da venda NÃO define se precisa separar: isso vem do envio atual.
+          // A fila operacional precisa de duas buscas independentes:
+          // 1) pedidos criados nos últimos 10 dias, para encontrar os que ainda precisam separar;
+          // 2) pedidos ATUALIZADOS hoje, para capturar cancelamentos/separações de vendas antigas.
+          // Mesclamos por ID para não duplicar pedidos retornados pelas duas consultas.
           await fetchOrdersRange(from, to, 0, 'order.date_created');
+          if (todayOnly && todayLocalDate) {
+            const todayStart = new Date(`${todayLocalDate}T00:00:00-03:00`).toISOString();
+            const tomorrowDate = new Date(new Date(todayStart).getTime() + 86400000);
+            const todayEnd = tomorrowDate.toISOString();
+            try {
+              await fetchOrdersRange(todayStart, todayEnd, 0, 'order.date_last_updated');
+            } catch (updatedSearchError) {
+              // Algumas contas/versões da busca podem não aceitar o filtro de atualização.
+              // Mantemos a fila de pedidos criados e registramos a falha para diagnóstico.
+              console.warn('Portal sales: falha ao buscar pedidos atualizados hoje:', updatedSearchError.message);
+            }
+          }
           let orders = [...orderMap.values()];
           const localDay = value => {
             if (!value) return '';
@@ -724,17 +737,21 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
               const shippingSubstatus = String(shipping.substatus || '').toLowerCase();
               const orderStatus = String(order.status || '').toLowerCase();
               const printedSubstatuses = new Set(['printed', 'label_printed', 'printed_label', 'label_printed_by_seller']);
-              const blockedShippingStates = new Set(['in_hub', 'buffered']);
-              const delivered = shippingStatus === 'delivered' || Boolean(shipment.date_delivered || shipment.status_history?.date_delivered);
-              const dispatched = ['shipped', 'in_transit'].includes(shippingStatus);
-              const isBlockedShipping = blockedShippingStates.has(shippingSubstatus) || delivered || dispatched;
+              // Estados que não pertencem à fila de separação/coleta do dia.
+              // O Mercado Livre pode devolver estes códigos em status OU substatus.
+              const blockedShippingStates = new Set(['in_hub', 'buffered', 'in_packing_list']);
+              const delivered = shippingStatus === 'delivered' || shippingSubstatus === 'delivered' || Boolean(shipment.date_delivered || shipment.status_history?.date_delivered);
+              const dispatched = ['shipped', 'in_transit'].includes(shippingStatus) || ['shipped', 'in_transit'].includes(shippingSubstatus);
+              const isBlockedShipping = blockedShippingStates.has(shippingStatus) || blockedShippingStates.has(shippingSubstatus) || delivered || dispatched;
               const alreadySeparated = !isCancelled && !isBlockedShipping && printedSubstatuses.has(shippingSubstatus);
               const eligibleOrder = ['paid', 'confirmed'].includes(orderStatus);
               const needsSeparation = !isCancelled && eligibleOrder && Boolean(orderShipping.id) && !isBlockedShipping && !alreadySeparated;
               // Na fila de hoje, etiquetas impressas e cancelamentos só entram se
               // a última atualização do pedido ocorreu na data local atual.
-              const cancelledDate = shipment.status_history?.date_cancelled || order.date_last_updated || order.date_closed;
-              const separatedDate = shipment.status_history?.date_ready_to_ship || shipment.last_updated || order.date_last_updated || order.date_closed;
+              const cancelledDate = shipment.status_history?.date_cancelled || shipment.date_cancelled || order.date_last_updated || order.date_closed;
+              // Para 'separado', priorizamos a data em que o envio ficou pronto para despacho.
+              // Não usamos a data de criação da venda para decidir se pertence à coleta de hoje.
+              const separatedDate = shipment.status_history?.date_ready_to_ship || shipment.date_ready_to_ship || shipment.last_updated || order.date_last_updated;
               const cancelledToday = isCancelled && localDay(cancelledDate) === todayLocalDate;
               const separatedToday = alreadySeparated && localDay(separatedDate) === todayLocalDate;
               const showInOperationsQueue = !todayOnly || needsSeparation || separatedToday || cancelledToday;
