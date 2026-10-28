@@ -59,7 +59,10 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
   }
 
   function scopedMenuAllowed(req, menu) {
-    return req.portalRole !== 'support_agent' || (Array.isArray(req.supportAgent?.menu_permissions) && req.supportAgent.menu_permissions.includes(menu));
+    if (req.portalRole !== 'support_agent') return true;
+    const menus = Array.isArray(req.supportAgent?.menu_permissions) ? req.supportAgent.menu_permissions : [];
+    // Compatibilidade com atendentes criados antes da permissão separada de Pedidos.
+    return menus.includes(menu) || (menu === 'orders' && menus.includes('sales'));
   }
 
   async function getAgentAllowedLicenses(agent) {
@@ -536,7 +539,7 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
       const days = Math.max(1, Math.min(90, Number.parseInt(req.query.days, 10) || 30));
       const offsetDays = Math.max(0, Math.min(180, Number.parseInt(req.query.offsetDays, 10) || 0));
       const summaryOnly = req.query.summaryOnly === '1';
-      if (!scopedMenuAllowed(req, 'sales')) return res.status(403).json({ ok: false, error: 'menu_not_allowed', message: 'O administrador não liberou Vendas para esta conta.' });
+      if (!scopedMenuAllowed(req, todayOnly ? 'orders' : 'sales')) return res.status(403).json({ ok: false, error: 'menu_not_allowed', message: todayOnly ? 'O administrador não liberou Pedidos para esta conta.' : 'O administrador não liberou Analytics de Vendas para esta conta.' });
       const companies = new Map();
       if (req.portalRole === 'support_agent') {
         const ids = req.agentAllowedLicenses.map(l => String(l.id));
