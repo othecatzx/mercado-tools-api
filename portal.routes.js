@@ -716,6 +716,23 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
             };
             await Promise.all(Array.from({ length: Math.min(8, queueItemIds.length) }, () => itemWorker()));
 
+            // Histórico persistente da fila: só um pedido que já apareceu em
+            // 'Precisa separar' ou 'Já separados' pode entrar em 'Cancelados'.
+            // Consultamos o histórico antes de classificar o status atual.
+            const queueHistoryByOrder = new Map();
+            const historyOrderIds = [...new Set(orders.map(order => String(order.id || '')).filter(Boolean))];
+            for (let i = 0; i < historyOrderIds.length; i += 500) {
+              const batch = historyOrderIds.slice(i, i + 500);
+              const { data: historyRows, error: historyError } = await supabase
+                .from('ml_order_queue_history')
+                .select('order_id,was_in_queue,last_order_status,cancelled_at')
+                .eq('company_id', account.company_id)
+                .in('order_id', batch);
+              if (historyError) throw new Error('Falha ao consultar histórico da fila. Execute a migration ml_order_queue_history.sql no Supabase. ' + historyError.message);
+              for (const row of historyRows || []) queueHistoryByOrder.set(String(row.order_id), row);
+            }
+            const queueHistoryUpserts = [];
+
             for (const order of orders) {
               const orderShipping = order.shipping || {};
               const shipment = shipmentDetails.get(String(orderShipping.id || '')) || {};
@@ -738,9 +755,6 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
               const blockedShippingStates = new Set(['in_hub', 'buffered']);
               const cancellationStatuses = new Set(['cancelled', 'canceled']);
               const cancellationSubstatuses = new Set(['cancelled_by_seller', 'cancelled_by_buyer']);
-              const orderStatusDetail = String(order.status_detail || '').toLowerCase();
-              const explicitOrderCancellation = cancellationSubstatuses.has(orderStatusDetail) || orderStatusDetail.includes('cancelled_by_buyer') || orderStatusDetail.includes('cancelled_by_seller');
-              const droppedOff = shippingStatus === 'dropped_off' || shippingSubstatus === 'dropped_off';
               // in_packing_list significa que o pacote já está em preparação/a caminho;
               // nunca deve aparecer como 'Precisa separar'.
               const alreadyInPackingList = shippingStatus === 'in_packing_list' || shippingSubstatus === 'in_packing_list';
@@ -753,17 +767,19 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
                 || Boolean(shipping.date_delivered || shipment.date_delivered || shipping.status_history?.date_delivered || shipment.status_history?.date_delivered);
               const dispatched = ['shipped', 'in_transit'].includes(shippingStatus);
               const isForwardShipment = shipmentType !== 'return';
-              // Não basta order.status=cancelled: pedidos com devolução/reembolso,
-              // reclamação ou envio ainda ativo não devem virar "Cancelado" na fila.
-              // Exigimos também confirmação de cancelamento no envio ou no detalhe.
-              const hasExplicitCancellation = cancellationStatuses.has(shippingStatus)
-                || cancellationSubstatuses.has(shippingSubstatus) || explicitOrderCancellation
-                || Boolean(shipment.status_history?.date_cancelled || shipping.status_history?.date_cancelled || shipment.date_cancelled || shipping.date_cancelled);
-              // O pedido cancelado é a fonte principal. O envio pode confirmar pelo status,
-              // substatus ou histórico; não exigimos um único código específico da API.
-              const isCancelled = cancellationStatuses.has(orderStatus) && hasExplicitCancellation
+              // Cancelado operacional é uma mudança de status: o pedido precisa
+              // ter sido visto anteriormente em uma das duas filas ativas.
+              // Não dependemos de substatus/data do envio, que frequentemente não
+              // vêm preenchidos pela API do Mercado Livre.
+              const previousQueueHistory = queueHistoryByOrder.get(String(order.id || ''));
+              const wasPreviouslyInQueue = previousQueueHistory?.was_in_queue === true
+                && !cancellationStatuses.has(String(previousQueueHistory.last_order_status || '').toLowerCase());
+              const cancellationAlreadyRecorded = previousQueueHistory?.was_in_queue === true
+                && Boolean(previousQueueHistory.cancelled_at);
+              const isCancelled = cancellationStatuses.has(orderStatus)
+                && (wasPreviouslyInQueue || cancellationAlreadyRecorded)
                 && !hasReturnOrClaim && !delivered && !dispatched;
-              const isBlockedShipping = !isForwardShipment || hasReturnOrClaim || droppedOff || blockedShippingStates.has(shippingSubstatus) || delivered || dispatched
+              const isBlockedShipping = !isForwardShipment || hasReturnOrClaim || blockedShippingStates.has(shippingSubstatus) || delivered || dispatched
                 || cancellationStatuses.has(shippingStatus);
               const eligibleOrder = ['paid', 'confirmed'].includes(orderStatus);
               // Etiquetas impressas permanecem na fila até o envio ser despachado.
@@ -778,11 +794,20 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
                 && preparationStatus && !isBlockedShipping && !alreadySeparated;
               // A fila cobre a janela de 2 meses usada na página do Mercado Livre.
               // Etiquetas impressas antigas continuam visíveis enquanto não despachadas.
-              const cancelledDate = shipment.status_history?.date_cancelled || shipping.status_history?.date_cancelled
-                || shipment.date_cancelled || shipping.date_cancelled || order.date_last_updated || order.date_created;
-              const cancelledInWindow = isCancelled && Boolean(cancelledDate)
-                && localDay(cancelledDate) >= localDay(from) && localDay(cancelledDate) <= localDay(to);
-              const showInOperationsQueue = !droppedOff && (needsSeparation || alreadySeparated || cancelledInWindow);
+              const cancelledInWindow = isCancelled;
+              const showInOperationsQueue = !todayOnly || needsSeparation || alreadySeparated || cancelledInWindow;
+              // Guarda o histórico somente quando o pedido realmente entrou na
+              // fila de separação. Ao cancelar, preserva o registro e marca o status.
+              if (needsSeparation || alreadySeparated || isCancelled) {
+                queueHistoryUpserts.push({
+                  company_id: account.company_id,
+                  order_id: String(order.id),
+                  was_in_queue: true,
+                  last_order_status: orderStatus,
+                  last_seen_at: new Date().toISOString(),
+                  cancelled_at: isCancelled ? (previousQueueHistory?.cancelled_at || new Date().toISOString()) : null
+                });
+              }
               const statusLabels = { paid: 'Pago', confirmed: 'Confirmado', payment_required: 'Pagamento pendente', payment_in_process: 'Pagamento em análise', cancelled: 'Cancelado' };
               const separationLabel = isCancelled ? 'Cancelado' : alreadySeparated ? 'Separado — etiqueta impressa' : needsSeparation ? 'Precisa separar' : (statusLabels[orderStatus] || order.status || 'Em andamento');
               const shipmentSubstatusLabels = { ready_to_print: 'Etiqueta pronta para impressão', invoice_pending: 'Pronta para emitir NF-e da venda', printed: 'Etiqueta impressa', waiting_for_label_generation: 'Aguardando geração da etiqueta', ready_to_ship: 'Pronto para envio' };
@@ -821,6 +846,12 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
                   units: orderProducts.reduce((sum, product) => sum + product.quantity, 0)
                 });
               }
+            }
+            if (queueHistoryUpserts.length) {
+              const { error: historyUpsertError } = await supabase
+                .from('ml_order_queue_history')
+                .upsert(queueHistoryUpserts, { onConflict: 'company_id,order_id' });
+              if (historyUpsertError) throw new Error('Falha ao salvar histórico da fila. Confira a migration ml_order_queue_history.sql no Supabase. ' + historyUpsertError.message);
             }
           }
           const accountQueueOrders = todayOnly ? allOrders.filter(order => String(order.company_id) === String(account.company_id)) : orders;
