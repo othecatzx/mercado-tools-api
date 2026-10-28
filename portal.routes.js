@@ -579,14 +579,16 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
         }
       }
       const now = Date.now();
-      let to, from;
+      let to, from, todayLocalDate = null;
       if (todayOnly) {
-        // O painel operacional usa o dia civil de São Paulo, não o dia UTC do servidor.
+        // Usa o dia civil inteiro de São Paulo. A busca do Mercado Livre
+        // considera o filtro de data até a hora e pode descartar minutos/segundos;
+        // por isso consultamos até o fim do dia e filtramos localmente.
         const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date(now));
         const dateParts = Object.fromEntries(parts.map(part => [part.type, part.value]));
-        const localDate = `${dateParts.year}-${dateParts.month}-${dateParts.day}`;
-        from = new Date(`${localDate}T00:00:00-03:00`).toISOString();
-        to = new Date(now).toISOString();
+        todayLocalDate = `${dateParts.year}-${dateParts.month}-${dateParts.day}`;
+        from = `${todayLocalDate}T00:00:00.000-03:00`;
+        to = `${todayLocalDate}T23:59:59.999-03:00`;
       } else {
         to = new Date(now - offsetDays * 86400000).toISOString();
         from = new Date(now - (offsetDays + days) * 86400000).toISOString();
@@ -621,12 +623,12 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
           const pageSize = 50;
           const maxOffsetRange = 10000;
           const orderMap = new Map();
-          const fetchOrdersRange = async (rangeFrom, rangeTo, depth = 0) => {
+          const fetchOrdersRange = async (rangeFrom, rangeTo, depth = 0, dateFilter = 'order.date_created') => {
             const fetchPage = async (offset) => {
               const params = new URLSearchParams({
                 seller: String(account.ml_user_id),
-                'order.date_created.from': rangeFrom,
-                'order.date_created.to': rangeTo,
+                [`${dateFilter}.from`]: rangeFrom,
+                [`${dateFilter}.to`]: rangeTo,
                 limit: String(pageSize),
                 offset: String(offset),
                 sort: 'date_desc'
@@ -645,8 +647,8 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
             const endMs = new Date(rangeTo).getTime();
             if (rangeTotal > maxOffsetRange && depth < 16 && endMs - startMs > 1000) {
               const middle = new Date(Math.floor((startMs + endMs) / 2)).toISOString();
-              await fetchOrdersRange(rangeFrom, middle, depth + 1);
-              await fetchOrdersRange(middle, rangeTo, depth + 1);
+              await fetchOrdersRange(rangeFrom, middle, depth + 1, dateFilter);
+              await fetchOrdersRange(middle, rangeTo, depth + 1, dateFilter);
               return;
             }
 
@@ -663,8 +665,21 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
               if ((page.results || []).length < pageSize) break;
             }
           };
-          await fetchOrdersRange(from, to);
-          const orders = [...orderMap.values()];
+          // date_created cobre as vendas iniciadas hoje; date_closed também
+          // captura pedidos cujo checkout/fechamento ocorreu hoje, mesmo que
+          // tenham sido criados antes da virada do dia. O Map elimina duplicados.
+          await fetchOrdersRange(from, to, 0, 'order.date_created');
+          if (todayOnly) await fetchOrdersRange(from, to, 0, 'order.date_closed');
+          let orders = [...orderMap.values()];
+          if (todayOnly && todayLocalDate) {
+            const localDay = value => {
+              if (!value) return '';
+              const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date(value));
+              const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
+              return `${values.year}-${values.month}-${values.day}`;
+            };
+            orders = orders.filter(order => localDay(order.date_created) === todayLocalDate || localDay(order.date_closed) === todayLocalDate);
+          }
           if (!summaryOnly) {
             // O /orders/search frequentemente retorna apenas o ID do envio. Consultamos
             // /shipments/{id} para obter status e substatus reais da etiqueta.
