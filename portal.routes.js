@@ -798,7 +798,7 @@ const codes = [...companies.entries()].map(([companyId, company]) => {
                 'label_printed_by_seller', 'printed_by_seller',
                 'ready_to_pickup', 'ready_for_pickup', 'waiting_for_pickup', 'ready_to_collect'
               ]);
-              const blockedShippingStates = new Set(['in_hub', 'buffered']);
+              const blockedShippingStates = new Set(['in_hub', 'buffered', 'dropped_off']);
               const cancellationStatuses = new Set(['cancelled', 'canceled']);
               const cancellationSubstatuses = new Set(['cancelled_by_seller', 'cancelled_by_buyer']);
               // in_packing_list significa que o pacote já está em preparação/a caminho;
@@ -812,8 +812,8 @@ const codes = [...companies.entries()].map(([companyId, company]) => {
               const delivered = shippingStatus === 'delivered' || shippingSubstatus === 'delivered'
                 || Boolean(shipping.date_delivered || shipment.date_delivered || shipping.status_history?.date_delivered || shipment.status_history?.date_delivered);
               const dispatched =
-  ['picked_up', 'shipped', 'in_transit'].includes(shippingStatus) ||
-  ['picked_up', 'shipped', 'in_transit'].includes(shippingSubstatus);
+  ['picked_up', 'shipped', 'in_transit', 'dropped_off'].includes(shippingStatus) ||
+  ['picked_up', 'shipped', 'in_transit', 'dropped_off'].includes(shippingSubstatus);
               const isForwardShipment = shipmentType !== 'return';
               // Cancelado operacional é uma mudança de status: o pedido precisa
               // ter sido visto anteriormente em uma das duas filas ativas.
