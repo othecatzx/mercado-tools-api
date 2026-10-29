@@ -286,12 +286,59 @@ function pageHead(eyebrow,title,desc,action=''){return `<div class="page-head"><
 function stat(label,value,icon,foot){return `<div class="stat-card"><div class="stat-top"><span>${label}</span><span class="stat-icon">${icon}</span></div><div class="stat-number">${value}</div><div class="stat-foot">${foot}</div></div>`}
 function licenseCard(l){const company=firstCompanyName(l.company?.nome||l.company||'Empresa');return `<article class="license-card"><div class="license-top"><div class="company-logo">${esc(initials(company))}</div><div class="license-title"><h3>${esc(company)}</h3><p>Licença ML SH Support</p></div>${statusBadge(l.status,l.vencimento)}</div><div class="license-key"><code>${esc(l.chave||'Chave não disponível')}</code><button class="mini-btn" data-copy="${esc(l.chave||'')}">▢ Copiar</button></div><div class="license-meta"><div><div class="meta-label">Vencimento</div><div class="meta-value">${fmtDate(l.vencimento)}</div></div><div><div class="meta-label">Adicionada ao portal</div><div class="meta-value">${fmtDate(l.added_at||l.created_at)}</div></div></div></article>`}
 function emptyState(icon,title,desc,button=''){return `<div class="empty"><div class="empty-icon">${icon}</div><h3>${title}</h3><p>${desc}</p>${button}</div>`}
+
+
 function codesMarkup(){
  const companies=portalCodes;
+
  if(!companies.length) return `<div class="panel">${emptyState('▤','Nenhuma empresa vinculada','Adicione as licenças das empresas para visualizar os códigos da Agência.')}</div>`;
+
  const configured=companies.filter(c=>c.code);
- return `<div class="panel"><div class="panel-head"><div><h3>Códigos das suas lojas</h3><div class="small muted">Mostramos todas as empresas vinculadas às suas licenças.</div></div>${configured.length?'<button class="btn btn-primary" data-copy-all>▢ Copiar todos</button>':''}</div><div class="code-grid">${companies.map(c=>{const name=firstCompanyName(c.name);return `<div class="code-card"><div class="code-logo">${esc(initials(name))}</div><div class="code-main"><b>${esc(name)}</b><code>${c.code?esc(c.code):'Aguardando código'}</code></div>${c.code?`<button class="mini-btn" data-copy="${esc(c.code)}">Copiar</button>`:''}</div>`}).join('')}</div></div>`;
+
+ return `<div class="panel">
+   <div class="panel-head">
+     <div>
+       <h3>Códigos das suas lojas</h3>
+       <div class="small muted">Mostramos todas as empresas vinculadas às suas licenças.</div>
+     </div>
+     ${configured.length?'<button class="btn btn-primary" data-copy-all>▢ Copiar todos</button>':''}
+   </div>
+   <div class="code-grid">
+     ${companies.map(c=>{
+       const name=firstCompanyName(c.name);
+
+       const updatedAt=c.updated_at
+         ? new Date(c.updated_at).toLocaleString('pt-BR',{
+             day:'2-digit',
+             month:'2-digit',
+             year:'numeric',
+             hour:'2-digit',
+             minute:'2-digit',
+             timeZone:'America/Sao_Paulo'
+           })
+         : null;
+
+       return `
+         <div class="code-card">
+           <div class="code-logo">${esc(initials(name))}</div>
+           <div class="code-main">
+             <b>${esc(name)}</b>
+             <code>${c.code?esc(c.code):'Aguardando código'}</code>
+             ${c.code && updatedAt
+               ? `<div class="small muted" style="margin-top:6px;font-size:11px">
+                    Última atualização: ${esc(updatedAt)}
+                  </div>`
+               : ''}
+           </div>
+           ${c.code?`<button class="mini-btn" data-copy="${esc(c.code)}">Copiar</button>`:''}
+         </div>
+       `;
+     }).join('')}
+   </div>
+ </div>`;
 }
+
+
 function renderDeviceRows(){
  const tbody=$('devicesTableBody');if(!tbody)return;
  const now=Date.now();
