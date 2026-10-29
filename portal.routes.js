@@ -297,19 +297,31 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
       if (capturedError) throw capturedError;
 
       const latestCodeByCompany = new Map();
-      for (const row of capturedRows || []) {
-        const key = String(row.company_id);
-        if (!latestCodeByCompany.has(key) && String(row.code || '').trim()) {
-          latestCodeByCompany.set(key, String(row.code).trim());
-        }
-      }
 
-      const codes = [...companies.entries()].map(([companyId, company]) => ({
-        company_id: company.id,
-        name: company.nome || 'Empresa',
-        code: latestCodeByCompany.get(companyId) || String(company.codigo_ml || '').trim() || null,
-        status: company.status || 'unknown'
-      }));
+for (const row of capturedRows || []) {
+  const key = String(row.company_id);
+
+  if (!latestCodeByCompany.has(key) && String(row.code || '').trim()) {
+    latestCodeByCompany.set(key, {
+      code: String(row.code).trim(),
+      updated_at: row.updated_at || row.code_date || null
+    });
+  }
+}
+
+const codes = [...companies.entries()].map(([companyId, company]) => {
+  const latest = latestCodeByCompany.get(companyId);
+
+  return {
+    company_id: company.id,
+    name: company.nome || 'Empresa',
+    code: latest?.code || String(company.codigo_ml || '').trim() || null,
+    updated_at: latest?.updated_at || null,
+    status: company.status || 'unknown'
+  };
+});
+
+
       return res.json({ ok: true, codes });
     } catch (error) {
       console.error('Portal codes error:', error.message);
