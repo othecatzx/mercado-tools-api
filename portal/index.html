@@ -269,6 +269,34 @@ async function refreshDashboard(){
   dashboard=d;portalCodes=Array.isArray(c.codes)?c.codes:[];
   return d
 }
+
+
+async function refreshCodes(){
+  const btn = $('refreshCodes');
+  if(btn){
+    btn.disabled = true;
+    btn.textContent = '↻ Atualizando...';
+  }
+
+  try {
+    const c = await api('/api/portal/codes');
+
+    portalCodes = Array.isArray(c.codes) ? c.codes : [];
+
+    renderPage();
+    toast('Códigos atualizados com sucesso!');
+  } catch(error) {
+    toast(error.message || 'Erro ao atualizar códigos.');
+  } finally {
+    const button = $('refreshCodes');
+    if(button){
+      button.disabled = false;
+      button.textContent = '↻ Atualizar códigos';
+    }
+  }
+}
+
+
 async function boot(){if(!token){showAuth();return}try{const r=await api('/api/portal/me');currentUser=r.user;await refreshDashboard();showApp()}catch(e){token='';localStorage.removeItem('mlsh_portal_token');showAuth()}}
 
 function logout(show=true){token='';currentUser=null;localStorage.removeItem('mlsh_portal_token');if(show)toast('Você saiu da sua conta.');showAuth()}
@@ -301,8 +329,11 @@ function codesMarkup(){
        <h3>Códigos das suas lojas</h3>
        <div class="small muted">Mostramos todas as empresas vinculadas às suas licenças.</div>
      </div>
+     <div style="display:flex;gap:8px;align-items:center">
+    <button class="btn btn-secondary" id="refreshCodes">↻ Atualizar códigos</button>
      ${configured.length?'<button class="btn btn-primary" data-copy-all>▢ Copiar todos</button>':''}
    </div>
+</div>
    <div class="code-grid">
      ${companies.map(c=>{
        const name=firstCompanyName(c.name);
@@ -584,6 +615,7 @@ async function showChatAudit(c){try{const r=await api('/api/portal/atendimento/c
 function exportChatHistory(c){fetch('/api/portal/atendimento/chat/history.csv?license_id='+encodeURIComponent(c.license_id)+'&conversation_id='+encodeURIComponent(c.id),{headers:{Authorization:'Bearer '+token}}).then(async r=>{if(!r.ok){const d=await r.json().catch(()=>({}));throw new Error(d.message||'Não foi possível exportar o histórico.')}const blob=await r.blob(),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='historico-atendimento.csv';a.click();URL.revokeObjectURL(a.href)}).catch(e=>toast(e.message))}
 
 function bindDynamicActions(){if($('shippingRefresh'))$('shippingRefresh').onclick=loadShippingItems;if($('shippingDiagnose'))$('shippingDiagnose').onclick=diagnoseShippingItem;if($('shippingSelectAll'))$('shippingSelectAll').onchange=e=>{shippingSelected=new Set(e.target.checked?(shippingData?.items||[]).filter(i=>!i.mandatory_free_shipping).map(i=>i.id):[]);renderPage()};document.querySelectorAll('[data-shipping-item]').forEach(c=>c.onchange=()=>{if(c.checked)shippingSelected.add(c.dataset.shippingItem);else shippingSelected.delete(c.dataset.shippingItem);renderPage()});if($('shippingApply'))$('shippingApply').onclick=applyShippingChanges;if(currentPage==='team'){initTeamPage()}if(currentPage==='chat')initChatPage();document.querySelectorAll('[data-add]').forEach(b=>b.onclick=openAddLicense);document.querySelectorAll('[data-go]').forEach(b=>b.onclick=()=>navigate(b.dataset.go));document.querySelectorAll('[data-copy]').forEach(b=>b.onclick=()=>copyText(b.dataset.copy));document.querySelectorAll('[data-copy-all]').forEach(b=>b.onclick=()=>copyText('Códigos ML\n\n'+portalCodes.filter(c=>c.code).map(c=>`${firstCompanyName(c.name)}: ${c.code}`).join('\n')));
+if($('refreshCodes')) $('refreshCodes').onclick=refreshCodes;
  if($('deviceCompanyFilter'))$('deviceCompanyFilter').onchange=e=>{deviceFilters.company=e.target.value;renderDeviceRows()};
  if($('deviceAccessFilter'))$('deviceAccessFilter').onchange=e=>{deviceFilters.lastAccess=e.target.value;renderDeviceRows()};
  if($('deviceSortFilter'))$('deviceSortFilter').onchange=e=>{deviceFilters.sort=e.target.value;renderDeviceRows()};
