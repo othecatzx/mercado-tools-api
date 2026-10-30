@@ -11,6 +11,10 @@ const { createClient } = require("@supabase/supabase-js");
 require("dotenv").config();
 const app = express();
 
+// O Render encaminha o IP original em X-Forwarded-For.
+// Confia apenas no proxy imediato para o express-rate-limit identificar o cliente.
+app.set('trust proxy', 1);
+
 const path = require("path");
 
 console.log("ASAAS URL:", process.env.ASAAS_API_URL);
@@ -3907,6 +3911,83 @@ async function validarAcessoMercadoLivre(chave, device_id) {
 // ============================================================
 // 🔬 RAIO-X DO ANÚNCIO
 // ============================================================
+
+// ============================================================
+// CONSULTA PÚBLICA DE ANÚNCIOS — busca e página do produto
+// Não depende do OAuth da loja conectada; exige apenas licença ML Support.
+// ============================================================
+app.get("/api/mercadolivre/public-item", async (req, res) => {
+    try {
+        const { chave, device_id, item_id } = req.query;
+        if (!item_id || !/^MLB\d+$/i.test(String(item_id).trim())) {
+            return res.status(400).json({ ok: false, message: "Informe um MLB válido." });
+        }
+        await validarAcessoMercadoLivre(chave, device_id);
+        const itemId = String(item_id).trim().toUpperCase();
+
+        // Dados básicos de anúncio são públicos na API do Mercado Livre.
+        const itemResponse = await axios.get(`https://api.mercadolibre.com/items/${itemId}`, { timeout: 12000 });
+        const item = itemResponse.data || {};
+        let seller = {};
+        try {
+            const sellerResponse = await axios.get(`https://api.mercadolibre.com/users/${item.seller_id}`, { timeout: 8000 });
+            seller = sellerResponse.data || {};
+        } catch (e) {
+            console.warn("Consulta pública de vendedor indisponível:", e.response?.status || e.message);
+        }
+
+        let tarifa = null;
+        try {
+            const categoryId = item.category_id;
+            if (categoryId && item.price != null && item.listing_type_id) {
+                const pricesResponse = await axios.get("https://api.mercadolibre.com/sites/MLB/listing_prices", {
+                    params: { price: item.price, category_id: categoryId, listing_type_id: item.listing_type_id },
+                    timeout: 8000
+                });
+                const priceRows = Array.isArray(pricesResponse.data) ? pricesResponse.data : [];
+                const matching = priceRows.find(x => x.listing_type_id === item.listing_type_id) || priceRows[0];
+                if (matching) tarifa = matching.sale_fee_amount ?? matching.sale_fee_details?.percentage_fee ?? null;
+            }
+        } catch (e) {
+            console.warn("Tarifa pública indisponível:", e.response?.status || e.message);
+        }
+
+        const attrs = Array.isArray(item.attributes) ? item.attributes : [];
+        const gtinAttr = attrs.find(a => ["GTIN", "EAN", "UPC"].includes(String(a.id || "").toUpperCase()));
+        const address = item.seller_address || {};
+        const city = address.city?.name || address.city_name || "";
+        const state = address.state?.name || address.state_name || "";
+        const shipping = item.shipping || {};
+
+        return res.json({
+            ok: true,
+            item: {
+                id: item.id,
+                title: item.title,
+                price: item.price,
+                currency_id: item.currency_id,
+                seller_id: item.seller_id,
+                seller: seller.nickname || seller.first_name || null,
+                location: [city, state].filter(Boolean).join(" - ") || null,
+                gtin: gtinAttr?.value_name || gtinAttr?.values?.[0]?.name || null,
+                tariff_amount: typeof tarifa === "number" ? tarifa : null,
+                tariff_percentage: typeof tarifa === "number" && tarifa > 0 && tarifa < 100 ? tarifa : null,
+                shipping: {
+                    free_shipping: shipping.free_shipping === true,
+                    logistic_type: shipping.logistic_type || null,
+                    mode: shipping.mode || null
+                },
+                permalink: item.permalink
+            }
+        });
+    } catch (error) {
+        const status = error.statusCode || error.response?.status || 500;
+        return res.status(status).json({
+            ok: false,
+            message: error.response?.data?.message || error.message || "Não foi possível consultar o anúncio público."
+        });
+    }
+});
 
 app.get("/api/mercadolivre/rx", async (req, res) => {
 
