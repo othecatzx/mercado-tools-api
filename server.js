@@ -25,7 +25,8 @@ console.log(
         : "NÃO DEFINIDA"
 );
 app.use(express.json({
-    type: ["application/json", "application/*+json", "text/plain"]
+    type: ["application/json", "application/*+json", "text/plain"],
+    verify: (req, res, buf) => { if (req.originalUrl?.startsWith("/api/webhooks/bling/")) req.rawBody = Buffer.from(buf); }
 }));
 app.use(cors());
 
@@ -49,6 +50,7 @@ const supabaseEan = createClient(
 // Portal SaaS do cliente: cadastro, login, vinculação de licenças e painel.
 require("./portal.routes")(app, { supabase, jwt, bcrypt });
 require("./atendimento.routes")(app, { supabase, jwt, bcrypt });
+require("./bling-multi.routes")(app, { supabase, jwt });
 
 function verificarAdmin(req, res, next) {
     try {
@@ -2607,7 +2609,8 @@ app.patch("/api/admin/devices/:id/name", verificarAdmin, async (req, res) => {
 });
 
 app.use(express.json({
-    type: ["application/json", "application/*+json", "text/plain"]
+    type: ["application/json", "application/*+json", "text/plain"],
+    verify: (req, res, buf) => { if (req.originalUrl?.startsWith("/api/webhooks/bling/")) req.rawBody = Buffer.from(buf); }
 }));
 
 app.post("/api/webhooks/asaas", async (req, res) => {
