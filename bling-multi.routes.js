@@ -61,12 +61,21 @@ module.exports = function registerBlingMulti(app,{supabase,jwt}) {
         if(!p){failures.push({product_id:row.product_id,reason:'Produto não encontrado na resposta'});continue;}
         const sku=String(p.codigo||'').trim();
         const imageUrl=typeof p.imagemURL==='string'?p.imagemURL:null;
-        await db(supabase.from('bling_stock_entries').update({
+        // Retornar a linha alterada: UPDATE sem .select() pode retornar sucesso
+        // mesmo quando nenhuma linha foi modificada (por exemplo, por RLS).
+        const updated=await db(supabase.from('bling_stock_entries').update({
           sku:sku||null,
           product_name:p.nome||null,
           image_url:imageUrl
-        }).eq('id',row.id).eq('bling_connection_id',id));
-        if(sku)enriched++;else missingSku++;
+        }).eq('id',row.id).eq('bling_connection_id',id)
+          .select('id,sku,product_name,image_url').maybeSingle());
+        if(!updated){
+          failures.push({product_id:row.product_id,reason:'UPDATE no Supabase não retornou registro; verifique RLS, permissões e filtros'});
+          continue;
+        }
+        if(sku && updated.sku===sku) enriched++;
+        else if(!sku) missingSku++;
+        else failures.push({product_id:row.product_id,reason:'SKU retornado pelo Bling não foi persistido no Supabase'});
       }catch(e){
         const status=e.response?.status||null;
         const reason=e.response?.data?.error?.description||e.response?.data?.error?.message||e.message;
