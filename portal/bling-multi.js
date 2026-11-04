@@ -1,5 +1,7 @@
 /* Módulo aditivo das telas Bling; preserva a navegação e autenticação existentes. */
 (() => {
+// BLING_FRONT_PERMISSIONS_V1
+function blingCan(p){return currentUser?.role!=='support_agent'||(currentUser.bling_permissions||[]).includes(p);}
 const apiB=(path,method='GET',body)=>api('/api/portal/bling'+path,{method,...(body?{body:JSON.stringify(body)}:{})});
 let connections=[], entries=[],templates=[],chosen=new Set(),editing=null,selectedConn='';
 const baseElements=()=>[{type:'sku',x:2,y:2,w:24,h:5,fontSize:7,bold:true},{type:'qr',x:2,y:8,w:15,h:15},{type:'date',x:19,y:17,w:19,h:5,fontSize:7}];
@@ -30,12 +32,13 @@ async function getConnections(){connections=(await apiB('/connections')).connect
 function selector(id='blingFilter'){return `<select class="filter-control" id="${id}"><option value="">Todas as contas</option>${connections.filter(c=>c.status==='connected').map(c=>`<option value="${esc(c.id)}" ${selectedConn===c.id?'selected':''}>${esc(c.name)}</option>`).join('')}</select>`;}
 async function integrations(){
   content(pageHead('CONFIGURAÇÕES · INTEGRAÇÕES','Bling','Cada conexão tem seus próprios tokens; o vínculo com webhooks ocorre automaticamente quando verificado.',`<button class="btn btn-primary" id="blingAdd">＋ Conectar Bling</button>`)+`<div class="panel" id="blingList">Carregando conexões…</div>`);
-  $('blingAdd').onclick=()=>connect();
+  if(currentUser?.role==='support_agent'||!blingCan('bling.connections.manage'))$('blingAdd').remove();else $('blingAdd').onclick=()=>connect();
   try{
     await getConnections();
     $('blingList').innerHTML=connections.length?connections.map(c=>`<article style="padding:18px 0;border-bottom:1px solid var(--line)">
       <h3>${esc(c.name)}</h3><p class="muted">${c.status==='connected'?'Conectada':'Desconectada'} · Webhook: ${c.webhook_company_id||c.company_id?'Vinculado automaticamente':'Aguardando identificação no primeiro evento de estoque'} · Última sincronização: ${fmt(c.last_sync_at)}</p>
       <div class="actions"><button class="btn btn-ghost" data-rename="${esc(c.id)}">Editar nome</button><button class="btn btn-ghost" data-reconnect="${esc(c.id)}">Reconectar</button><button class="btn btn-ghost" data-disconnect="${esc(c.id)}">Desconectar</button></div></article>`).join(''):'Nenhuma conta conectada.';
+    if(!blingCan('bling.connections.manage'))document.querySelectorAll('[data-rename],[data-reconnect],[data-disconnect]').forEach(b=>b.remove());
     document.querySelectorAll('[data-rename]').forEach(b=>b.onclick=async()=>{
       const c=connections.find(x=>x.id===b.dataset.rename);
       const values=await blingDialog({title:'Editar nome da conexão',description:'O nome é apenas para organização no ML Support. Não modifica os dados da empresa no Bling.',fields:[{name:'name',label:'Nome da conexão',value:c.name,required:true}]});
@@ -52,7 +55,7 @@ async function integrations(){
   }catch(e){$('blingList').textContent=e.message;}
 }
 async function connect(id){try{const r=await apiB('/connect','POST',id?{id}:{});location.href=r.url;}catch(e){error(e)}}
-async function stock(){content(pageHead('ESTOQUE','Entradas de Estoque','Movimentações físicas de entrada recebidas pelos webhooks.',`<button class="btn btn-primary" id="generateLabels">Gerar etiquetas</button>`)+`<div class="panel"><div class="actions" style="margin-bottom:16px">${selector()}<input class="filter-control" id="blingSearch" placeholder="Pesquisar por SKU ou nome"><button class="btn btn-ghost" id="blingRefresh">↻ Atualizar</button></div><div id="stockList">Carregando…</div></div>`);$('blingFilter').onchange=e=>{selectedConn=e.target.value;stock()};$('blingSearch').oninput=e=>renderEntries(e.target.value);$('blingRefresh').onclick=async()=>{
+async function stock(){content(pageHead('ESTOQUE','Entradas de Estoque','Movimentações físicas de entrada recebidas pelos webhooks.',`<button class="btn btn-primary" id="generateLabels">Gerar etiquetas</button>`)+`<div class="panel"><div class="actions" style="margin-bottom:16px">${selector()}<input class="filter-control" id="blingSearch" placeholder="Pesquisar por SKU ou nome"><button class="btn btn-ghost" id="blingRefresh">↻ Atualizar</button></div><div id="stockList">Carregando…</div></div>`);$('blingFilter').onchange=e=>{selectedConn=e.target.value;stock()};$('blingSearch').oninput=e=>renderEntries(e.target.value);if(!blingCan('bling.products.sync'))$('blingRefresh').remove();else $('blingRefresh').onclick=async()=>{
   const btn=$('blingRefresh');btn.disabled=true;btn.textContent='Sincronizando produtos…';
   const ids=selectedConn?[selectedConn]:connections.filter(c=>c.status==='connected').map(c=>c.id);
   let fixed=0, pending=0;const issues=[];
@@ -73,7 +76,7 @@ async function stock(){content(pageHead('ESTOQUE','Entradas de Estoque','Movimen
     else if(pending)toast('Há '+pending+' produto(s) sem SKU cadastrado no Bling.');
     else toast(fixed?'Produtos sincronizados: '+fixed:'Nenhum produto pendente de sincronização.');
   }catch(e){error(e);await stock();}
-};$('generateLabels').onclick=generate;try{await getConnections();$('blingFilter').innerHTML='<option value="">Todas as contas</option>'+connections.filter(c=>c.status==='connected').map(c=>`<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('');$('blingFilter').value=selectedConn;
+};if(!blingCan('bling.labels.print'))$('generateLabels').remove();else $('generateLabels').onclick=generate;try{await getConnections();$('blingFilter').innerHTML='<option value="">Todas as contas</option>'+connections.filter(c=>c.status==='connected').map(c=>`<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('');$('blingFilter').value=selectedConn;
 entries=(await apiB('/entries'+(selectedConn?'?connection_id='+encodeURIComponent(selectedConn):''))).entries||[];renderEntries('');}catch(e){$('stockList').textContent=e.message;}}
 function renderEntries(search){const q=(search||'').toLowerCase();const visible=entries.filter(e=>(e.sku+' '+e.product_name).toLowerCase().includes(q));$('stockList').innerHTML=`<div style="margin-bottom:12px"><label><input type="checkbox" id="allEntries"> Selecionar todos os resultados</label> <small class="muted">(${visible.length} movimentações)</small></div><div style="overflow:auto"><table style="width:100%;border-collapse:collapse"><thead><tr><th></th><th>Produto</th><th>SKU</th><th>Entrada</th><th>Data / hora</th><th>Conta</th><th>Etiquetas</th></tr></thead><tbody>${visible.map(e=>`<tr style="border-top:1px solid var(--line)"><td><input type="checkbox" data-entry="${e.id}" ${chosen.has(e.id)?'checked':''}></td><td style="padding:10px">${e.image_url&&/^https:\/\//i.test(e.image_url)?`<img alt="" src="${esc(e.image_url)}" style="width:38px;height:38px;object-fit:contain;vertical-align:middle">`:''} ${esc(e.product_name||'Produto não sincronizado')}</td><td>${esc(e.sku||'—')}</td><td>${esc(e.quantity)}</td><td>${fmt(e.occurred_at)}</td><td>${esc(e.bling_connections?.name||'')}</td><td><input type="number" min="1" max="500" value="1" data-count="${e.id}" style="width:65px" aria-label="Quantidade de etiquetas"></td></tr>`).join('')}</tbody></table></div>`;document.querySelectorAll('[data-entry]').forEach(b=>b.onchange=()=>b.checked?chosen.add(b.dataset.entry):chosen.delete(b.dataset.entry));$('allEntries').onchange=e=>{visible.forEach(v=>e.target.checked?chosen.add(v.id):chosen.delete(v.id));renderEntries($('blingSearch').value)};}
 async function generate(){
@@ -304,6 +307,6 @@ function editFields(){
 }
 function drawElements(){labelElementList();labelProperties();renderPreview();}
 async function models(){content(pageHead('CONFIGURAÇÕES','Modelos de Etiquetas','Carregando…'));try{templates=(await apiB('/templates')).templates||[];editing=JSON.parse(JSON.stringify(templates.find(t=>t.is_default)||templates[0]||{name:'Etiqueta padrão',width_mm:40,height_mm:25,elements:baseElements(),is_default:true}));drawEditor();editFields();}catch(e){content(`<div class="alert error">${esc(e.message)}</div>`)}}
-const prior=renderPage;renderPage=function(){if(!['bling-integrations','bling-entries','bling-labels'].includes(currentPage))return prior();if(currentUser?.role==='support_agent'){currentPage='overview';return prior();}if(currentPage==='bling-integrations')integrations();else if(currentPage==='bling-entries')stock();else models();};
+const prior=renderPage;renderPage=function(){if(!['bling-integrations','bling-entries','bling-labels'].includes(currentPage))return prior();if(currentUser?.role==='support_agent'&&!(currentUser.menu_permissions||[]).includes(currentPage)){currentPage='overview';return prior();}if(currentPage==='bling-integrations')integrations();else if(currentPage==='bling-entries')stock();else if(!blingCan('bling.templates.manage'))content('<div class="alert">Você não tem permissão para gerenciar modelos de etiquetas.</div>');else models();};
 if(location.search.includes('bling=connected')){history.replaceState({},'',location.pathname);setTimeout(()=>toast('Conta Bling conectada.'),800)}
 })();

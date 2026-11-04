@@ -80,7 +80,25 @@ module.exports = function registerAtendimentoRoutes(app, { supabase, jwt, bcrypt
     return values.every(v => permissionKeys.has(v)) ? values : null;
   }
 
-  const menuKeys = new Set(['overview','licenses','devices','orders','sales','shipping','codes','team','chat','support','settings']);
+  // BLING_USER_PERMISSIONS_V1 — concedidas somente pelo titular da conta.
+  const blingPermissionKeys=new Set(['bling.entries.view','bling.products.sync','bling.labels.print','bling.templates.manage','bling.connections.manage']);
+  function blingPermissionsValid(values){return Array.isArray(values)&&values.length<=blingPermissionKeys.size&&values.every(v=>blingPermissionKeys.has(v));}
+  async function validateBlingScope(owner, ids){
+    if(!Array.isArray(ids)||ids.length>100||ids.some(v=>!/^[a-f0-9-]{36}$/i.test(String(v))))return false;
+    if(!ids.length)return true;
+    const {data,error}=await supabase.from('bling_connections').select('id').eq('portal_user_id',owner).in('id',ids);
+    if(error)throw error;
+    return (data||[]).length===new Set(ids).size;
+  }
+  function blingMenuDeps(menus,permissions){
+    if((permissions.includes('bling.products.sync')||permissions.includes('bling.labels.print'))&&!permissions.includes('bling.entries.view'))return false;
+    if(permissions.includes('bling.entries.view')&&!menus.includes('bling-entries'))return false;
+    if(permissions.includes('bling.templates.manage')&&!menus.includes('bling-labels'))return false;
+    if(permissions.includes('bling.connections.manage')&&!menus.includes('bling-integrations'))return false;
+    return true;
+  }
+
+  const menuKeys = new Set(['overview','licenses','devices','orders','sales','shipping','codes','team','chat','support','settings','bling-entries','bling-labels','bling-integrations']);
 
   function agentCanGrantMenu(actor, menu) {
     const ownMenus = Array.isArray(actor?.menuPermissions) ? actor.menuPermissions : [];
@@ -91,6 +109,12 @@ module.exports = function registerAtendimentoRoutes(app, { supabase, jwt, bcrypt
     if (!Array.isArray(input)) return null;
     const values = [...new Set(input.map(v => String(v)))];
     return values.every(v => menuKeys.has(v)) ? values : null;
+  }
+
+  function validateManagementDependencies(menus, management) {
+    if (menus.includes('team') && !management.includes('users.view')) return false;
+    if (!management.length) return true;
+    return menus.includes('team') && management.includes('users.view');
   }
 
   async function writeAudit(licenseId, actorId, action, details = {}) {
@@ -125,7 +149,7 @@ module.exports = function registerAtendimentoRoutes(app, { supabase, jwt, bcrypt
       const license = await getOwnedLicense(req.portalUserId, licenseId);
       if (!license) return res.status(404).json({ ok: false, error: 'license_not_found' });
       const { data, error } = await supabase.from('support_agents')
-        .select('id,license_id,nome,email,status,permissions,menu_permissions,user_management_permissions,allowed_company_ids,allowed_license_ids,created_at,updated_at,created_by_portal_user_id')
+        .select('id,license_id,nome,email,status,permissions,menu_permissions,user_management_permissions,bling_permissions,bling_connection_ids,allowed_company_ids,allowed_license_ids,created_at,updated_at,created_by_portal_user_id')
         .eq('created_by_portal_user_id', req.portalUserId).order('created_at', { ascending: false });
       if (error) throw error;
       const agents = (data || []).filter(a => (Array.isArray(a.allowed_license_ids) && a.allowed_license_ids.length ? a.allowed_license_ids.map(String) : [String(a.license_id)]).includes(String(licenseId))).map(({ created_by_portal_user_id, ...a }) => a);
@@ -151,12 +175,19 @@ module.exports = function registerAtendimentoRoutes(app, { supabase, jwt, bcrypt
       if (!user_management_permissions || !licenseId || !nome || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || senha.length < 8 || !permissions || !menu_permissions) {
         return res.status(400).json({ ok: false, error: 'invalid_fields', message: 'Informe nome, e-mail válido, senha com pelo menos 8 caracteres e permissões válidas.' });
       }
+      if (!validateManagementDependencies(menu_permissions, user_management_permissions)) return res.status(400).json({ ok:false, error:'invalid_permission_dependencies', message:'Para administrar usuários, habilite o menu Equipe e a permissão Visualizar usuários.' });
       if (req.teamActor.type === 'agent' && menu_permissions.some(menu => !agentCanGrantMenu(req.teamActor, menu))) return res.status(403).json({ ok:false, error:'permission_escalation', message:'Você não pode liberar menus que não possui.' });
       const license = await getOwnedLicense(req.portalUserId, licenseId);
       if (!license) return res.status(404).json({ ok: false, error: 'license_not_found' });
       if (req.teamActor.type === 'agent' && !req.teamActor.allowedLicenseIds.includes(licenseId)) return res.status(403).json({ ok:false, error:'license_out_of_scope' });
       if (req.teamActor.type === 'agent' && user_management_permissions.some(p => !req.teamActor.permissions.includes(p))) return res.status(403).json({ ok:false, error:'permission_escalation', message:'Você não pode conceder permissões que não possui.' });
       if (req.teamActor.type === 'agent' && permissions.some(p => !req.teamActor.chatPermissions?.includes(p))) return res.status(403).json({ ok:false, error:'permission_escalation', message:'Você não pode conceder permissões de atendimento que não possui.' });
+      if(req.teamActor.type!=='owner'&&(req.body?.bling_permissions!==undefined||req.body?.bling_connection_ids!==undefined))return res.status(403).json({message:'Apenas o titular administra permissões Bling'});
+      const bling_permissions=req.body?.bling_permissions||[];
+      const bling_connection_ids=req.body?.bling_connection_ids||[];
+      if(!blingPermissionsValid(bling_permissions)||!await validateBlingScope(req.portalUserId,bling_connection_ids)||!blingMenuDeps(menu_permissions,bling_permissions))return res.status(400).json({message:'Permissões Bling, menus ou conexões inválidos'});
+      if(bling_permissions.length&&!bling_connection_ids.length)return res.status(400).json({message:'Selecione ao menos uma conexão Bling autorizada'});
+
       const requestedLicenseIds = Array.isArray(req.body?.allowed_license_ids) ? [...new Set(req.body.allowed_license_ids.map(String))] : [licenseId];
       if (req.teamActor.type === 'agent' && requestedLicenseIds.some(id => !req.teamActor.allowedLicenseIds.includes(id))) return res.status(403).json({ ok:false, error:'license_out_of_scope' });
       if (!requestedLicenseIds.includes(licenseId)) requestedLicenseIds.unshift(licenseId);
@@ -173,8 +204,8 @@ module.exports = function registerAtendimentoRoutes(app, { supabase, jwt, bcrypt
       const senha_hash = await bcrypt.hash(senha, 12);
       const { data, error } = await supabase.from('support_agents').insert({
         license_id: licenseId, nome, email, senha_hash, status: 'active',
-        permissions, menu_permissions, user_management_permissions, allowed_company_ids: allowedCompanyIds, allowed_license_ids: requestedLicenseIds, created_by_portal_user_id: req.portalUserId
-      }).select('id,license_id,nome,email,status,permissions,menu_permissions,user_management_permissions,allowed_company_ids,allowed_license_ids,created_at,updated_at').single();
+        permissions, menu_permissions, user_management_permissions, bling_permissions, bling_connection_ids, allowed_company_ids: allowedCompanyIds, allowed_license_ids: requestedLicenseIds, created_by_portal_user_id: req.portalUserId
+      }).select('id,license_id,nome,email,status,permissions,menu_permissions,user_management_permissions,bling_permissions,bling_connection_ids,allowed_company_ids,allowed_license_ids,created_at,updated_at').single();
       if (error) {
         if (error.code === '23505') return res.status(409).json({ ok: false, error: 'agent_email_exists', message: 'Este e-mail já está cadastrado nesta licença.' });
         throw error;
@@ -191,7 +222,7 @@ module.exports = function registerAtendimentoRoutes(app, { supabase, jwt, bcrypt
     try {
       const agentId = String(req.params.id || '');
       const { data: existing, error: findError } = await supabase.from('support_agents')
-        .select('id,license_id,nome,email,status,permissions,menu_permissions,user_management_permissions,allowed_company_ids,allowed_license_ids,created_by_portal_user_id')
+        .select('id,license_id,nome,email,status,permissions,menu_permissions,user_management_permissions,bling_permissions,bling_connection_ids,allowed_company_ids,allowed_license_ids,created_by_portal_user_id')
         .eq('id', agentId).maybeSingle();
       if (findError) throw findError;
       if (!existing) return res.status(404).json({ ok: false, error: 'agent_not_found' });
@@ -228,6 +259,23 @@ module.exports = function registerAtendimentoRoutes(app, { supabase, jwt, bcrypt
         if (req.teamActor.type === 'agent' && user_management_permissions.some(p => !req.teamActor.permissions.includes(p))) return res.status(403).json({ ok:false, error:'permission_escalation', message:'Você não pode conceder permissões que não possui.' });
         updates.user_management_permissions = user_management_permissions;
       }
+      if (req.body?.menu_permissions !== undefined || req.body?.user_management_permissions !== undefined) {
+        const effectiveMenus = updates.menu_permissions || existing.menu_permissions || [];
+        const effectiveManagement = updates.user_management_permissions || existing.user_management_permissions || [];
+        if (!validateManagementDependencies(effectiveMenus, effectiveManagement)) return res.status(400).json({ ok:false, error:'invalid_permission_dependencies', message:'Para administrar usuários, habilite o menu Equipe e a permissão Visualizar usuários.' });
+      }
+      if(req.body?.bling_permissions!==undefined||req.body?.bling_connection_ids!==undefined){
+        if(req.teamActor.type!=='owner')return res.status(403).json({message:'Apenas o titular administra permissões Bling'});
+        const bp=req.body.bling_permissions===undefined?(existing.bling_permissions||[]):req.body.bling_permissions;
+        const bc=req.body.bling_connection_ids===undefined?(existing.bling_connection_ids||[]):req.body.bling_connection_ids;
+        const menus=updates.menu_permissions||existing.menu_permissions||[];
+        if(!blingPermissionsValid(bp)||!await validateBlingScope(req.portalUserId,bc)||!blingMenuDeps(menus,bp)|| (bp.length&&!bc.length))return res.status(400).json({message:'Permissões Bling ou conexões inválidas'});
+        updates.bling_permissions=bp;
+        updates.bling_connection_ids=bc;
+      }
+
+      if(req.body?.menu_permissions!==undefined&&!blingMenuDeps(updates.menu_permissions||existing.menu_permissions||[],updates.bling_permissions||existing.bling_permissions||[]))return res.status(400).json({message:'O menu Bling necessário deve permanecer habilitado'});
+
       if (req.body?.allowed_company_ids !== undefined) {
         const ids = Array.isArray(req.body.allowed_company_ids) ? [...new Set(req.body.allowed_company_ids.map(String))] : [];
         updates.allowed_company_ids = ids;
@@ -250,7 +298,7 @@ module.exports = function registerAtendimentoRoutes(app, { supabase, jwt, bcrypt
       if (!Object.keys(updates).length) return res.status(400).json({ ok: false, error: 'nothing_to_update' });
       updates.updated_at = new Date().toISOString();
       const { data, error } = await supabase.from('support_agents').update(updates).eq('id', agentId)
-        .select('id,license_id,nome,email,status,permissions,menu_permissions,user_management_permissions,allowed_company_ids,allowed_license_ids,created_at,updated_at').single();
+        .select('id,license_id,nome,email,status,permissions,menu_permissions,user_management_permissions,bling_permissions,bling_connection_ids,allowed_company_ids,allowed_license_ids,created_at,updated_at').single();
       if (error) throw error;
       await writeAudit(existing.license_id, req.portalUserId, 'agent.updated', { agent_id: agentId, fields: Object.keys(updates).filter(k => k !== 'senha_hash') });
       return res.json({ ok: true, agent: data });
