@@ -382,11 +382,55 @@ const codes = [...companies.entries()].map(([companyId, company]) => {
       for (const account of accounts) {
         const storeStartedAt = Date.now();
         const storeDeadline = storeStartedAt + 90000;
-        const requestMl = (url, options = {}) => {
-          const remaining = storeDeadline - Date.now();
-          if (remaining <= 0) throw new Error('Tempo limite de 90 segundos atingido nesta loja; consulta parcial interrompida.');
-          return fetch(url, { ...options, signal: AbortSignal.timeout(Math.min(18000, remaining)) });
+        // Retry curto para falhas transitórias do Mercado Livre. Erros de regra/permissão
+        // (4xx, exceto 429) não são repetidos, pois uma nova tentativa não os corrige.
+        const requestMl = async (url, options = {}, endpointLabel = 'API do Mercado Livre') => {
+          const maxAttempts = 3;
+          let lastError;
+          for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+            const remaining = storeDeadline - Date.now();
+            if (remaining <= 0) {
+              throw new Error(`${endpointLabel}: tempo limite de 90 segundos atingido nesta loja; consulta interrompida.`);
+            }
+            try {
+              const response = await fetch(url, {
+                ...options,
+                signal: AbortSignal.timeout(Math.min(18000, remaining))
+              });
+              if (response.ok) return response;
+
+              const raw = await response.text();
+              let data = {};
+              try { data = raw ? JSON.parse(raw) : {}; } catch { data = { message: raw.slice(0, 500) }; }
+              const apiMessage = data.message || data.error || data.error_description || 'Falha ao consultar o Mercado Livre.';
+              const retryable = response.status === 429 || [500, 502, 503, 504].includes(response.status);
+              if (!retryable || attempt === maxAttempts) {
+                throw new Error(`${endpointLabel} — HTTP ${response.status}: ${apiMessage}`);
+              }
+              lastError = new Error(`HTTP ${response.status}: ${apiMessage}`);
+              const retryAfter = Number(response.headers.get('retry-after'));
+              const waitMs = Number.isFinite(retryAfter) && retryAfter > 0
+                ? Math.min(retryAfter * 1000, 3000)
+                : 400 * attempt;
+              if (Date.now() + waitMs >= storeDeadline) throw lastError;
+              await new Promise(resolve => setTimeout(resolve, waitMs));
+            } catch (error) {
+              if (error.message?.startsWith(`${endpointLabel} — HTTP `)) throw error;
+              lastError = error;
+              const isTimeout = error.name === 'TimeoutError' || error.name === 'AbortError';
+              const isNetwork = error instanceof TypeError;
+              if ((!isTimeout && !isNetwork) || attempt === maxAttempts) {
+                const reason = isTimeout ? 'tempo de resposta excedido' : (error.message || 'falha de rede');
+                throw new Error(`${endpointLabel}: ${reason}${attempt > 1 ? ` (após ${attempt} tentativas)` : ''}.`);
+              }
+              const waitMs = 400 * attempt;
+              if (Date.now() + waitMs >= storeDeadline) break;
+              await new Promise(resolve => setTimeout(resolve, waitMs));
+            }
+          }
+          throw new Error(`${endpointLabel}: ${lastError?.message || 'falha após 3 tentativas'}.`);
         };
+        let currentEndpoint = 'Preparação da consulta / validação do token';
         try {
           const accessToken = await ensureMlToken(account);
           const allIds = new Set();
@@ -401,9 +445,9 @@ const codes = [...companies.entries()].map(([companyId, company]) => {
               const params = new URLSearchParams({ status, search_type: 'scan', limit: '100' });
               if (scrollId) params.set('scroll_id', scrollId);
               url.search = params.toString();
-              const response = await requestMl(url, { headers: { Authorization: 'Bearer ' + accessToken, Accept: 'application/json' } });
+              currentEndpoint = `Busca de anúncios (/users/${account.ml_user_id}/items/search)`;
+              const response = await requestMl(url, { headers: { Authorization: 'Bearer ' + accessToken, Accept: 'application/json' } }, currentEndpoint);
               const data = await response.json();
-              if (!response.ok) throw new Error(data.message || `Falha ao consultar anúncios ${status} (HTTP ${response.status}).`);
               const page = Array.isArray(data.results) ? data.results : [];
               if (!page.length) break;
               // Alguns retornos mantêm o mesmo scroll_id; a assinatura evita repetir uma página sem interromper a paginação válida.
@@ -426,17 +470,21 @@ const codes = [...companies.entries()].map(([companyId, company]) => {
           for (let i = 0; i < ids.length; i += 20) batches.push(ids.slice(i, i + 20));
           for (let i = 0; i < batches.length; i += 4) {
             const responses = await Promise.all(batches.slice(i, i + 4).map(async batch => {
-              const response = await requestMl('https://api.mercadolibre.com/items?ids=' + encodeURIComponent(batch.join(',')), {
+              // O Mercado Livre descontinuou o multiget antigo /items?ids=.
+              // O endpoint novo /items/bulk?ids= retorna status_code no lugar de code.
+              const bulkUrl = 'https://api.mercadolibre.com/items/bulk?ids=' + encodeURIComponent(batch.join(','));
+              const endpointLabel = `Detalhes dos anúncios (/items/bulk?ids=..., lote ${batch[0]}–${batch[batch.length - 1]})`;
+              currentEndpoint = endpointLabel;
+              const response = await requestMl(bulkUrl, {
                 headers: { Authorization: 'Bearer ' + accessToken, Accept: 'application/json' }
-              });
-              const data = await response.json();
-              if (!response.ok) throw new Error(data.message || `Falha ao carregar detalhes dos anúncios (HTTP ${response.status}).`);
-              return data;
+              }, endpointLabel);
+              return response.json();
             }));
             for (const data of responses) {
               for (const entry of data || []) {
                 const item = entry.body;
-                if (entry.code !== 200 || !item || Number(item.price) > 78.99 || Number(item.price) <= 0) continue;
+                const itemStatus = Number(entry.status_code ?? entry.code ?? 0);
+                if (itemStatus !== 200 || !item || Number(item.price) > 78.99 || Number(item.price) <= 0) continue;
                 if (item.status !== 'active' || item.shipping?.free_shipping !== true) continue;
                 const tags = item.shipping?.tags || [];
                 const catalogFamily = Boolean(item.catalog_product_id || item.catalog_listing || item.family_name || item.parent_item_id);
@@ -455,7 +503,19 @@ const codes = [...companies.entries()].map(([companyId, company]) => {
           }
           stores.push({ company_id: account.company_id, company_name: account.company_name, nickname: account.nickname || 'Conta Mercado Livre', connected: true, total_scanned: ids.length, pages_scanned: pagesScanned, eligible_count: items.filter(x => String(x.company_id) === String(account.company_id)).length, scan_truncated: scanTruncated, duration_ms: Date.now() - storeStartedAt, warning: scanTruncated ? 'Limite de 6.000 anúncios por status atingido; consulta parcial.' : null });
         } catch (e) {
-          stores.push({ company_id: account.company_id, company_name: account.company_name, nickname: account.nickname || 'Conta Mercado Livre', connected: false, error: e.name === 'TimeoutError' ? 'O Mercado Livre demorou demais para responder. Tente atualizar novamente.' : e.message, duration_ms: Date.now() - storeStartedAt });
+          const detail = e.name === 'TimeoutError'
+            ? `${currentEndpoint}: o Mercado Livre demorou demais para responder. Tente atualizar novamente.`
+            : (e.message || String(e));
+          console.error(`[shipping-items] Falha na loja ${account.company_name} (${account.ml_user_id}) em ${currentEndpoint}: ${detail}`);
+          stores.push({
+            company_id: account.company_id,
+            company_name: account.company_name,
+            nickname: account.nickname || 'Conta Mercado Livre',
+            connected: false,
+            error: detail,
+            failed_endpoint: currentEndpoint,
+            duration_ms: Date.now() - storeStartedAt
+          });
         }
       }
       return res.json({ ok: true, items, stores, max_price: 78.99, included_statuses: ['active'], partial: stores.some(s => !s.connected || s.scan_truncated) });
