@@ -887,7 +887,10 @@ const codes = [...companies.entries()].map(([companyId, company]) => {
               const isCancelled = cancellationStatuses.has(orderStatus)
                 && (wasPreviouslyInQueue || cancellationAlreadyRecorded)
                 && !hasReturnOrClaim && !delivered && !dispatched;
-              const isBlockedShipping = !isForwardShipment || hasReturnOrClaim || blockedShippingStates.has(shippingSubstatus) || delivered || dispatched
+              const isBlockedShipping = !isForwardShipment || hasReturnOrClaim
+                || blockedShippingStates.has(shippingStatus)
+                || blockedShippingStates.has(shippingSubstatus)
+                || delivered || dispatched
                 || cancellationStatuses.has(shippingStatus);
               const eligibleOrder = ['paid', 'confirmed'].includes(orderStatus);
               // Etiquetas impressas permanecem na fila até o envio ser despachado.
