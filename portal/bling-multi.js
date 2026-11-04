@@ -12,10 +12,10 @@ function blingDialog({title,description='',fields=[],confirmText='Salvar',danger
     const shade=document.createElement('div');shade.id='blingDialogShade';
     shade.innerHTML=`<div class="bling-dialog" role="dialog" aria-modal="true" aria-labelledby="blingDialogTitle">
       <h3 id="blingDialogTitle">${esc(title)}</h3>${description?`<p class="muted">${esc(description)}</p>`:''}
-      <form id="blingDialogForm">${fields.map(f=>`<label class="bling-dialog-field">${esc(f.label)}<input class="filter-control" name="${esc(f.name)}" value="${esc(f.value??'')}" maxlength="${Number(f.maxlength)||100}" ${f.required?'required':''}></label>`).join('')}
+      <form id="blingDialogForm">${fields.map(f=>`<label class="bling-dialog-field">${esc(f.label)}${f.type==='select'?`<select class="filter-control" name="${esc(f.name)}" ${f.required?'required':''}>${(f.options||[]).map(o=>`<option value="${esc(o.value)}" ${String(o.value)===String(f.value)?'selected':''}>${esc(o.label)}</option>`).join('')}</select>`:`<input class="filter-control" name="${esc(f.name)}" value="${esc(f.value??'')}" maxlength="${Number(f.maxlength)||100}" ${f.required?'required':''}>`}</label>`).join('')}
       <div class="bling-dialog-actions"><button class="btn btn-ghost" type="button" id="blingDialogCancel">Cancelar</button><button class="btn ${danger?'btn-ghost':'btn-primary'}" type="submit">${esc(confirmText)}</button></div></form></div>`;
     const css=document.getElementById('blingDialogCss')||document.createElement('style');
-    css.id='blingDialogCss';css.textContent=`#blingDialogShade{position:fixed;inset:0;z-index:9999;background:rgba(10,15,30,.65);display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box}.bling-dialog{box-sizing:border-box;background:var(--card-bg,var(--surface,#fff));color:var(--text,#20242a);border:1px solid var(--line,#ddd);border-radius:16px;padding:24px;width:min(100%,460px);max-height:calc(100vh - 32px);overflow-y:auto;box-shadow:0 14px 50px #0004}.bling-dialog h3{margin:0 0 12px;font-size:1.15rem}.bling-dialog-field{display:grid;gap:6px;margin:14px 0}.bling-dialog-field input{width:100%;box-sizing:border-box}.bling-dialog-actions{display:flex;justify-content:flex-end;flex-wrap:wrap;gap:10px;margin-top:20px}@media(max-width:480px){.bling-dialog{padding:18px}.bling-dialog-actions button{flex:1}}`;
+    css.id='blingDialogCss';css.textContent=`#blingDialogShade{position:fixed;inset:0;z-index:9999;background:rgba(10,15,30,.65);display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box}.bling-dialog{box-sizing:border-box;background:var(--card-bg,var(--surface,#fff));color:var(--text,#20242a);border:1px solid var(--line,#ddd);border-radius:16px;padding:24px;width:min(100%,460px);max-height:calc(100vh - 32px);overflow-y:auto;box-shadow:0 14px 50px #0004}.bling-dialog h3{margin:0 0 12px;font-size:1.15rem}.bling-dialog-field{display:grid;gap:6px;margin:14px 0}.bling-dialog-field input,.bling-dialog-field select{width:100%;box-sizing:border-box}.bling-dialog-actions{display:flex;justify-content:flex-end;flex-wrap:wrap;gap:10px;margin-top:20px}@media(max-width:480px){.bling-dialog{padding:18px}.bling-dialog-actions button{flex:1}}`;
     if(!css.parentNode)document.head.appendChild(css);
     document.body.appendChild(shade);
     const close=(result)=>{document.removeEventListener('keydown',onKey);shade.remove();resolve(result)};
@@ -76,7 +76,36 @@ async function stock(){content(pageHead('ESTOQUE','Entradas de Estoque','Movimen
 };$('generateLabels').onclick=generate;try{await getConnections();$('blingFilter').innerHTML='<option value="">Todas as contas</option>'+connections.filter(c=>c.status==='connected').map(c=>`<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('');$('blingFilter').value=selectedConn;
 entries=(await apiB('/entries'+(selectedConn?'?connection_id='+encodeURIComponent(selectedConn):''))).entries||[];renderEntries('');}catch(e){$('stockList').textContent=e.message;}}
 function renderEntries(search){const q=(search||'').toLowerCase();const visible=entries.filter(e=>(e.sku+' '+e.product_name).toLowerCase().includes(q));$('stockList').innerHTML=`<div style="margin-bottom:12px"><label><input type="checkbox" id="allEntries"> Selecionar todos os resultados</label> <small class="muted">(${visible.length} movimentações)</small></div><div style="overflow:auto"><table style="width:100%;border-collapse:collapse"><thead><tr><th></th><th>Produto</th><th>SKU</th><th>Entrada</th><th>Data / hora</th><th>Conta</th><th>Etiquetas</th></tr></thead><tbody>${visible.map(e=>`<tr style="border-top:1px solid var(--line)"><td><input type="checkbox" data-entry="${e.id}" ${chosen.has(e.id)?'checked':''}></td><td style="padding:10px">${e.image_url&&/^https:\/\//i.test(e.image_url)?`<img alt="" src="${esc(e.image_url)}" style="width:38px;height:38px;object-fit:contain;vertical-align:middle">`:''} ${esc(e.product_name||'Produto não sincronizado')}</td><td>${esc(e.sku||'—')}</td><td>${esc(e.quantity)}</td><td>${fmt(e.occurred_at)}</td><td>${esc(e.bling_connections?.name||'')}</td><td><input type="number" min="1" max="500" value="1" data-count="${e.id}" style="width:65px" aria-label="Quantidade de etiquetas"></td></tr>`).join('')}</tbody></table></div>`;document.querySelectorAll('[data-entry]').forEach(b=>b.onchange=()=>b.checked?chosen.add(b.dataset.entry):chosen.delete(b.dataset.entry));$('allEntries').onchange=e=>{visible.forEach(v=>e.target.checked?chosen.add(v.id):chosen.delete(v.id));renderEntries($('blingSearch').value)};}
-async function generate(){const picked=entries.filter(e=>chosen.has(e.id));if(!picked.length)return toast('Selecione pelo menos um produto.');if(picked.some(e=>!e.sku))return toast('Atualize os produtos para obter o SKU antes de imprimir.');const selection=picked.map(e=>({id:e.id,count:Number(document.querySelector(`[data-count="${e.id}"]`)?.value||1)}));if(selection.some(e=>!Number.isInteger(e.count)||e.count<1||e.count>500))return toast('Quantidade inválida (1 a 500).');try{templates=(await apiB('/templates')).templates||[];if(!templates.length)return toast('Crie primeiro um modelo em Configurações → Modelos de Etiquetas.');const id=templates.find(t=>t.is_default)?.id||templates[0].id;const choices=templates.map(t=>t.name+' ('+t.width_mm+'×'+t.height_mm+' mm)').join(' | ');const values=await blingDialog({title:'Gerar etiquetas',description:'Modelo padrão: '+(templates.find(t=>t.id===id)?.name||'')+'. Modelos disponíveis: '+choices,fields:[{name:'name',label:'Nome do modelo',value:templates.find(t=>t.id===id)?.name,required:true}],confirmText:'Gerar PDF'});if(!values)return;const t=templates.find(t=>t.name===values.name);if(!t)return toast('Modelo não encontrado. Escolha um nome exibido na lista.');const response=await fetch(API+'/api/portal/bling/labels/pdf',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token},body:JSON.stringify({template_id:t.id,entries:selection})});if(!response.ok)throw Error('Falha ao gerar PDF');const blob=await response.blob();const url=URL.createObjectURL(blob);window.open(url,'_blank');setTimeout(()=>URL.revokeObjectURL(url),120000);}catch(e){error(e)}}
+async function generate(){
+ const picked=entries.filter(e=>chosen.has(e.id));
+ if(!picked.length)return toast('Selecione pelo menos um produto.');
+ if(picked.some(e=>!e.sku))return toast('Atualize os produtos para obter o SKU antes de imprimir.');
+ const selection=picked.map(e=>({id:e.id,count:Number(document.querySelector(`[data-count="${e.id}"]`)?.value||1)}));
+ if(selection.some(e=>!Number.isInteger(e.count)||e.count<1||e.count>500))return toast('Quantidade inválida (1 a 500).');
+ try{
+  templates=(await apiB('/templates')).templates||[];
+  if(!templates.length)return toast('Crie primeiro um modelo em Configurações → Modelos de Etiquetas.');
+  const defaultModel=templates.find(t=>t.is_default)||templates[0];
+  const total=selection.reduce((n,e)=>n+e.count,0);
+  if(total>1000)return toast('Limite de 1.000 etiquetas por PDF.');
+  const values=await blingDialog({
+   title:'Escolher modelo para impressão',
+   description:`${picked.length} movimentação(ões) selecionada(s) · ${total} etiqueta(s). Selecione o layout que será usado para gerar o PDF.`,
+   fields:[{name:'template_id',type:'select',label:'Modelo da etiqueta',value:defaultModel.id,required:true,
+    options:templates.map(t=>({value:t.id,label:`${t.name} · ${t.width_mm} × ${t.height_mm} mm${t.is_default?' (Padrão)':''}`}))}],
+   confirmText:'Visualizar PDF'
+  });
+  if(!values)return;
+  const t=templates.find(t=>t.id===values.template_id);
+  if(!t)return toast('Selecione um modelo válido.');
+  const response=await fetch(API+'/api/portal/bling/labels/pdf',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token},body:JSON.stringify({template_id:t.id,entries:selection})});
+  if(!response.ok){let msg='Falha ao gerar PDF';try{msg=(await response.json()).message||msg}catch(_){}throw Error(msg)}
+  const blob=await response.blob();const url=URL.createObjectURL(blob);
+  const tab=window.open(url,'_blank');
+  if(!tab){const link=document.createElement('a');link.href=url;link.download='etiquetas.pdf';link.click();toast('O navegador bloqueou a nova aba. O PDF foi disponibilizado para baixar.');}
+  setTimeout(()=>URL.revokeObjectURL(url),120000);
+ }catch(e){error(e)}
+}
 /* Editor de etiquetas v2: layout responsivo, imagem, tipografia e posicionamento direto. */
 const labelTypes={sku:'SKU',name:'Nome do produto',quantity:'Quantidade',date:'Data da entrada',time:'Horário da entrada',qr:'QR Code',text:'Texto personalizado',logo:'Imagem / logotipo'};
 let selectedElement=0;
@@ -107,6 +136,11 @@ function labelEditorCss(){
  .ble-canvas-element .ble-qr{height:100%;display:grid;place-items:center;background:repeating-linear-gradient(45deg,#eee,#eee 3px,#fff 3px,#fff 6px);color:#111;font-weight:700;text-align:center;font-size:11px}
  .ble-preview-meta{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:12px;color:var(--muted,#777);font-size:12px}
  .ble-upload{padding:12px;border:1px dashed var(--line,#ccc);border-radius:10px}.ble-upload input{max-width:100%;font-size:12px}
+ .ble-image-tools{display:grid;gap:12px;margin-top:12px;padding:14px;border-radius:12px;background:var(--panel-bg,rgba(125,125,125,.06))}
+ .ble-size-line{display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap;font-size:13px}
+ .ble-size-line strong{font-variant-numeric:tabular-nums}.ble-image-slider{width:100%;accent-color:var(--primary,#6278e9);cursor:pointer;min-height:28px}
+ .ble-image-buttons{display:flex;gap:8px;flex-wrap:wrap}.ble-image-buttons .btn{font-size:12px}
+ .ble-image-note{font-size:12px;color:var(--muted,#777);line-height:1.45;margin:0}
  @media(max-width:1000px){.ble-wrap{grid-template-columns:minmax(0,1fr)}.ble-preview-pane{order:-1}.ble-stage{min-height:240px}}
  @media(max-width:520px){.ble-pane{padding:14px;border-radius:12px}.ble-topbar .btn{flex:1}.ble-fields{gap:9px}.ble-props .ble-fields{grid-template-columns:repeat(2,minmax(0,1fr))}.ble-props .ble-prop-wide{grid-column:span 2}.ble-stage{padding:16px 8px;min-height:210px}.ble-element-options{flex-wrap:wrap}.ble-element-options .btn{width:100%}}
  `;
@@ -114,6 +148,55 @@ function labelEditorCss(){
 }
 const labelDeepCopy=t=>JSON.parse(JSON.stringify(t));
 function labelClamp(v,lo,hi){return Math.min(hi,Math.max(lo,v));}
+// Ajusta sem distorcer: o tamanho visual fica limitado à área útil do modelo.
+function labelFitImage(el,ratio){
+ const areaW=Math.max(1,Number(editing.width_mm)||40),areaH=Math.max(1,Number(editing.height_mm)||25);
+ const maxW=Math.max(1,areaW-4),maxH=Math.max(1,areaH-4);
+ const r=labelClamp(Number(ratio)||1,.05,20);
+ const w=Math.min(maxW,maxH*r);
+ const h=w/r;
+ el.w=Math.round(w*10)/10;el.h=Math.round(h*10)/10;
+ el.x=Math.round(Math.max(0,(areaW-el.w)/2)*10)/10;
+ el.y=Math.round(Math.max(0,(areaH-el.h)/2)*10)/10;
+ labelNormalize(el);
+}
+function labelResizeImage(el,percent){
+ const width=Math.max(1,Number(editing.width_mm)||40),height=Math.max(1,Number(editing.height_mm)||25);
+ const ratio=labelClamp(Number(el.imageRatio)||(el.w/el.h)||1,.05,20);
+ const maxW=Math.min(width-1,(height-1)*ratio);
+ const fraction=labelClamp(Number(percent)||100,5,100)/100;
+ const w=Math.max(.5,maxW*fraction),h=w/ratio;
+ const cx=Number(el.x)+Number(el.w)/2,cy=Number(el.y)+Number(el.h)/2;
+ el.w=Math.round(w*10)/10;el.h=Math.round(h*10)/10;
+ el.x=Math.round((cx-el.w/2)*10)/10;el.y=Math.round((cy-el.h/2)*10)/10;
+ labelNormalize(el);
+}
+// Reduz as dimensões em pixels antes de armazenar a imagem no modelo.
+// O PDF recebe o JPEG/PNG real, não apenas uma prévia reduzida por CSS.
+async function labelReadImage(file){
+ if(!['image/png','image/jpeg'].includes(file.type))throw Error('Envie uma imagem PNG ou JPG.');
+ const img=await new Promise((resolve,reject)=>{
+  const url=URL.createObjectURL(file),image=new Image();
+  image.onload=()=>{URL.revokeObjectURL(url);resolve(image)};
+  image.onerror=()=>{URL.revokeObjectURL(url);reject(Error('Não foi possível abrir a imagem.'))};
+  image.src=url;
+ });
+ const ratio=img.naturalWidth/img.naturalHeight;
+ const maxBytes=180000;
+ // Mantém transparência do PNG quando possível; usa JPEG como alternativa compacta.
+ for(const type of (file.type==='image/png'?['image/png','image/jpeg']:['image/jpeg'])){
+  for(const maxSide of [800,640,480,360,280,200,150]){
+   const scale=Math.min(1,maxSide/Math.max(img.naturalWidth,img.naturalHeight));
+   const canvas=document.createElement('canvas');canvas.width=Math.max(1,Math.round(img.naturalWidth*scale));canvas.height=Math.max(1,Math.round(img.naturalHeight*scale));
+   const ctx=canvas.getContext('2d');if(!ctx)throw Error('Seu navegador não conseguiu processar a imagem.');
+   if(type==='image/jpeg'){ctx.fillStyle='#fff';ctx.fillRect(0,0,canvas.width,canvas.height)}
+   ctx.drawImage(img,0,0,canvas.width,canvas.height);
+   const data=canvas.toDataURL(type,.82);
+   if(data.length*3/4<=maxBytes)return {data,ratio};
+  }
+ }
+ throw Error('A imagem ainda está muito grande. Tente uma versão mais simples.');
+}
 function labelNormalize(el){
  const w=Math.max(.5,Number(editing.width_mm)||40),h=Math.max(.5,Number(editing.height_mm)||25);
  el.w=labelClamp(Number(el.w)||1,.5,w);el.h=labelClamp(Number(el.h)||1,.5,h);
@@ -130,7 +213,11 @@ function labelProperties(){
  <div class="ble-fields">${labelControl('x','Posição X · mm',el.x)}${labelControl('y','Posição Y · mm',el.y)}${labelControl('w','Largura · mm',el.w)}${labelControl('h','Altura · mm',el.h)}
  ${textType?`${labelControl('fontSize','Fonte · pt',el.fontSize??8,'0.5','ble-prop-wide')}<label class="ble-field ble-prop-wide">Alinhamento<select data-lprop="align">${['left','center','right'].map(k=>`<option value="${k}" ${el.align===k?'selected':''}>${({left:'Esquerda',center:'Centro',right:'Direita'})[k]}</option>`).join('')}</select></label><label class="ble-check ble-prop-wide"><input type="checkbox" data-lprop="bold" ${el.bold?'checked':''}> Negrito</label>`:''}</div>
  ${el.type==='text'?`<label class="ble-field">Conteúdo do texto<input type="text" data-lprop="text" maxlength="300" value="${esc(el.text||'')}"></label>`:''}
- ${el.type==='logo'?`<label class="ble-field ble-upload">Enviar logotipo ou imagem (PNG/JPEG, até 180 KB)<input type="file" id="bleImageUpload" accept="image/png,image/jpeg"></label>${el.image?'<button type="button" id="bleImageRemove" class="btn btn-ghost" style="margin-top:8px">Remover imagem</button>':''}`:''}
+ ${el.type==='logo'?`<label class="ble-field ble-upload">Adicionar ou trocar imagem (PNG/JPG)<input type="file" id="bleImageUpload" accept="image/png,image/jpeg"></label>
+  <div class="ble-image-tools"><div class="ble-size-line"><strong>Tamanho da imagem</strong><span id="bleImageSizeValue">${Number(el.w).toFixed(1)} × ${Number(el.h).toFixed(1)} mm</span></div>
+  <input class="ble-image-slider" id="bleImageSize" type="range" min="5" max="100" step="1" value="${Math.round(labelClamp(el.w/Math.max(1,Math.min(editing.width_mm-1,(editing.height_mm-1)*(el.imageRatio||el.w/el.h||1)))*100,5,100))}" aria-label="Tamanho da imagem em porcentagem">
+  <div class="ble-image-buttons"><button type="button" class="btn btn-ghost" id="bleImageFit">Ajustar à etiqueta</button>${el.image?'<button type="button" id="bleImageRemove" class="btn btn-ghost">Remover imagem</button>':''}</div>
+  <p class="ble-image-note">Use a barra para diminuir ou aumentar a imagem sem distorcer. Você também pode arrastá-la na prévia. Arquivos grandes são otimizados automaticamente.</p></div>`:''}
  <p class="ble-hint">Arraste o elemento na prévia para posicioná-lo. As medidas são em milímetros e serão respeitadas no PDF.</p>`;
  panel.querySelector('#bleRemove').onclick=()=>{editing.elements.splice(selectedElement,1);selectedElement=Math.max(0,Math.min(selectedElement,editing.elements.length-1));drawElements()};
  panel.querySelectorAll('[data-lprop]').forEach(input=>{const change=()=>{
@@ -138,12 +225,27 @@ function labelProperties(){
  if(['x','y','w','h'].includes(key)){labelNormalize(el);panel.querySelectorAll('[data-lprop]').forEach(f=>{if(['x','y','w','h'].includes(f.dataset.lprop))f.value=el[f.dataset.lprop]});}
  renderPreview();if(['x','y','w','h'].includes(key))labelElementList();
  };input.addEventListener(input.type==='checkbox'||input.tagName==='SELECT'?'change':'input',change)});
- const imgUpload=panel.querySelector('#bleImageUpload');if(imgUpload)imgUpload.onchange=()=>{
- const file=imgUpload.files?.[0];if(!file)return;
- if(!['image/png','image/jpeg'].includes(file.type)||file.size>180000){toast('Selecione PNG ou JPEG de até 180 KB.');imgUpload.value='';return;}
- const reader=new FileReader();reader.onload=()=>{if(typeof reader.result==='string'){el.image=reader.result;renderPreview();labelProperties();}};reader.readAsDataURL(file);
+ const sizeSlider=panel.querySelector('#bleImageSize');
+ if(sizeSlider)sizeSlider.oninput=()=>{
+  labelResizeImage(el,Number(sizeSlider.value));
+  const out=panel.querySelector('#bleImageSizeValue');if(out)out.textContent=`${el.w.toFixed(1)} × ${el.h.toFixed(1)} mm`;
+  renderPreview();labelElementList();
+  panel.querySelectorAll('[data-lprop]').forEach(f=>{if(['x','y','w','h'].includes(f.dataset.lprop))f.value=el[f.dataset.lprop]});
  };
- const removeImg=panel.querySelector('#bleImageRemove');if(removeImg)removeImg.onclick=()=>{delete el.image;renderPreview();labelProperties()};
+ const fitBtn=panel.querySelector('#bleImageFit');if(fitBtn)fitBtn.onclick=()=>{
+  labelFitImage(el,el.imageRatio||el.w/el.h||1);drawElements();
+ };
+ const imgUpload=panel.querySelector('#bleImageUpload');if(imgUpload)imgUpload.onchange=async()=>{
+  const file=imgUpload.files?.[0];if(!file)return;
+  imgUpload.disabled=true;
+  try{
+   const {data,ratio}=await labelReadImage(file);
+   el.image=data;el.imageRatio=ratio;
+   labelFitImage(el,ratio);
+   drawElements();toast('Imagem adicionada e ajustada à etiqueta.');
+  }catch(e){error(e);imgUpload.disabled=false;imgUpload.value=''}
+ };
+ const removeImg=panel.querySelector('#bleImageRemove');if(removeImg)removeImg.onclick=()=>{delete el.image;delete el.imageRatio;renderPreview();labelProperties()};
 }
 function labelElementList(){
  const area=$('elementList');if(!area)return;
