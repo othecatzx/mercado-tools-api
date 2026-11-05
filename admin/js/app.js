@@ -1,4 +1,4 @@
-const API_URL = "https://mercado-tools-api.onrender.com";
+const API_URL = "https://app.caickrigato.com.br";
 
 
 // =========================
