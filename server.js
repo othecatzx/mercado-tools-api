@@ -30,6 +30,10 @@ app.use(express.json({
 }));
 app.use(cors());
 
+app.get("/", (req, res) => {
+    res.sendFile(path.join(__dirname, "index.html"));
+});
+
 app.use("/admin", express.static(path.join(__dirname, "admin")));
 
 app.use(cors());
