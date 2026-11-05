@@ -78,11 +78,11 @@ async function stock(){content(pageHead('ESTOQUE','Entradas de Estoque','Movimen
   }catch(e){error(e);await stock();}
 };if(!blingCan('bling.labels.print'))$('generateLabels').remove();else $('generateLabels').onclick=generate;try{await getConnections();$('blingFilter').innerHTML='<option value="">Todas as contas</option>'+connections.filter(c=>c.status==='connected').map(c=>`<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('');$('blingFilter').value=selectedConn;
 entries=(await apiB('/entries'+(selectedConn?'?connection_id='+encodeURIComponent(selectedConn):''))).entries||[];renderEntries('');}catch(e){$('stockList').textContent=e.message;}}
-function renderEntries(search){const q=(search||'').toLowerCase();const visible=entries.filter(e=>(e.sku+' '+e.product_name).toLowerCase().includes(q));$('stockList').innerHTML=`<div style="margin-bottom:12px"><label><input type="checkbox" id="allEntries"> Selecionar todos os resultados</label> <small class="muted">(${visible.length} movimentações)</small></div><div style="overflow:auto"><table style="width:100%;border-collapse:collapse"><thead><tr><th></th><th>Produto</th><th>SKU</th><th>Entrada</th><th>Data / hora</th><th>Conta</th><th>Etiquetas</th></tr></thead><tbody>${visible.map(e=>`<tr style="border-top:1px solid var(--line)"><td><input type="checkbox" data-entry="${e.id}" ${chosen.has(e.id)?'checked':''}></td><td style="padding:10px">${e.image_url&&/^https:\/\//i.test(e.image_url)?`<img alt="" src="${esc(e.image_url)}" style="width:38px;height:38px;object-fit:contain;vertical-align:middle">`:''} ${esc(e.product_name||'Produto não sincronizado')}</td><td>${esc(e.sku||'—')}</td><td>${esc(e.quantity)}</td><td>${fmt(e.occurred_at)}</td><td>${esc(e.bling_connections?.name||'')}</td><td><input type="number" min="1" max="500" value="1" data-count="${e.id}" style="width:65px" aria-label="Quantidade de etiquetas"></td></tr>`).join('')}</tbody></table></div>`;// FIX_SELECT_ALL_ENTRIES_V1 — mantém o estado do checkbox mestre e os valores digitados nas quantidades.
+function renderEntries(search){const q=(search||'').toLowerCase();const visible=entries.filter(e=>(e.sku+' '+e.product_name).toLowerCase().includes(q));$('stockList').innerHTML=`<div style="margin-bottom:12px"><label><input type="checkbox" id="allEntries"> Selecionar todos os resultados</label> <small class="muted">(${visible.length} movimentações)</small></div><div style="overflow:auto"><table style="width:100%;border-collapse:collapse"><thead><tr><th></th><th>Produto</th><th>SKU</th><th>Entrada</th><th>Data / hora</th><th>Conta</th><th>Etiquetas</th></tr></thead><tbody>${visible.map(e=>`<tr style="border-top:1px solid var(--line)"><td><input type="checkbox" data-entry="${e.id}" ${chosen.has(String(e.id))?'checked':''}></td><td style="padding:10px">${e.image_url&&/^https:\/\//i.test(e.image_url)?`<img alt="" src="${esc(e.image_url)}" style="width:38px;height:38px;object-fit:contain;vertical-align:middle">`:''} ${esc(e.product_name||'Produto não sincronizado')}</td><td>${esc(e.sku||'—')}</td><td>${esc(e.quantity)}</td><td>${fmt(e.occurred_at)}</td><td>${esc(e.bling_connections?.name||'')}</td><td><input type="number" min="1" max="500" value="1" data-count="${e.id}" style="width:65px" aria-label="Quantidade de etiquetas"></td></tr>`).join('')}</tbody></table></div>`;// FIX_SELECT_ALL_ENTRIES_V2 — IDs normalizados como string para seleção e desseleção consistentes.
  const master = $('allEntries');
  const rowChecks = [...document.querySelectorAll('[data-entry]')];
  const syncMaster = () => {
-   const selectedCount = visible.reduce((total, item) => total + (chosen.has(item.id) ? 1 : 0), 0);
+   const selectedCount = visible.reduce((total, item) => total + (chosen.has(String(item.id)) ? 1 : 0), 0);
    master.checked = visible.length > 0 && selectedCount === visible.length;
    master.indeterminate = selectedCount > 0 && selectedCount < visible.length;
    master.disabled = visible.length === 0;
@@ -97,15 +97,15 @@ function renderEntries(search){const q=(search||'').toLowerCase();const visible=
  master.onchange = () => {
    const checked = master.checked;
    visible.forEach(item => {
-     if (checked) chosen.add(item.id);
-     else chosen.delete(item.id);
+     if (checked) chosen.add(String(item.id));
+     else chosen.delete(String(item.id));
    });
    rowChecks.forEach(b => { b.checked = checked; });
    syncMaster();
  };
  syncMaster();}
 async function generate(){
- const picked=entries.filter(e=>chosen.has(e.id));
+ const picked=entries.filter(e=>chosen.has(String(e.id)));
  if(!picked.length)return toast('Selecione pelo menos um produto.');
  if(picked.some(e=>!e.sku))return toast('Atualize os produtos para obter o SKU antes de imprimir.');
  const selection=picked.map(e=>({id:e.id,count:Number(document.querySelector(`[data-count="${e.id}"]`)?.value||1)}));
