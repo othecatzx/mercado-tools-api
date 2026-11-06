@@ -31,7 +31,7 @@ function blingDialog({title,description='',fields=[],confirmText='Salvar',danger
 async function getConnections(){connections=(await apiB('/connections')).connections||[];}
 function selector(id='blingFilter'){return `<select class="filter-control" id="${id}"><option value="">Todas as contas</option>${connections.filter(c=>c.status==='connected').map(c=>`<option value="${esc(c.id)}" ${selectedConn===c.id?'selected':''}>${esc(c.name)}</option>`).join('')}</select>`;}
 async function integrations(){
-  content(pageHead('CONFIGURAÇÕES · INTEGRAÇÕES','Bling','Cada conexão tem seus próprios tokens; o vínculo com webhooks ocorre automaticamente quando verificado.',`<button class="btn btn-primary" id="blingAdd">＋ Conectar Bling</button>`)+`<div class="panel" id="blingList">Carregando conexões…</div>`);
+  content(pageHead('CONFIGURAÇÕES · INTEGRAÇÕES','Bling','Cada conexão tem seus próprios tokens; o vínculo com webhooks ocorre automaticamente quando verificado.',`<a class="btn btn-ghost" href="/portal/dimensoes.html" title="Gerenciar medidas e nomes de embalagens">▣ Dimensões</a> <button class="btn btn-primary" id="blingAdd">＋ Conectar Bling</button>`)+`<div class="panel" id="blingList">Carregando conexões…</div>`);
   if(currentUser?.role==='support_agent'||!blingCan('bling.connections.manage'))$('blingAdd').remove();else $('blingAdd').onclick=()=>connect();
   try{
     await getConnections();
@@ -112,7 +112,7 @@ function updateStockStats(){
 async function stock(){
  const requestId=++stockRequestId;
  stockCss();
- content(pageHead('ESTOQUE','Entradas de Estoque','Acompanhe as movimentações de entrada e prepare suas etiquetas.',`<button class="btn btn-primary" id="generateLabels">Gerar etiquetas</button>`)+`
+ content(pageHead('ESTOQUE','Entradas de Estoque','Acompanhe as movimentações de entrada e prepare suas etiquetas.',`<a class="btn btn-ghost" href="/portal/dimensoes.html" title="Configurar dimensões e nomes das embalagens">▣ Dimensões</a> <button class="btn btn-primary" id="generateLabels">Gerar etiquetas</button>`)+`
  <div class="bs-wrap">
  <div class="bs-stats">
   <div class="bs-stat"><span class="bs-stat-icon" aria-hidden="true">▤</span><div><span class="bs-stat-caption">Movimentações</span><strong class="bs-stat-value" id="bsTotal">—</strong></div></div>
@@ -408,7 +408,7 @@ function renderPreview(){
 }
 function drawEditor(){
  labelEditorCss();
- content(pageHead('CONFIGURAÇÕES','Modelos de Etiquetas','Monte suas etiquetas de forma visual, com medidas reais para impressão.')+`
+ content(pageHead('CONFIGURAÇÕES','Modelos de Etiquetas','Monte suas etiquetas de forma visual, com medidas reais para impressão.',`<a class="btn btn-ghost" href="/portal/dimensoes.html">▣ Dimensões de produtos</a>`)+`
  <div class="ble-wrap">
   <section class="ble-pane" aria-label="Editor de etiquetas">
    <div class="ble-pane-head"><div><h3 class="ble-heading">Personalizar etiqueta</h3><p class="ble-sub">Edite o modelo, adicione elementos e ajuste o posicionamento.</p></div></div>
@@ -435,7 +435,7 @@ function editFields(){
 }
 function drawElements(){labelElementList();labelProperties();renderPreview();}
 async function models(){content(pageHead('CONFIGURAÇÕES','Modelos de Etiquetas','Carregando…'));try{templates=(await apiB('/templates')).templates||[];editing=JSON.parse(JSON.stringify(templates.find(t=>t.is_default)||templates[0]||{name:'Etiqueta padrão',width_mm:40,height_mm:25,elements:baseElements(),is_default:true}));drawEditor();editFields();}catch(e){content(`<div class="alert error">${esc(e.message)}</div>`)}}
-window.BLING_STOCK_UI_VERSION='4.1.0';
+window.BLING_STOCK_UI_VERSION='4.2.0';
 const prior=renderPage;renderPage=function(){if(!['bling-integrations','bling-entries','bling-labels'].includes(currentPage))return prior();if(currentUser?.role==='support_agent'&&!(currentUser.menu_permissions||[]).includes(currentPage)){currentPage='overview';return prior();}if(currentPage==='bling-integrations')integrations();else if(currentPage==='bling-entries')stock();else if(!blingCan('bling.templates.manage'))content('<div class="alert">Você não tem permissão para gerenciar modelos de etiquetas.</div>');else models();};
 if(location.search.includes('bling=connected')){history.replaceState({},'',location.pathname);setTimeout(()=>toast('Conta Bling conectada.'),800)}
 })();

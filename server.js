@@ -55,6 +55,7 @@ const supabaseEan = createClient(
 require("./portal.routes")(app, { supabase, jwt, bcrypt });
 require("./atendimento.routes")(app, { supabase, jwt, bcrypt });
 require("./bling-multi.routes")(app, { supabase, jwt });
+require("./dimensoes.routes")(app, { supabase, jwt });
 
 function verificarAdmin(req, res, next) {
     try {
@@ -11425,7 +11426,6 @@ app.post("/api/agency-codes/capture", async (req, res) => {
         });
     }
 });
-
 
 // ==========================================
 // 🔌 WEBSOCKET
