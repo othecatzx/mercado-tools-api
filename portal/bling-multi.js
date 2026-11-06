@@ -112,7 +112,7 @@ function updateStockStats(){
 async function stock(){
  const requestId=++stockRequestId;
  stockCss();
- content(pageHead('ESTOQUE','Entradas de Estoque','Acompanhe as movimentações de entrada e prepare suas etiquetas.',`<a class="btn btn-ghost" href="/portal/dimensoes.html" title="Configurar dimensões e nomes das embalagens">▣ Dimensões</a> <button class="btn btn-primary" id="generateLabels">Gerar etiquetas</button>`)+`
+ content(pageHead('ESTOQUE','Entradas de Estoque','Acompanhe as movimentações de entrada e prepare suas etiquetas.', `<button class="btn btn-primary" id="generateLabels">Gerar etiquetas</button>`)+`
  <div class="bs-wrap">
  <div class="bs-stats">
   <div class="bs-stat"><span class="bs-stat-icon" aria-hidden="true">▤</span><div><span class="bs-stat-caption">Movimentações</span><strong class="bs-stat-value" id="bsTotal">—</strong></div></div>
@@ -408,7 +408,7 @@ function renderPreview(){
 }
 function drawEditor(){
  labelEditorCss();
- content(pageHead('CONFIGURAÇÕES','Modelos de Etiquetas','Monte suas etiquetas de forma visual, com medidas reais para impressão.',`<a class="btn btn-ghost" href="/portal/dimensoes.html">▣ Dimensões de produtos</a>`)+`
+ content(pageHead('CONFIGURAÇÕES','Modelos de Etiquetas','Monte suas etiquetas de forma visual, com medidas reais para impressão.')+`
  <div class="ble-wrap">
   <section class="ble-pane" aria-label="Editor de etiquetas">
    <div class="ble-pane-head"><div><h3 class="ble-heading">Personalizar etiqueta</h3><p class="ble-sub">Edite o modelo, adicione elementos e ajuste o posicionamento.</p></div></div>
