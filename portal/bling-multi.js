@@ -55,9 +55,11 @@ async function integrations(){
   }catch(e){$('blingList').textContent=e.message;}
 }
 async function connect(id){try{const r=await apiB('/connect','POST',id?{id}:{});location.href=r.url;}catch(e){error(e)}}
+// BLING_STOCK_UI_V4_20261106 — layout responsivo, seleção consistente e etiquetas persistentes.
 // Painel de entradas de estoque — layout responsivo e seleção persistente.
 const entryLabelCounts = new Map();
 let entrySearch = '';
+let stockRequestId=0;
 function stockCss(){
  if(document.getElementById('blingStockCssV3'))return;
  const style=document.createElement('style');style.id='blingStockCssV3';
@@ -110,6 +112,7 @@ function updateStockStats(){
  const clear=$('bsClearSelection');if(clear)clear.hidden=selectedCount===0;
 }
 async function stock(){
+ const requestId=++stockRequestId;
  stockCss();
  content(pageHead('ESTOQUE','Entradas de Estoque','Acompanhe as movimentações de entrada e prepare suas etiquetas.',`<button class="btn btn-primary" id="generateLabels">Gerar etiquetas</button>`)+`
  <div class="bs-wrap">
@@ -148,14 +151,19 @@ async function stock(){
  if(!blingCan('bling.labels.print'))$('generateLabels').remove();else $('generateLabels').onclick=generate;
  try{
   await getConnections();
+  if(requestId!==stockRequestId)return;
   $('blingFilter').innerHTML='<option value="">Todas as contas</option>'+connections.filter(c=>c.status==='connected').map(c=>`<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('');
   $('blingFilter').value=selectedConn;
-  entries=(await apiB('/entries'+(selectedConn?'?connection_id='+encodeURIComponent(selectedConn):''))).entries||[];
+  const requestedConn=selectedConn;
+  const loadedEntries=(await apiB('/entries'+(requestedConn?'?connection_id='+encodeURIComponent(requestedConn):''))).entries||[];
+  if(requestId!==stockRequestId)return;
+  entries=loadedEntries;
   const ids=new Set(entries.map(e=>String(e.id)));
   // A seleção acompanha as entradas carregadas; quantidades são preservadas por ID.
   for(const id of [...chosen])if(!ids.has(id))chosen.delete(id);
+  for(const id of [...entryLabelCounts.keys()])if(!ids.has(id))entryLabelCounts.delete(id);
   renderEntries(entrySearch);
- }catch(e){$('stockList').innerHTML=`<div class="bs-empty"><strong>Não foi possível carregar as entradas</strong>${esc(e.message)}</div>`;updateStockStats();}
+ }catch(e){if(requestId!==stockRequestId)return;$('stockList').innerHTML=`<div class="bs-empty"><strong>Não foi possível carregar as entradas</strong>${esc(e.message)}</div>`;updateStockStats();}
 }
 function renderEntries(search){
  const q=String(search||'').trim().toLocaleLowerCase('pt-BR');
@@ -423,6 +431,7 @@ function editFields(){
 }
 function drawElements(){labelElementList();labelProperties();renderPreview();}
 async function models(){content(pageHead('CONFIGURAÇÕES','Modelos de Etiquetas','Carregando…'));try{templates=(await apiB('/templates')).templates||[];editing=JSON.parse(JSON.stringify(templates.find(t=>t.is_default)||templates[0]||{name:'Etiqueta padrão',width_mm:40,height_mm:25,elements:baseElements(),is_default:true}));drawEditor();editFields();}catch(e){content(`<div class="alert error">${esc(e.message)}</div>`)}}
+window.BLING_STOCK_UI_VERSION='4.0.0';
 const prior=renderPage;renderPage=function(){if(!['bling-integrations','bling-entries','bling-labels'].includes(currentPage))return prior();if(currentUser?.role==='support_agent'&&!(currentUser.menu_permissions||[]).includes(currentPage)){currentPage='overview';return prior();}if(currentPage==='bling-integrations')integrations();else if(currentPage==='bling-entries')stock();else if(!blingCan('bling.templates.manage'))content('<div class="alert">Você não tem permissão para gerenciar modelos de etiquetas.</div>');else models();};
 if(location.search.includes('bling=connected')){history.replaceState({},'',location.pathname);setTimeout(()=>toast('Conta Bling conectada.'),800)}
 })();
