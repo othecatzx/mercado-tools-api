@@ -65,7 +65,7 @@ function stockCss(){
  const style=document.createElement('style');style.id='blingStockCssV3';
  style.textContent=`
  .bs-wrap{display:grid;gap:18px;font-size:14px;color:var(--text,#1d2939)}
- .bs-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+ .bs-stats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
  .bs-stat{border:1px solid var(--line,#e2e8f0);background:var(--card-bg,var(--surface,#fff));border-radius:15px;padding:18px 20px;display:flex;align-items:center;gap:14px;min-width:0}
  .bs-stat-icon{flex:0 0 44px;height:44px;border-radius:12px;display:grid;place-items:center;background:var(--primary-soft,#eef2ff);color:var(--primary,#5069d7);font-size:21px}
  .bs-stat-caption{display:block;font-size:12px;color:var(--muted,#64748b);font-weight:550;margin-bottom:3px}
@@ -91,22 +91,20 @@ function stockCss(){
  .bs-table tbody tr:last-child td{border-bottom:0}.bs-table tbody tr:hover{background:var(--panel-bg,rgba(100,120,170,.045))}.bs-table tbody tr.bs-selected{background:var(--primary-soft,rgba(80,105,215,.06))}
  .bs-check-col{width:40px}.bs-product{display:flex;align-items:center;gap:11px;min-width:250px;max-width:460px}
  .bs-product-img{width:44px;height:44px;border-radius:10px;border:1px solid var(--line,#e2e8f0);background:var(--panel-bg,#f8fafc);flex:0 0 44px;object-fit:contain}
- .bs-product-fallback{display:grid;place-items:center;color:var(--muted,#94a3b8);font-size:19px}
+ .bs-product-fallback{display:grid;place-items:center;color:var(--muted,#94a3b8);font-size:19px}.bs-product-img[hidden]{display:none}
  .bs-product-name{font-weight:650;line-height:1.4;overflow-wrap:anywhere}.bs-sku{display:inline-block;font-size:12px;white-space:nowrap;padding:6px 9px;border-radius:7px;background:var(--panel-bg,#f1f5f9);color:var(--text,#475569);font-family:ui-monospace,SFMono-Regular,Consolas,monospace}
  .bs-qty{font-weight:750;font-variant-numeric:tabular-nums}.bs-date{white-space:nowrap;font-variant-numeric:tabular-nums}.bs-account{display:inline-block;white-space:nowrap;max-width:175px;overflow:hidden;text-overflow:ellipsis;vertical-align:middle}
  .bs-count{width:72px;min-height:37px;padding:7px 8px;box-sizing:border-box;border:1px solid var(--line,#dbe2eb);border-radius:8px;background:var(--input-bg,var(--card-bg,#fff));color:var(--text,#1d2939);font:inherit}
  .bs-empty{padding:44px 20px;text-align:center;color:var(--muted,#64748b)}.bs-empty strong{display:block;color:var(--text,#263447);font-size:15px;margin-bottom:5px}
  .bs-footer{padding:13px 20px;border-top:1px solid var(--line,#e2e8f0);display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;color:var(--muted,#64748b);font-size:12px}
- @media(max-width:760px){.bs-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.bs-stat:last-child{grid-column:1/-1}.bs-filters{padding:14px}.bs-toolbar{padding:12px 14px}.bs-stat{padding:14px}.bs-stat-value{font-size:22px}.bs-field{flex:1 1 100%;min-width:0}.bs-filters .btn{width:100%}}
+ @media(max-width:760px){.bs-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.bs-filters{padding:14px}.bs-toolbar{padding:12px 14px}.bs-stat{padding:14px}.bs-stat-value{font-size:22px}.bs-field{flex:1 1 100%;min-width:0}.bs-filters .btn{width:100%}}
  @media(max-width:420px){.bs-stats{grid-template-columns:1fr}.bs-stat:last-child{grid-column:auto}}
  `;document.head.appendChild(style);
 }
 function updateStockStats(){
- const unitCount=entries.reduce((sum,item)=>sum+(Number(item.quantity)||0),0);
  const selectedCount=entries.filter(item=>chosen.has(String(item.id))).length;
- const total=$('bsTotal'),units=$('bsUnits'),selected=$('bsSelected');
+ const total=$('bsTotal'),selected=$('bsSelected');
  if(total)total.textContent=entries.length.toLocaleString('pt-BR');
- if(units)units.textContent=unitCount.toLocaleString('pt-BR');
  if(selected)selected.textContent=selectedCount.toLocaleString('pt-BR');
  const tag=$('bsSelectionTag');if(tag)tag.textContent=selectedCount+' selecionado'+(selectedCount===1?'':'s');
  const clear=$('bsClearSelection');if(clear)clear.hidden=selectedCount===0;
@@ -118,7 +116,6 @@ async function stock(){
  <div class="bs-wrap">
  <div class="bs-stats">
   <div class="bs-stat"><span class="bs-stat-icon" aria-hidden="true">▤</span><div><span class="bs-stat-caption">Movimentações</span><strong class="bs-stat-value" id="bsTotal">—</strong></div></div>
-  <div class="bs-stat"><span class="bs-stat-icon" aria-hidden="true">▣</span><div><span class="bs-stat-caption">Unidades recebidas</span><strong class="bs-stat-value" id="bsUnits">—</strong></div></div>
   <div class="bs-stat"><span class="bs-stat-icon" aria-hidden="true">✓</span><div><span class="bs-stat-caption">Selecionadas</span><strong class="bs-stat-value" id="bsSelected">0</strong></div></div>
  </div>
  <div class="bs-panel">
@@ -165,6 +162,13 @@ async function stock(){
   renderEntries(entrySearch);
  }catch(e){if(requestId!==stockRequestId)return;$('stockList').innerHTML=`<div class="bs-empty"><strong>Não foi possível carregar as entradas</strong>${esc(e.message)}</div>`;updateStockStats();}
 }
+// Exibe a imagem somente quando a API fornece uma URL segura e utilizável.
+// Nomes alternativos são aceitos para compatibilidade com diferentes payloads.
+function stockImageURL(entry){
+ const raw=entry.image_url??entry.imageUrl??entry.imagem_url??entry.imagem?.url??entry.product?.image_url??entry.product?.imageUrl??entry.product?.imagem?.url??null;
+ if(typeof raw!=='string'||!raw.trim())return '';
+ try{const url=new URL(raw.trim(),location.origin);return ['https:','http:'].includes(url.protocol)?url.href:'';}catch(_){return '';}
+}
 function renderEntries(search){
  const q=String(search||'').trim().toLocaleLowerCase('pt-BR');
  const visible=entries.filter(e=>String((e.sku||'')+' '+(e.product_name||'')).toLocaleLowerCase('pt-BR').includes(q));
@@ -176,7 +180,7 @@ function renderEntries(search){
  ${visible.length?`<div class="bs-table-wrap"><table class="bs-table"><thead><tr><th class="bs-check-col"><span class="bs-results">✓</span></th><th>Produto</th><th>SKU</th><th>Entrada</th><th>Data / hora</th><th>Conta</th><th>Etiquetas</th></tr></thead><tbody>
  ${visible.map(e=>{const id=String(e.id),active=chosen.has(id);return `<tr class="${active?'bs-selected':''}">
  <td><input type="checkbox" class="bs-rowcheck" data-entry="${esc(id)}" ${active?'checked':''} aria-label="Selecionar ${esc(e.product_name||e.sku||'entrada')}"></td>
- <td><div class="bs-product">${e.image_url&&/^https:\/\//i.test(e.image_url)?`<img class="bs-product-img" src="${esc(e.image_url)}" alt="" loading="lazy">`:`<span class="bs-product-img bs-product-fallback" aria-hidden="true">▣</span>`}<span class="bs-product-name">${esc(e.product_name||'Produto não sincronizado')}</span></div></td>
+ <td><div class="bs-product">${stockImageURL(e)?`<img class="bs-product-img" src="${esc(stockImageURL(e))}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.hidden=true;this.nextElementSibling.hidden=false"><span class="bs-product-img bs-product-fallback" aria-hidden="true" hidden>▣</span>`:`<span class="bs-product-img bs-product-fallback" aria-hidden="true" title="Imagem não fornecida pela API">▣</span>`}<span class="bs-product-name">${esc(e.product_name||'Produto não sincronizado')}</span></div></td>
  <td><span class="bs-sku">${esc(e.sku||'—')}</span></td><td><span class="bs-qty">+${esc(e.quantity??0)}</span></td><td><span class="bs-date">${fmt(e.occurred_at)}</span></td><td><span class="bs-account" title="${esc(e.bling_connections?.name||'')}">${esc(e.bling_connections?.name||'—')}</span></td>
  <td><input type="number" class="bs-count" min="1" max="500" step="1" value="${entryLabelCounts.get(id)??1}" data-count="${esc(id)}" aria-label="Quantidade de etiquetas para ${esc(e.product_name||e.sku||'entrada')}"></td>
  </tr>`}).join('')}</tbody></table></div>`:`<div class="bs-empty"><strong>Nenhuma movimentação encontrada</strong>${q?'Tente pesquisar com outro nome ou SKU.':'As entradas de estoque aparecerão aqui assim que forem recebidas.'}</div>`}
@@ -431,7 +435,7 @@ function editFields(){
 }
 function drawElements(){labelElementList();labelProperties();renderPreview();}
 async function models(){content(pageHead('CONFIGURAÇÕES','Modelos de Etiquetas','Carregando…'));try{templates=(await apiB('/templates')).templates||[];editing=JSON.parse(JSON.stringify(templates.find(t=>t.is_default)||templates[0]||{name:'Etiqueta padrão',width_mm:40,height_mm:25,elements:baseElements(),is_default:true}));drawEditor();editFields();}catch(e){content(`<div class="alert error">${esc(e.message)}</div>`)}}
-window.BLING_STOCK_UI_VERSION='4.0.0';
+window.BLING_STOCK_UI_VERSION='4.1.0';
 const prior=renderPage;renderPage=function(){if(!['bling-integrations','bling-entries','bling-labels'].includes(currentPage))return prior();if(currentUser?.role==='support_agent'&&!(currentUser.menu_permissions||[]).includes(currentPage)){currentPage='overview';return prior();}if(currentPage==='bling-integrations')integrations();else if(currentPage==='bling-entries')stock();else if(!blingCan('bling.templates.manage'))content('<div class="alert">Você não tem permissão para gerenciar modelos de etiquetas.</div>');else models();};
 if(location.search.includes('bling=connected')){history.replaceState({},'',location.pathname);setTimeout(()=>toast('Conta Bling conectada.'),800)}
 })();
