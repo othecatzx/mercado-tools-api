@@ -690,6 +690,9 @@ function openAddLicense(){if(!token)return; $('modalRoot').innerHTML=`<div class
 function closeModal(){$('modalRoot').innerHTML=''}
 const sidebarToggle=$('sidebarToggle');if(sidebarToggle)sidebarToggle.addEventListener('click',()=>{if(window.matchMedia('(max-width: 760px)').matches){document.body.classList.toggle('sidebar-open')}else{document.body.classList.toggle('sidebar-collapsed')}});const sidebarScrim=$('sidebarScrim');if(sidebarScrim)sidebarScrim.addEventListener('click',()=>document.body.classList.remove('sidebar-open'));document.querySelectorAll('.sidebar .nav-item').forEach(item=>item.addEventListener('click',()=>document.body.classList.remove('sidebar-open')));window.addEventListener('resize',()=>{if(!window.matchMedia('(max-width: 760px)').matches)document.body.classList.remove('sidebar-open')});
 setInterval(()=>{if(token&&currentPage==='chat'&&!document.hidden)loadChatConversations('unread')},45000);
+// ACCESS_CONTROL_POLL: revogação também fecha sessões mesmo sem interação com a API.
+setInterval(()=>{if(token&&!document.hidden)api('/api/portal/me').catch(()=>{});},30000);
+window.addEventListener('focus',()=>{if(token)api('/api/portal/me').catch(()=>{});});
 boot();
 </script>
 <script src="/portal/bling-multi.js"></script>

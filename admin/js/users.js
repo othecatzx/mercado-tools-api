@@ -1,6 +1,46 @@
 const usersPage = {
 
     users: [],
+    portalAccounts: [],
+
+    async loadPortalAccess() {
+        const body=document.getElementById('portalAccessBody');
+        if(!body)return;
+        body.innerHTML='<tr><td colspan="4">Carregando…</td></tr>';
+        try {
+            const response=await apiFetch('/api/admin/portal-access');
+            if(!response)return;
+            const result=await response.json();
+            if(!response.ok||!result.ok)throw Error(result.message||'Falha ao carregar contas.');
+            this.portalAccounts=result.accounts||[];
+            body.innerHTML=this.portalAccounts.length?this.portalAccounts.map(u=>{
+                const revoked=!!u.access_revoked;
+                const label=revoked?'Revogado':u.status==='active'?'Ativo':'Inativo';
+                const action=revoked?'Restaurar acesso':'Revogar acesso';
+                return `<tr><td><strong>${this.escape(u.nome||'—')}</strong><div style="font-size:12px;opacity:.75">${this.escape(u.email||'')}</div></td>
+                    <td>${this.escape(u.type_label)}</td><td>${this.escape(label)}</td>
+                    <td><button class="${revoked?'success-button':'danger-button'} small" data-portal-type="${u.type}" data-portal-id="${u.id}" data-revoke="${!revoked}">${action}</button></td></tr>`;
+            }).join(''):'<tr><td colspan="4">Nenhuma conta do portal.</td></tr>';
+            body.querySelectorAll('[data-portal-id]').forEach(button=>button.onclick=()=>this.changePortalAccess(button.dataset.portalType,button.dataset.portalId,button.dataset.revoke==='true'));
+        } catch(e){body.innerHTML=`<tr><td colspan="4">${this.escape(e.message)}</td></tr>`;}
+    },
+
+    async changePortalAccess(type,id,revoked) {
+        const account=this.portalAccounts.find(u=>u.type===type&&u.id===id);
+        if(!account)return;
+        const action=revoked?'REVOGAR':'RESTAURAR';
+        if(!confirm(`${action} acesso ao portal de ${account.nome} (${account.email})?${revoked?'\nTodas as sessões abertas serão invalidadas.':''}`))return;
+        try{
+            const response=await apiFetch(`/api/admin/portal-access/${encodeURIComponent(type)}/${encodeURIComponent(id)}`,{
+                method:'PATCH',body:JSON.stringify({revoked})
+            });
+            if(!response)return;
+            const result=await response.json();
+            if(!response.ok||!result.ok)throw Error(result.message||'Não foi possível alterar o acesso.');
+            await this.loadPortalAccess();
+            alert(revoked?'Acesso revogado. As sessões antigas não são mais válidas.':'Acesso restaurado. A pessoa precisará fazer login novamente.');
+        }catch(e){alert(e.message);}
+    },
 
     async render() {
 
@@ -40,6 +80,17 @@ const usersPage = {
             </div>
 
 
+            <div class="panel" style="margin-bottom:24px">
+              <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px">
+                <div><h3 style="margin:0">Acesso ao Portal ML SH Support</h3>
+                <p style="margin:6px 0;color:#64748b">Revogue ou restaure o acesso de titulares e subusuários. Revogar encerra todas as sessões existentes.</p></div>
+                <button id="reloadPortalAccess" class="secondary-button">↻ Atualizar acessos</button>
+              </div>
+              <div class="table-wrapper"><table class="data-table">
+                <thead><tr><th>Conta</th><th>Tipo</th><th>Estado</th><th>Ações</th></tr></thead>
+                <tbody id="portalAccessBody"><tr><td colspan="4">Carregando acessos…</td></tr></tbody>
+              </table></div>
+            </div>
             <div class="panel">
 
                 <div class="table-wrapper">
@@ -98,7 +149,8 @@ const usersPage = {
             );
 
 
-        await this.load();
+        document.getElementById('reloadPortalAccess')?.addEventListener('click',()=>this.loadPortalAccess());
+        await Promise.all([this.load(),this.loadPortalAccess()]);
     },
 
 
