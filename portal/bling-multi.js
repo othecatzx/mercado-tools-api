@@ -55,60 +55,151 @@ async function integrations(){
   }catch(e){$('blingList').textContent=e.message;}
 }
 async function connect(id){try{const r=await apiB('/connect','POST',id?{id}:{});location.href=r.url;}catch(e){error(e)}}
-async function stock(){content(pageHead('ESTOQUE','Entradas de Estoque','Movimentações físicas de entrada recebidas pelos webhooks.',`<button class="btn btn-primary" id="generateLabels">Gerar etiquetas</button>`)+`<div class="panel"><div class="actions" style="margin-bottom:16px">${selector()}<input class="filter-control" id="blingSearch" placeholder="Pesquisar por SKU ou nome"><button class="btn btn-ghost" id="blingRefresh">↻ Atualizar</button></div><div id="stockList">Carregando…</div></div>`);$('blingFilter').onchange=e=>{selectedConn=e.target.value;stock()};$('blingSearch').oninput=e=>renderEntries(e.target.value);if(!blingCan('bling.products.sync'))$('blingRefresh').remove();else $('blingRefresh').onclick=async()=>{
+// Painel de entradas de estoque — layout responsivo e seleção persistente.
+const entryLabelCounts = new Map();
+let entrySearch = '';
+function stockCss(){
+ if(document.getElementById('blingStockCssV3'))return;
+ const style=document.createElement('style');style.id='blingStockCssV3';
+ style.textContent=`
+ .bs-wrap{display:grid;gap:18px;font-size:14px;color:var(--text,#1d2939)}
+ .bs-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+ .bs-stat{border:1px solid var(--line,#e2e8f0);background:var(--card-bg,var(--surface,#fff));border-radius:15px;padding:18px 20px;display:flex;align-items:center;gap:14px;min-width:0}
+ .bs-stat-icon{flex:0 0 44px;height:44px;border-radius:12px;display:grid;place-items:center;background:var(--primary-soft,#eef2ff);color:var(--primary,#5069d7);font-size:21px}
+ .bs-stat-caption{display:block;font-size:12px;color:var(--muted,#64748b);font-weight:550;margin-bottom:3px}
+ .bs-stat-value{display:block;font-size:25px;font-weight:750;letter-spacing:-.8px;line-height:1.2;color:var(--text,#172338);font-variant-numeric:tabular-nums}
+ .bs-panel{border:1px solid var(--line,#e2e8f0);border-radius:16px;overflow:hidden;background:var(--card-bg,var(--surface,#fff))}
+ .bs-filters{padding:20px;display:flex;align-items:flex-end;flex-wrap:wrap;gap:12px;border-bottom:1px solid var(--line,#e2e8f0)}
+ .bs-field{display:grid;gap:7px;min-width:180px;flex:0 1 240px}
+ .bs-field label{font-size:12px;font-weight:650;color:var(--muted,#64748b)}
+ .bs-field-grow{flex:1 1 310px}
+ .bs-field select,.bs-field input{box-sizing:border-box;width:100%;min-height:43px;border-radius:10px;border:1px solid var(--line,#dbe2eb);padding:10px 12px;background:var(--input-bg,var(--card-bg,#fff));color:var(--text,#1d2939);font:inherit;outline-offset:2px}
+ .bs-filters .btn{min-height:43px;white-space:nowrap;border-radius:10px}
+ .bs-toolbar{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;padding:14px 20px;background:var(--panel-bg,rgba(120,140,170,.04));border-bottom:1px solid var(--line,#e2e8f0)}
+ .bs-selectall{display:inline-flex;align-items:center;gap:9px;font-weight:650;cursor:pointer}
+ .bs-selectall input,.bs-rowcheck{height:17px;width:17px;accent-color:var(--primary,#5069d7);cursor:pointer;flex-shrink:0}
+ .bs-toolbar-right{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+ .bs-tag{font-size:12px;border-radius:999px;padding:6px 10px;font-weight:650;background:var(--primary-soft,#eef2ff);color:var(--primary,#5069d7)}
+ .bs-results{font-size:12px;color:var(--muted,#64748b)}
+ .bs-clear{border:0;background:none;color:var(--primary,#5069d7);font-weight:650;cursor:pointer;font:inherit;font-size:12px;padding:5px}
+ .bs-table-wrap{width:100%;overflow-x:auto}
+ .bs-table{width:100%;min-width:860px;border-spacing:0;border-collapse:separate;table-layout:auto;font-size:13px}
+ .bs-table th{text-align:left;padding:13px 14px;font-size:11px;text-transform:uppercase;letter-spacing:.055em;font-weight:750;color:var(--muted,#64748b);background:var(--panel-bg,rgba(120,140,170,.045));white-space:nowrap;border-bottom:1px solid var(--line,#e2e8f0)}
+ .bs-table td{padding:12px 14px;border-bottom:1px solid var(--line,#e2e8f0);vertical-align:middle;color:var(--text,#263447)}
+ .bs-table tbody tr:last-child td{border-bottom:0}.bs-table tbody tr:hover{background:var(--panel-bg,rgba(100,120,170,.045))}.bs-table tbody tr.bs-selected{background:var(--primary-soft,rgba(80,105,215,.06))}
+ .bs-check-col{width:40px}.bs-product{display:flex;align-items:center;gap:11px;min-width:250px;max-width:460px}
+ .bs-product-img{width:44px;height:44px;border-radius:10px;border:1px solid var(--line,#e2e8f0);background:var(--panel-bg,#f8fafc);flex:0 0 44px;object-fit:contain}
+ .bs-product-fallback{display:grid;place-items:center;color:var(--muted,#94a3b8);font-size:19px}
+ .bs-product-name{font-weight:650;line-height:1.4;overflow-wrap:anywhere}.bs-sku{display:inline-block;font-size:12px;white-space:nowrap;padding:6px 9px;border-radius:7px;background:var(--panel-bg,#f1f5f9);color:var(--text,#475569);font-family:ui-monospace,SFMono-Regular,Consolas,monospace}
+ .bs-qty{font-weight:750;font-variant-numeric:tabular-nums}.bs-date{white-space:nowrap;font-variant-numeric:tabular-nums}.bs-account{display:inline-block;white-space:nowrap;max-width:175px;overflow:hidden;text-overflow:ellipsis;vertical-align:middle}
+ .bs-count{width:72px;min-height:37px;padding:7px 8px;box-sizing:border-box;border:1px solid var(--line,#dbe2eb);border-radius:8px;background:var(--input-bg,var(--card-bg,#fff));color:var(--text,#1d2939);font:inherit}
+ .bs-empty{padding:44px 20px;text-align:center;color:var(--muted,#64748b)}.bs-empty strong{display:block;color:var(--text,#263447);font-size:15px;margin-bottom:5px}
+ .bs-footer{padding:13px 20px;border-top:1px solid var(--line,#e2e8f0);display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;color:var(--muted,#64748b);font-size:12px}
+ @media(max-width:760px){.bs-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.bs-stat:last-child{grid-column:1/-1}.bs-filters{padding:14px}.bs-toolbar{padding:12px 14px}.bs-stat{padding:14px}.bs-stat-value{font-size:22px}.bs-field{flex:1 1 100%;min-width:0}.bs-filters .btn{width:100%}}
+ @media(max-width:420px){.bs-stats{grid-template-columns:1fr}.bs-stat:last-child{grid-column:auto}}
+ `;document.head.appendChild(style);
+}
+function updateStockStats(){
+ const unitCount=entries.reduce((sum,item)=>sum+(Number(item.quantity)||0),0);
+ const selectedCount=entries.filter(item=>chosen.has(String(item.id))).length;
+ const total=$('bsTotal'),units=$('bsUnits'),selected=$('bsSelected');
+ if(total)total.textContent=entries.length.toLocaleString('pt-BR');
+ if(units)units.textContent=unitCount.toLocaleString('pt-BR');
+ if(selected)selected.textContent=selectedCount.toLocaleString('pt-BR');
+ const tag=$('bsSelectionTag');if(tag)tag.textContent=selectedCount+' selecionado'+(selectedCount===1?'':'s');
+ const clear=$('bsClearSelection');if(clear)clear.hidden=selectedCount===0;
+}
+async function stock(){
+ stockCss();
+ content(pageHead('ESTOQUE','Entradas de Estoque','Acompanhe as movimentações de entrada e prepare suas etiquetas.',`<button class="btn btn-primary" id="generateLabels">Gerar etiquetas</button>`)+`
+ <div class="bs-wrap">
+ <div class="bs-stats">
+  <div class="bs-stat"><span class="bs-stat-icon" aria-hidden="true">▤</span><div><span class="bs-stat-caption">Movimentações</span><strong class="bs-stat-value" id="bsTotal">—</strong></div></div>
+  <div class="bs-stat"><span class="bs-stat-icon" aria-hidden="true">▣</span><div><span class="bs-stat-caption">Unidades recebidas</span><strong class="bs-stat-value" id="bsUnits">—</strong></div></div>
+  <div class="bs-stat"><span class="bs-stat-icon" aria-hidden="true">✓</span><div><span class="bs-stat-caption">Selecionadas</span><strong class="bs-stat-value" id="bsSelected">0</strong></div></div>
+ </div>
+ <div class="bs-panel">
+  <div class="bs-filters">
+   <div class="bs-field"><label for="blingFilter">Conta Bling</label>${selector()}</div>
+   <div class="bs-field bs-field-grow"><label for="blingSearch">Pesquisar produto ou SKU</label><input class="filter-control" id="blingSearch" placeholder="Digite nome do produto ou código SKU" autocomplete="off"></div>
+   <button class="btn btn-ghost" id="blingRefresh" type="button">↻ Atualizar produtos</button>
+  </div>
+  <div id="stockList"><div class="bs-empty">Carregando movimentações…</div></div>
+ </div></div>`);
+ $('blingFilter').onchange=e=>{selectedConn=e.target.value;stock()};
+ $('blingSearch').value=entrySearch;
+ $('blingSearch').oninput=e=>{entrySearch=e.target.value;renderEntries(entrySearch)};
+ if(!blingCan('bling.products.sync'))$('blingRefresh').remove();else $('blingRefresh').onclick=async()=>{
   const btn=$('blingRefresh');btn.disabled=true;btn.textContent='Sincronizando produtos…';
   const ids=selectedConn?[selectedConn]:connections.filter(c=>c.status==='connected').map(c=>c.id);
-  let fixed=0, pending=0;const issues=[];
+  let fixed=0,pending=0;const issues=[];
   try{
-    for(const id of ids){
-      try{
-        const result=await apiB('/entries/enrich','POST',{connection_id:id});
-        fixed+=result.enriched||0;pending+=result.missingSku||0;
-        if(result.failures?.length){
-          const c=connections.find(x=>x.id===id);
-          const f=result.failures[0];
-          issues.push((c?.name||'Bling')+': '+(f.status||'erro')+' - '+f.reason);
-        }
-      }catch(e){issues.push((connections.find(c=>c.id===id)?.name||'Bling')+': '+e.message);}
-    }
-    await stock();
-    if(issues.length){error(new Error('Falha ao consultar produtos: '+issues.join('; ')));}
-    else if(pending)toast('Há '+pending+' produto(s) sem SKU cadastrado no Bling.');
-    else toast(fixed?'Produtos sincronizados: '+fixed:'Nenhum produto pendente de sincronização.');
+   for(const id of ids){try{
+    const result=await apiB('/entries/enrich','POST',{connection_id:id});
+    fixed+=result.enriched||0;pending+=result.missingSku||0;
+    if(result.failures?.length){const c=connections.find(x=>x.id===id),f=result.failures[0];issues.push((c?.name||'Bling')+': '+(f.status||'erro')+' - '+f.reason);}
+   }catch(e){issues.push((connections.find(c=>c.id===id)?.name||'Bling')+': '+e.message);}}
+   await stock();
+   if(issues.length)error(new Error('Falha ao consultar produtos: '+issues.join('; ')));
+   else if(pending)toast('Há '+pending+' produto(s) sem SKU cadastrado no Bling.');
+   else toast(fixed?'Produtos sincronizados: '+fixed:'Nenhum produto pendente de sincronização.');
   }catch(e){error(e);await stock();}
-};if(!blingCan('bling.labels.print'))$('generateLabels').remove();else $('generateLabels').onclick=generate;try{await getConnections();$('blingFilter').innerHTML='<option value="">Todas as contas</option>'+connections.filter(c=>c.status==='connected').map(c=>`<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('');$('blingFilter').value=selectedConn;
-entries=(await apiB('/entries'+(selectedConn?'?connection_id='+encodeURIComponent(selectedConn):''))).entries||[];renderEntries('');}catch(e){$('stockList').textContent=e.message;}}
-function renderEntries(search){const q=(search||'').toLowerCase();const visible=entries.filter(e=>(e.sku+' '+e.product_name).toLowerCase().includes(q));$('stockList').innerHTML=`<div style="margin-bottom:12px"><label><input type="checkbox" id="allEntries"> Selecionar todos os resultados</label> <small class="muted">(${visible.length} movimentações)</small></div><div style="overflow:auto"><table style="width:100%;border-collapse:collapse"><thead><tr><th></th><th>Produto</th><th>SKU</th><th>Entrada</th><th>Data / hora</th><th>Conta</th><th>Etiquetas</th></tr></thead><tbody>${visible.map(e=>`<tr style="border-top:1px solid var(--line)"><td><input type="checkbox" data-entry="${e.id}" ${chosen.has(String(e.id))?'checked':''}></td><td style="padding:10px">${e.image_url&&/^https:\/\//i.test(e.image_url)?`<img alt="" src="${esc(e.image_url)}" style="width:38px;height:38px;object-fit:contain;vertical-align:middle">`:''} ${esc(e.product_name||'Produto não sincronizado')}</td><td>${esc(e.sku||'—')}</td><td>${esc(e.quantity)}</td><td>${fmt(e.occurred_at)}</td><td>${esc(e.bling_connections?.name||'')}</td><td><input type="number" min="1" max="500" value="1" data-count="${e.id}" style="width:65px" aria-label="Quantidade de etiquetas"></td></tr>`).join('')}</tbody></table></div>`;// FIX_SELECT_ALL_ENTRIES_V2 — IDs normalizados como string para seleção e desseleção consistentes.
- const master = $('allEntries');
- const rowChecks = [...document.querySelectorAll('[data-entry]')];
- const syncMaster = () => {
-   const selectedCount = visible.reduce((total, item) => total + (chosen.has(String(item.id)) ? 1 : 0), 0);
-   master.checked = visible.length > 0 && selectedCount === visible.length;
-   master.indeterminate = selectedCount > 0 && selectedCount < visible.length;
-   master.disabled = visible.length === 0;
  };
- rowChecks.forEach(b => {
-   b.onchange = () => {
-     if (b.checked) chosen.add(b.dataset.entry);
-     else chosen.delete(b.dataset.entry);
-     syncMaster();
-   };
+ if(!blingCan('bling.labels.print'))$('generateLabels').remove();else $('generateLabels').onclick=generate;
+ try{
+  await getConnections();
+  $('blingFilter').innerHTML='<option value="">Todas as contas</option>'+connections.filter(c=>c.status==='connected').map(c=>`<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('');
+  $('blingFilter').value=selectedConn;
+  entries=(await apiB('/entries'+(selectedConn?'?connection_id='+encodeURIComponent(selectedConn):''))).entries||[];
+  const ids=new Set(entries.map(e=>String(e.id)));
+  // A seleção acompanha as entradas carregadas; quantidades são preservadas por ID.
+  for(const id of [...chosen])if(!ids.has(id))chosen.delete(id);
+  renderEntries(entrySearch);
+ }catch(e){$('stockList').innerHTML=`<div class="bs-empty"><strong>Não foi possível carregar as entradas</strong>${esc(e.message)}</div>`;updateStockStats();}
+}
+function renderEntries(search){
+ const q=String(search||'').trim().toLocaleLowerCase('pt-BR');
+ const visible=entries.filter(e=>String((e.sku||'')+' '+(e.product_name||'')).toLocaleLowerCase('pt-BR').includes(q));
+ const area=$('stockList');if(!area)return;
+ area.innerHTML=`<div class="bs-toolbar">
+  <label class="bs-selectall"><input type="checkbox" id="allEntries" aria-label="Selecionar todos os resultados visíveis"><span>Selecionar todos</span></label>
+  <div class="bs-toolbar-right"><span class="bs-results">${visible.length} de ${entries.length} movimentações</span><span class="bs-tag" id="bsSelectionTag">0 selecionados</span><button type="button" class="bs-clear" id="bsClearSelection" hidden>Limpar seleção</button></div>
+ </div>
+ ${visible.length?`<div class="bs-table-wrap"><table class="bs-table"><thead><tr><th class="bs-check-col"><span class="bs-results">✓</span></th><th>Produto</th><th>SKU</th><th>Entrada</th><th>Data / hora</th><th>Conta</th><th>Etiquetas</th></tr></thead><tbody>
+ ${visible.map(e=>{const id=String(e.id),active=chosen.has(id);return `<tr class="${active?'bs-selected':''}">
+ <td><input type="checkbox" class="bs-rowcheck" data-entry="${esc(id)}" ${active?'checked':''} aria-label="Selecionar ${esc(e.product_name||e.sku||'entrada')}"></td>
+ <td><div class="bs-product">${e.image_url&&/^https:\/\//i.test(e.image_url)?`<img class="bs-product-img" src="${esc(e.image_url)}" alt="" loading="lazy">`:`<span class="bs-product-img bs-product-fallback" aria-hidden="true">▣</span>`}<span class="bs-product-name">${esc(e.product_name||'Produto não sincronizado')}</span></div></td>
+ <td><span class="bs-sku">${esc(e.sku||'—')}</span></td><td><span class="bs-qty">+${esc(e.quantity??0)}</span></td><td><span class="bs-date">${fmt(e.occurred_at)}</span></td><td><span class="bs-account" title="${esc(e.bling_connections?.name||'')}">${esc(e.bling_connections?.name||'—')}</span></td>
+ <td><input type="number" class="bs-count" min="1" max="500" step="1" value="${entryLabelCounts.get(id)??1}" data-count="${esc(id)}" aria-label="Quantidade de etiquetas para ${esc(e.product_name||e.sku||'entrada')}"></td>
+ </tr>`}).join('')}</tbody></table></div>`:`<div class="bs-empty"><strong>Nenhuma movimentação encontrada</strong>${q?'Tente pesquisar com outro nome ou SKU.':'As entradas de estoque aparecerão aqui assim que forem recebidas.'}</div>`}
+ <div class="bs-footer"><span>Exibindo ${visible.length} resultado${visible.length===1?'':'s'}</span><span>Selecione as movimentações para gerar etiquetas.</span></div>`;
+ const master=$('allEntries'),rowChecks=[...area.querySelectorAll('[data-entry]')];
+ const syncMaster=()=>{
+  const selectedCount=visible.filter(e=>chosen.has(String(e.id))).length;
+  master.checked=visible.length>0&&selectedCount===visible.length;
+  master.indeterminate=selectedCount>0&&selectedCount<visible.length;
+  master.disabled=visible.length===0;
+  updateStockStats();
+ };
+ rowChecks.forEach(input=>input.onchange=()=>{
+  if(input.checked)chosen.add(input.dataset.entry);else chosen.delete(input.dataset.entry);
+  input.closest('tr')?.classList.toggle('bs-selected',input.checked);syncMaster();
  });
- master.onchange = () => {
-   const checked = master.checked;
-   visible.forEach(item => {
-     if (checked) chosen.add(String(item.id));
-     else chosen.delete(String(item.id));
-   });
-   rowChecks.forEach(b => { b.checked = checked; });
-   syncMaster();
+ master.onchange=()=>{
+  const checked=master.checked;
+  visible.forEach(e=>checked?chosen.add(String(e.id)):chosen.delete(String(e.id)));
+  rowChecks.forEach(input=>{input.checked=checked;input.closest('tr')?.classList.toggle('bs-selected',checked)});
+  syncMaster();
  };
- syncMaster();}
+ $('bsClearSelection').onclick=()=>{chosen.clear();rowChecks.forEach(input=>{input.checked=false;input.closest('tr')?.classList.remove('bs-selected')});syncMaster()};
+ area.querySelectorAll('[data-count]').forEach(input=>input.oninput=()=>entryLabelCounts.set(input.dataset.count,input.value));
+ syncMaster();
+}
 async function generate(){
  const picked=entries.filter(e=>chosen.has(String(e.id)));
  if(!picked.length)return toast('Selecione pelo menos um produto.');
  if(picked.some(e=>!e.sku))return toast('Atualize os produtos para obter o SKU antes de imprimir.');
- const selection=picked.map(e=>({id:e.id,count:Number(document.querySelector(`[data-count="${e.id}"]`)?.value||1)}));
+ const selection=picked.map(e=>({id:e.id,count:Number(entryLabelCounts.get(String(e.id))??document.querySelector(`[data-count="${e.id}"]`)?.value??1)}));
  if(selection.some(e=>!Number.isInteger(e.count)||e.count<1||e.count>500))return toast('Quantidade inválida (1 a 500).');
  try{
   templates=(await apiB('/templates')).templates||[];
