@@ -28,6 +28,22 @@
 </head>
 
 <body>
+    <script>
+      // Segurança contra carregamento incompleto / JS em cache:
+      // nunca deixe a tela de verificação presa indefinidamente.
+      window.__adminBootWatchdog = setTimeout(() => {
+        if (!document.documentElement.classList.contains('admin-booting')) return;
+        const message = document.getElementById('adminBootMessage');
+        const actions = document.getElementById('adminBootActions');
+        const retry = document.getElementById('adminBootRetry');
+        if (message) message.textContent = 'Não foi possível iniciar o painel. Recarregue ou entre novamente.';
+        if (actions) actions.style.display = 'block';
+        if (retry) {
+          retry.textContent = 'Voltar ao login';
+          retry.onclick = () => { window.location.replace('login.html'); };
+        }
+      }, 10000);
+    </script>
     <div id="adminBootScreen" role="status" aria-live="polite">
       <div class="boot-card"><span class="boot-spinner" aria-hidden="true"></span>
         <span id="adminBootMessage">Verificando acesso ao painel…</span>
@@ -348,9 +364,9 @@
     <script src="js/companies.js"></script>
     <script src="js/devices.js"></script>
 <script src="js/licenses.js"></script>
-<script src="js/users.js"></script>
+<script src="js/users.js?v=admin-boot-fix-3"></script>
 <script src="js/logs.js"></script>
-<script src="js/app.js"></script>
+<script src="js/app.js?v=admin-boot-fix-3"></script>
 
 </body>
 </html>

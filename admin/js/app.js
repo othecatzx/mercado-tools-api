@@ -775,14 +775,22 @@ async function iniciarAdminComSessaoValidada() {
     if (msg) msg.textContent = 'Verificando acesso ao painel…';
     if (actions) actions.style.display = 'none';
     try {
-        const response = await apiFetch('/api/admin/test');
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 7000);
+        let response;
+        try {
+            response = await apiFetch('/api/admin/test', { signal: controller.signal });
+        } finally {
+            clearTimeout(timeoutId);
+        }
         if (!response) return; // apiFetch já redireciona se receber 401.
         if (!response.ok) throw new Error('Não foi possível validar a sessão administrativa.');
+        clearTimeout(window.__adminBootWatchdog);
         document.documentElement.classList.remove('admin-booting');
         carregarDashboard();
     } catch (error) {
         console.error('Falha ao inicializar /admin:', error);
-        if (msg) msg.textContent = 'Não foi possível verificar a sessão. Verifique a conexão e tente novamente.';
+        if (msg) msg.textContent = 'Não foi possível validar a sessão. Tente novamente ou volte ao login.';
         if (actions) actions.style.display = 'block';
         if (retry) retry.onclick = iniciarAdminComSessaoValidada;
     }
