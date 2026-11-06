@@ -31,7 +31,7 @@ function blingDialog({title,description='',fields=[],confirmText='Salvar',danger
 async function getConnections(){connections=(await apiB('/connections')).connections||[];}
 function selector(id='blingFilter'){return `<select class="filter-control" id="${id}"><option value="">Todas as contas</option>${connections.filter(c=>c.status==='connected').map(c=>`<option value="${esc(c.id)}" ${selectedConn===c.id?'selected':''}>${esc(c.name)}</option>`).join('')}</select>`;}
 async function integrations(){
-  content(pageHead('CONFIGURAÇÕES · INTEGRAÇÕES','Bling','Cada conexão tem seus próprios tokens; o vínculo com webhooks ocorre automaticamente quando verificado.',`<a class="btn btn-ghost" href="/portal/dimensoes.html" title="Gerenciar medidas e nomes de embalagens">▣ Dimensões</a> <button class="btn btn-primary" id="blingAdd">＋ Conectar Bling</button>`)+`<div class="panel" id="blingList">Carregando conexões…</div>`);
+  content(pageHead('CONFIGURAÇÕES · INTEGRAÇÕES','Bling','Cada conexão tem seus próprios tokens; o vínculo com webhooks ocorre automaticamente quando verificado.',`<button class="btn btn-primary" id="blingAdd">＋ Conectar Bling</button>`)+`<div class="panel" id="blingList">Carregando conexões…</div>`);
   if(currentUser?.role==='support_agent'||!blingCan('bling.connections.manage'))$('blingAdd').remove();else $('blingAdd').onclick=()=>connect();
   try{
     await getConnections();
