@@ -75,15 +75,7 @@ async saveName(deviceId) {
 
             <div class="page-toolbar">
 
-                <div>
 
-                    <h2>Dispositivos</h2>
-
-                    <p>
-                        Gerencie os dispositivos vinculados às empresas.
-                    </p>
-
-                </div>
 
                 <div class="toolbar-actions">
 
