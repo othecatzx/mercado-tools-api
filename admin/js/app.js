@@ -763,4 +763,28 @@ document.getElementById(
 // INICIAR
 // =========================
 
-carregarDashboard();
+// A página só é revelada após checar a sessão no servidor.
+async function iniciarAdminComSessaoValidada() {
+    if (!token) {
+        window.location.replace('login.html');
+        return;
+    }
+    const msg = document.getElementById('adminBootMessage');
+    const actions = document.getElementById('adminBootActions');
+    const retry = document.getElementById('adminBootRetry');
+    if (msg) msg.textContent = 'Verificando acesso ao painel…';
+    if (actions) actions.style.display = 'none';
+    try {
+        const response = await apiFetch('/api/admin/test');
+        if (!response) return; // apiFetch já redireciona se receber 401.
+        if (!response.ok) throw new Error('Não foi possível validar a sessão administrativa.');
+        document.documentElement.classList.remove('admin-booting');
+        carregarDashboard();
+    } catch (error) {
+        console.error('Falha ao inicializar /admin:', error);
+        if (msg) msg.textContent = 'Não foi possível verificar a sessão. Verifique a conexão e tente novamente.';
+        if (actions) actions.style.display = 'block';
+        if (retry) retry.onclick = iniciarAdminComSessaoValidada;
+    }
+}
+iniciarAdminComSessaoValidada();

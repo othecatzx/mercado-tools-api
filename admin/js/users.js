@@ -50,35 +50,11 @@ const usersPage = {
         content.innerHTML = `
 
             <div class="page-toolbar">
-
-                <div>
-                    <h2>Usuários</h2>
-
-                    <p>
-                        Gerencie os usuários das empresas.
-                    </p>
+                <div class="toolbar-actions" style="margin-left:auto">
+                    <button class="secondary-button" id="refreshUsersButton">↻ Atualizar</button>
+                    <button class="primary-button" id="newUserButton">+ Novo usuário</button>
                 </div>
-
-                <div class="toolbar-actions">
-
-                    <button
-                        class="secondary-button"
-                        id="refreshUsersButton"
-                    >
-                        ↻ Atualizar
-                    </button>
-
-                    <button
-                        class="primary-button"
-                        id="newUserButton"
-                    >
-                        + Novo usuário
-                    </button>
-
-                </div>
-
             </div>
-
 
             <div class="panel" style="margin-bottom:24px">
               <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px">
