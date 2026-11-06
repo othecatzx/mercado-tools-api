@@ -305,8 +305,20 @@ module.exports = function registerAtendimentoRoutes(app, { supabase, jwt, bcrypt
       await writeAudit(existing.license_id, req.portalUserId, 'agent.updated', { agent_id: agentId, fields: Object.keys(updates).filter(k => k !== 'senha_hash') });
       return res.json({ ok: true, agent: data });
     } catch (error) {
-      console.error('Atendimento agent update error:', error.code || error.message);
-      return res.status(500).json({ ok: false, error: 'server_error', message: 'Não foi possível atualizar o subusuário.' });
+      console.error('Atendimento agent update error:', {
+        code: error.code || null,
+        message: error.message || String(error),
+        details: error.details || null,
+        hint: error.hint || null,
+      });
+      const constraint = error.code === '23514';
+      return res.status(500).json({
+        ok: false,
+        error: constraint ? 'permission_constraint_outdated' : 'server_error',
+        message: constraint
+          ? 'O banco de dados rejeitou as novas permissões. Verifique as restrições CHECK da tabela support_agents no Supabase.'
+          : 'Não foi possível atualizar o subusuário. Confira os logs do servidor para identificar a causa.'
+      });
     }
   });
 
