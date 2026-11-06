@@ -51,6 +51,34 @@ const supabaseEan = createClient(
     process.env.EAN_SUPABASE_SERVICE_ROLE_KEY
 );
 
+// ACCESS_CONTROL_V1 — valida contas e versão da sessão antes de todas as rotas privadas do portal.
+// A verificação central cobre também Bling, dimensões, atendimento e outras APIs /api/portal.
+app.use('/api/portal', async (req, res, next) => {
+    if (req.path === '/login' || req.path === '/register' || req.path === '/bling/callback') return next();
+    const match = /^Bearer\s+(.+)$/i.exec(req.headers.authorization || '');
+    // Deixa as rotas existentes decidirem sobre requisições sem autenticação.
+    if (!match) return next();
+    let decoded;
+    try { decoded = jwt.verify(match[1], process.env.JWT_SECRET); }
+    catch (_) { return res.status(401).json({ok:false,error:'invalid_session',message:'Sessão inválida. Entre novamente.'}); }
+    let table, id;
+    if (decoded.type === 'portal' && decoded.portal_user_id) { table='portal_users'; id=decoded.portal_user_id; }
+    else if (decoded.type === 'support_agent' && decoded.support_agent_id) { table='support_agents'; id=decoded.support_agent_id; }
+    else return res.status(401).json({ok:false,error:'invalid_session'});
+    try {
+        const {data: user,error} = await supabase.from(table)
+            .select('id,status,access_revoked,session_version').eq('id',id).maybeSingle();
+        if (error) throw error;
+        if (!user || user.status !== 'active' || user.access_revoked || Number(user.session_version || 0) !== Number(decoded.session_version || 0)) {
+            return res.status(401).json({ok:false,error:'access_revoked',message:'Seu acesso ao portal foi encerrado pelo administrador.'});
+        }
+        return next();
+    } catch (e) {
+        console.error('Falha ao validar acesso do portal:', e.code || e.message);
+        return res.status(503).json({ok:false,error:'access_check_unavailable',message:'Não foi possível validar a sessão. Tente novamente.'});
+    }
+});
+
 // Portal SaaS do cliente: cadastro, login, vinculação de licenças e painel.
 require("./portal.routes")(app, { supabase, jwt, bcrypt });
 require("./atendimento.routes")(app, { supabase, jwt, bcrypt });
@@ -74,6 +102,7 @@ function verificarAdmin(req, res, next) {
             token,
             process.env.JWT_SECRET
         );
+        if (!decoded.admin_id) throw new Error('not_admin');
 
         req.admin = decoded;
 
@@ -88,6 +117,53 @@ function verificarAdmin(req, res, next) {
 }
 
 app.use("/admin", express.static("admin"));
+
+// ACCESS_CONTROL_ADMIN_V1 — contas do PORTAL (não confundir com tabela users legada).
+// Todas as ações exigem token de administrador verificado pelo middleware verificarAdmin.
+app.get('/api/admin/portal-access', verificarAdmin, async (req,res) => {
+    try {
+        const [{data:owners,error:e1},{data:agents,error:e2}] = await Promise.all([
+            supabase.from('portal_users').select('id,nome,email,status,access_revoked,session_version,created_at').order('created_at',{ascending:false}),
+            supabase.from('support_agents').select('id,nome,email,status,access_revoked,session_version,created_by_portal_user_id').order('nome',{ascending:true})
+        ]);
+        if(e1||e2) throw e1||e2;
+        res.json({ok:true,accounts:[
+            ...(owners||[]).map(u=>({...u,type:'portal',type_label:'Titular do portal'})),
+            ...(agents||[]).map(u=>({...u,type:'support_agent',type_label:'Subusuário'}))
+        ]});
+    } catch(e) {
+        console.error('Listar acessos portal:',e.code||e.message);
+        res.status(500).json({ok:false,message:'Falha ao consultar acessos. Confirme a migração SQL.'});
+    }
+});
+app.patch('/api/admin/portal-access/:type/:id', verificarAdmin, async(req,res) => {
+    const type=req.params.type;
+    if(!['portal','support_agent'].includes(type)) return res.status(400).json({ok:false,message:'Tipo de conta inválido.'});
+    const table=type==='portal'?'portal_users':'support_agents';
+    const revoked=req.body?.revoked;
+    if(typeof revoked!=='boolean') return res.status(400).json({ok:false,message:'Informe revoked como true ou false.'});
+    try {
+        const {data:before,error:readError}=await supabase.from(table)
+            .select('id,status,access_revoked,session_version').eq('id',req.params.id).maybeSingle();
+        if(readError) throw readError;
+        if(!before) return res.status(404).json({ok:false,message:'Conta não encontrada.'});
+        // Incrementar a versão sempre que um acesso é revogado invalida todos os JWTs já emitidos.
+        // A restauração NÃO reativa os tokens antigos: exige novo login.
+        // Atualização condicional evita perder um incremento em ações simultâneas.
+        const nextVersion=Number(before.session_version||0)+(revoked&&!before.access_revoked?1:0);
+        const {data:updated,error:updateError}=await supabase.from(table)
+            .update({access_revoked:revoked,session_version:nextVersion})
+            .eq('id',before.id).eq('session_version',before.session_version||0)
+            .select('id,status,access_revoked,session_version').maybeSingle();
+        if(updateError) throw updateError;
+        if(!updated) return res.status(409).json({ok:false,message:'O acesso mudou durante a operação. Atualize e tente novamente.'});
+        console.info('Portal access changed:',{admin_id:req.admin?.admin_id,type,account_id:before.id,revoked});
+        res.json({ok:true,account:updated});
+    }catch(e){
+        console.error('Atualizar acesso portal:',e.code||e.message);
+        res.status(500).json({ok:false,message:'Falha ao alterar o acesso. Confira as colunas e permissões do banco.'});
+    }
+});
 
 app.get("/api/admin/test", verificarAdmin, (req, res) => {
     res.json({
@@ -11518,5 +11594,4 @@ wss.on("connection", (ws) => {
         );
 
     });
-
 });
