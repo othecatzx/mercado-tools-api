@@ -38,7 +38,7 @@ const usersPage = {
             const result=await response.json();
             if(!response.ok||!result.ok)throw Error(result.message||'Não foi possível alterar o acesso.');
             await this.loadPortalAccess();
-            alert(revoked?'Acesso revogado. As sessões antigas não são mais válidas.':'Acesso restaurado. A pessoa precisará fazer login novamente.');
+            alert(result.message||(revoked?'Acesso revogado. As sessões antigas não são mais válidas.':'Acesso restaurado. A pessoa precisará fazer login novamente.'));
         }catch(e){alert(e.message);}
     },
 

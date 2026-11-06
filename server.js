@@ -69,8 +69,11 @@ app.use('/api/portal', async (req, res, next) => {
         const {data: user,error} = await supabase.from(table)
             .select('id,status,access_revoked,session_version').eq('id',id).maybeSingle();
         if (error) throw error;
-        if (!user || user.status !== 'active' || user.access_revoked || Number(user.session_version || 0) !== Number(decoded.session_version || 0)) {
-            return res.status(401).json({ok:false,error:'access_revoked',message:'Seu acesso ao portal foi encerrado pelo administrador.'});
+        if (!user) return res.status(401).json({ok:false,error:'account_unavailable',message:'Conta não encontrada. Entre em contato com o administrador.'});
+        if (user.access_revoked) return res.status(403).json({ok:false,error:'access_revoked',message:'Seu acesso ao portal foi encerrado pelo administrador.'});
+        if (user.status !== 'active') return res.status(403).json({ok:false,error:'account_inactive',message:'A conta está inativa. Solicite a ativação ao administrador.'});
+        if (Number(user.session_version || 0) !== Number(decoded.session_version || 0)) {
+            return res.status(401).json({ok:false,error:'session_revoked',message:'Esta sessão foi encerrada. Faça login novamente para continuar.'});
         }
         return next();
     } catch (e) {
@@ -158,7 +161,7 @@ app.patch('/api/admin/portal-access/:type/:id', verificarAdmin, async(req,res) =
         if(updateError) throw updateError;
         if(!updated) return res.status(409).json({ok:false,message:'O acesso mudou durante a operação. Atualize e tente novamente.'});
         console.info('Portal access changed:',{admin_id:req.admin?.admin_id,type,account_id:before.id,revoked});
-        res.json({ok:true,account:updated});
+        res.json({ok:true,account:updated,message:!revoked && updated.status !== 'active'?'Acesso administrativo restaurado, porém a conta está inativa. Ative a conta para permitir o login.':!revoked?'Acesso restaurado. O usuário deve fazer um novo login.':'Acesso revogado. Todas as sessões anteriores foram invalidadas.'});
     }catch(e){
         console.error('Atualizar acesso portal:',e.code||e.message);
         res.status(500).json({ok:false,message:'Falha ao alterar o acesso. Confira as colunas e permissões do banco.'});
@@ -11594,4 +11597,5 @@ wss.on("connection", (ws) => {
         );
 
     });
+
 });

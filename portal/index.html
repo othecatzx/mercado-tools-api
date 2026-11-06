@@ -297,7 +297,28 @@ const $=id=>document.getElementById(id);
 function applyTheme(theme){const chosen=theme==='dark'?'dark':'light';document.documentElement.dataset.theme=chosen;try{localStorage.setItem('mlsh_portal_theme',chosen)}catch(e){}const glyph=$('themeGlyph'),label=$('themeLabel'),btn=$('themeToggle');if(glyph)glyph.textContent=chosen==='dark'?'☀':'☾';if(label)label.textContent=chosen==='dark'?'Tema claro':'Tema escuro';if(btn)btn.setAttribute('aria-label',chosen==='dark'?'Ativar tema claro':'Ativar tema escuro');const meta=document.querySelector('meta[name="theme-color"]');if(meta)meta.content=chosen==='dark'?'#0b1020':'#f5f7fc'}
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function toast(message){$('toastRoot').innerHTML=`<div class="toast">${esc(message)}</div>`;setTimeout(()=>$('toastRoot').innerHTML='',2800)}
-async function api(path,options={}){const headers={'Content-Type':'application/json',...(options.headers||{})};if(token)headers.Authorization='Bearer '+token;let response;try{response=await fetch(API+path,{...options,headers})}catch(e){throw new Error('Não foi possível conectar ao servidor. Tente novamente.')}let data={};try{data=await response.json()}catch(_){}if(!response.ok){if(response.status===401&&token){logout(false)}throw new Error(data.message||'Não foi possível concluir a solicitação.')}return data}
+async function api(path,options={}){
+ const isPublicAuth=path==='/api/portal/login'||path==='/api/portal/register';
+ const requestToken=isPublicAuth?'':token;
+ const headers={'Content-Type':'application/json',...(options.headers||{})};
+ if(requestToken)headers.Authorization='Bearer '+requestToken;
+ let response;
+ try{response=await fetch(API+path,{...options,headers})}catch(e){throw new Error('Não foi possível conectar ao servidor. Tente novamente.')}
+ let data={};try{data=await response.json()}catch(_){}
+ if(!response.ok){
+   // Somente a sessão da requisição autenticada que falhou pode ser encerrada.
+   // Evita que uma chamada antiga de /codes deslogue um login novo.
+   if(!isPublicAuth && requestToken && requestToken===token &&
+      [401,403].includes(response.status) &&
+      ['invalid_session','session_revoked','access_revoked','account_inactive','account_unavailable','auth_required'].includes(data.error)){
+     logout(false);
+   }
+   const err=new Error(data.message||'Não foi possível concluir a solicitação.');
+   err.status=response.status;err.code=data.error||null;
+   throw err;
+ }
+ return data;
+}
 function showAuth(which='login'){ delete document.documentElement.dataset.authCheck; $('authView').classList.remove('hidden');$('appView').classList.add('hidden');$('loginForm').classList.toggle('hidden',which!=='login');$('registerForm').classList.toggle('hidden',which!=='register') }
 function menuKeyForPage(page){return page==='vendas'?'orders':page}
  function agentHasMenu(menus,page){const key=menuKeyForPage(page);if(page==='team'&&!(currentUser?.user_management_permissions||[]).includes('users.view'))return false;return menus.has(key)||(page==='vendas'&&menus.has('sales'))}
@@ -354,7 +375,12 @@ function mlshLoginState(active,message='Validando acesso…'){
 $('doLogin').addEventListener('submit',async e=>{
  e.preventDefault();if(mlshLoginSubmitting)return;mlshLoginSubmitting=true;$('loginError').innerHTML='';mlshLoginState(true,'Validando seu acesso…');
  try{const r=await api('/api/portal/login',{method:'POST',body:JSON.stringify({email:$('loginEmail').value,senha:$('loginPassword').value})});token=r.token;localStorage.setItem('mlsh_portal_token',token);currentUser=r.user;mlshLoginState(true,'Carregando seu painel…');await refreshDashboard();showApp();}
- catch(err){$('loginError').innerHTML='<div class="alert error" role="alert">'+esc(err.message)+'</div>'}
+ catch(err){
+   if(err.status===401||err.code==='access_revoked'||err.code==='account_inactive'||err.code==='session_revoked'){
+     logout(false);
+   }
+   $('loginError').innerHTML='<div class="alert error" role="alert">'+esc(err.message)+'</div>';
+ }
  finally{mlshLoginSubmitting=false;mlshLoginState(false)}
 });
 $('doRegister').addEventListener('submit',async e=>{e.preventDefault();$('registerError').innerHTML='';const btn=e.submitter;btn.disabled=true;try{const r=await api('/api/portal/register',{method:'POST',body:JSON.stringify({nome:$('registerName').value,email:$('registerEmail').value,senha:$('registerPassword').value})});token=r.token;localStorage.setItem('mlsh_portal_token',token);currentUser=r.user;await refreshDashboard();showApp();toast('Conta criada com sucesso! Adicione sua primeira licença.');openAddLicense()}catch(err){$('registerError').innerHTML=`<div class="alert error">${esc(err.message)}</div>`}finally{btn.disabled=false}});
