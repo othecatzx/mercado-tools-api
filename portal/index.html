@@ -224,9 +224,14 @@ html[data-theme="dark"] .side-help{background:linear-gradient(145deg,#1b2340,#14
 .mlsh-loader{display:inline-block;width:17px;height:17px;flex:0 0 17px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:mlsh-spin .7s linear infinite;vertical-align:middle}@keyframes mlsh-spin{to{transform:rotate(360deg)}}
 #doLogin button[aria-busy="true"]{cursor:progress;opacity:.85;display:flex;align-items:center;justify-content:center;gap:9px}
 .mlsh-sales-start{max-width:700px;margin:20px auto;padding:clamp(20px,4vw,38px);text-align:center}.mlsh-sales-start-icon{width:54px;height:54px;display:grid;place-items:center;border-radius:16px;margin:0 auto 16px;background:rgba(99,102,241,.11);color:#6366f1;font-size:26px}.mlsh-sales-start h3{font-size:clamp(18px,2vw,23px);margin:0 0 8px}.mlsh-sales-start p{line-height:1.65;max-width:470px;margin:0 auto 22px}.mlsh-sales-start-controls{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:end;text-align:left;max-width:460px;margin:0 auto}.mlsh-sales-start-controls label{grid-column:1/-1;font-size:13px;font-weight:600}.mlsh-sales-start-controls select{width:100%;min-height:42px}.mlsh-sales-start-controls button{min-height:42px;white-space:nowrap}@media(max-width:540px){.mlsh-sales-start-controls{grid-template-columns:1fr}.mlsh-sales-start-controls button{width:100%}}
+
+/* DIMENSOES_PORTAL_NAV_V1: gerenciamento dentro do painel */
+.dimensions-frame-shell{width:100%;overflow:hidden;border:1px solid var(--line,#e7eaf1);border-radius:16px;background:var(--panel,#fff);box-shadow:var(--shadow,none)}
+.dimensions-frame{display:block;width:100%;min-height:780px;height:calc(100vh - 150px);border:0;background:transparent}
+@media(max-width:760px){.dimensions-frame{height:calc(100vh - 95px);min-height:650px}}
 </style>
 <script>try{document.documentElement.dataset.theme=localStorage.getItem("mlsh_portal_theme")||"light";if(localStorage.getItem("mlsh_portal_token"))document.documentElement.dataset.authCheck="1"}catch(e){document.documentElement.dataset.theme="light"}</script>
-</head>
+<style id="dimensionNativeCss">.dim-panel{padding:0;overflow:hidden}.dim-toolbar{display:flex;align-items:end;gap:14px;flex-wrap:wrap;padding:20px;border-bottom:1px solid var(--line)}.dim-field{display:grid;gap:6px;min-width:210px;font-size:12px;font-weight:700;color:var(--muted)}.dim-grow{flex:1}.dim-total{background:var(--primary-soft,#eeebff);color:var(--purple,#6d5dfc);border-radius:20px;padding:8px 11px;font-size:12px;font-weight:700}.dim-notice{padding:0 20px;color:var(--muted);font-size:12px}.dim-notice:not(:empty){padding-top:14px;padding-bottom:10px}.dim-table-wrap{overflow-x:auto}.dim-table{width:100%;min-width:780px;border-collapse:collapse}.dim-table td,.dim-table th{text-align:left;padding:14px 17px;border-bottom:1px solid var(--line)}.dim-table th{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);background:var(--panel-bg,#f8f9fd)}.dim-table tbody tr:last-child td{border-bottom:0}.dim-row-actions{display:flex;gap:7px}.dim-row-actions .btn{padding:7px 10px;font-size:12px}.dim-modal-shade{position:fixed;inset:0;z-index:10000;background:#0c1428ab;display:grid;place-items:center;padding:16px}.dim-modal{background:var(--panel,#fff);color:var(--ink,#222);border-radius:16px;width:min(100%,550px);padding:24px;box-shadow:0 18px 60px #0004;max-height:90vh;overflow:auto}.dim-modal h2{margin:0 0 8px;font-size:20px}.dim-fields{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:18px 0}.dim-fields label{display:grid;gap:7px;font-size:12px;font-weight:700}.dim-fields .wide{grid-column:1/-1}.dim-fields input{width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:9px;background:var(--panel,#fff);color:var(--ink,#222)}.dim-modal-actions{display:flex;justify-content:flex-end;gap:9px}@media(max-width:650px){.dim-toolbar{padding:14px}.dim-field{width:100%}.dim-fields{grid-template-columns:1fr}.dim-fields .wide{grid-column:auto}}</style></head>
 <body>
 <div id="authView" class="auth-shell">
   <aside class="auth-visual"><div class="brand"><div class="brand-mark">M</div><span>ML SH <span style="font-weight:500;color:#aab3d1">Support</span></span></div><div class="auth-copy"><div class="eyebrow" style="color:#a99fff">PORTAL DO CLIENTE</div><h1>Suas lojas.<br>Suas licenças.<br><span style="color:#a99fff">Tudo em um só lugar.</span></h1><p>Um espaço único para acompanhar suas licenças, dispositivos autorizados e ferramentas do ecossistema ML SH Support.</p><div class="feature-pills"><span>✦ Gestão de licenças</span><span>⌘ Dispositivos</span><span>↗ Códigos ML</span></div></div><div class="auth-foot">© 2026 ML SH Support · Portal do Cliente</div></aside>
@@ -237,7 +242,7 @@ html[data-theme="dark"] .side-help{background:linear-gradient(145deg,#1b2340,#14
   <aside class="sidebar"><div class="brand"><div class="brand-mark">M</div><span class="brand-text">ML SH <span style="font-weight:500;color:#909bb8">Support</span></span></div>
     <div class="nav-label">WORKSPACE</div><nav class="nav"><button class="nav-item active" data-page="overview"><span class="ico">◫</span><span class="nav-text">Visão geral</span></button><button class="nav-item" data-page="vendas"><span class="ico">ᯓ➤</span><span class="nav-text">Vendas</span></button><button class="nav-item" data-page="licenses"><span class="ico">⌘</span><span class="nav-text">Minhas licenças</span></button><button class="nav-item" data-page="devices"><span class="ico">▣</span><span class="nav-text">Dispositivos</span></button><button class="nav-item" data-page="sales"><span class="ico">↗</span><span class="nav-text">Analytics de Vendas</span></button><button class="nav-item" data-page="shipping"><span class="ico">⇄</span><span class="nav-text">Frete comprador</span></button></nav>
     <div class="nav-label">FERRAMENTAS</div><nav class="nav"><button class="nav-item" data-page="codes"><span class="ico">▤</span><span class="nav-text">Códigos ML</span></button><button class="nav-item" data-page="team"><span class="ico">♙</span><span class="nav-text">Equipe de atendimento</span></button><button class="nav-item" data-page="chat"><span class="ico">☏</span><span class="nav-text">Atendimento</span></button></nav>
-    <div class="nav-label">BLING</div><nav class="nav"><button class="nav-item" data-page="bling-entries"><span class="ico">▤</span><span class="nav-text">Entradas de Estoque</span></button><button class="nav-item" data-page="bling-integrations"><span class="ico">⇄</span><span class="nav-text">Integrações → Bling</span></button><button class="nav-item" data-page="bling-labels"><span class="ico">▣</span><span class="nav-text">Modelos de Etiquetas</span></button></nav><div class="nav-label">CONTA</div><nav class="nav"><button class="nav-item" data-page="support"><span class="ico">◉</span><span class="nav-text">Suporte</span></button><button class="nav-item" data-page="settings"><span class="ico">⚙</span><span class="nav-text">Configurações</span></button></nav>
+    <div class="nav-label">BLING</div><nav class="nav"><button class="nav-item" data-page="bling-entries"><span class="ico">▤</span><span class="nav-text">Entradas de Estoque</span></button><button class="nav-item" data-page="bling-integrations"><span class="ico">⇄</span><span class="nav-text">Integrações → Bling</span></button><button class="nav-item" data-page="bling-labels"><span class="ico">▣</span><span class="nav-text">Modelos de Etiquetas</span></button><button class="nav-item" data-page="bling-dimensions"><span class="ico">▥</span><span class="nav-text">Dimensões de Embalagens</span></button></nav><div class="nav-label">CONTA</div><nav class="nav"><button class="nav-item" data-page="support"><span class="ico">◉</span><span class="nav-text">Suporte</span></button><button class="nav-item" data-page="settings"><span class="ico">⚙</span><span class="nav-text">Configurações</span></button></nav>
     <div class="side-bottom"><div class="side-help"><b>Precisa de ajuda?</b><p>Estamos aqui para ajudar com sua conta e licenças.</p><button data-page="support">Acessar suporte ↗</button></div><div class="side-user"><div class="avatar" id="sideAvatar">C</div><div class="user-meta"><b id="sideName">Cliente</b><small id="sideEmail">cliente@email.com</small></div><button class="logout" id="logoutBtn" title="Sair">↪</button></div></div>
   </aside>
   <div class="sidebar-scrim" id="sidebarScrim"></div><main class="main"><header class="topbar"><div class="topbar-left"><button id="sidebarToggle" type="button" aria-label="Abrir ou recolher menu" title="Abrir ou recolher menu">☰</button><div class="crumb">Portal do Cliente <span style="color:#b4bbca"> / </span> <b id="crumbPage">Visão geral</b></div></div><div class="top-right"><button class="theme-toggle" id="themeToggle" type="button" aria-label="Alternar tema" title="Alternar tema claro/escuro"><span class="theme-glyph" id="themeGlyph">☾</span><span class="theme-label" id="themeLabel">Tema escuro</span></button><span class="status-pill"><span class="dot"></span> Sistema operacional</span><button class="btn btn-primary" id="topAddLicense">＋ <span>Adicionar licença</span></button></div></header><div class="content" id="pageContent"></div></main>
@@ -266,7 +271,7 @@ async function api(path,options={}){const headers={'Content-Type':'application/j
 function showAuth(which='login'){ delete document.documentElement.dataset.authCheck; $('authView').classList.remove('hidden');$('appView').classList.add('hidden');$('loginForm').classList.toggle('hidden',which!=='login');$('registerForm').classList.toggle('hidden',which!=='register') }
 function menuKeyForPage(page){return page==='vendas'?'orders':page}
  function agentHasMenu(menus,page){const key=menuKeyForPage(page);if(page==='team'&&!(currentUser?.user_management_permissions||[]).includes('users.view'))return false;return menus.has(key)||(page==='vendas'&&menus.has('sales'))}
- function showApp(){ delete document.documentElement.dataset.authCheck; $('authView').classList.add('hidden');$('appView').classList.remove('hidden');updateUserUI();const isAgent=currentUser?.role==='support_agent';if(isAgent){const allowed=new Set(Array.isArray(currentUser.menu_permissions)?currentUser.menu_permissions:['chat']);document.querySelectorAll('.sidebar .nav').forEach(nav=>{const items=[...nav.querySelectorAll('.nav-item')];items.forEach(item=>item.classList.toggle('hidden',!agentHasMenu(allowed,item.dataset.page)));const label=nav.previousElementSibling;if(label?.classList.contains('nav-label'))label.classList.toggle('hidden',!items.some(item=>agentHasMenu(allowed,item.dataset.page)))});document.querySelectorAll('.side-help').forEach(el=>el.classList.add('hidden'));document.querySelectorAll('.nav-item').forEach(el=>el.classList.remove('active'));const firstAllowedPage=['overview','licenses','devices','vendas','sales','shipping','codes','team','chat','bling-entries','bling-labels','bling-integrations'].find(page=>agentHasMenu(allowed,page));currentPage=agentHasMenu(allowed,currentPage)?currentPage:(firstAllowedPage||'chat');document.querySelector(`.nav-item[data-page="${currentPage}"]`)?.classList.add('active')}else{document.querySelectorAll('.nav-label,.nav-item,.side-help').forEach(el=>el.classList.remove('hidden'))}$('topAddLicense').classList.toggle('hidden',isAgent);renderPage(); }
+ function showApp(){ delete document.documentElement.dataset.authCheck; $('authView').classList.add('hidden');$('appView').classList.remove('hidden');updateUserUI();const isAgent=currentUser?.role==='support_agent';if(isAgent){const allowed=new Set(Array.isArray(currentUser.menu_permissions)?currentUser.menu_permissions:['chat']);document.querySelectorAll('.sidebar .nav').forEach(nav=>{const items=[...nav.querySelectorAll('.nav-item')];items.forEach(item=>item.classList.toggle('hidden',!agentHasMenu(allowed,item.dataset.page)||(item.dataset.page==='bling-dimensions'&&!(currentUser.bling_permissions||[]).some(p=>['bling.dimensions.view','bling.dimensions.manage'].includes(p)))));const label=nav.previousElementSibling;if(label?.classList.contains('nav-label'))label.classList.toggle('hidden',!items.some(item=>agentHasMenu(allowed,item.dataset.page)))});document.querySelectorAll('.side-help').forEach(el=>el.classList.add('hidden'));document.querySelectorAll('.nav-item').forEach(el=>el.classList.remove('active'));const firstAllowedPage=['overview','licenses','devices','vendas','sales','shipping','codes','team','chat','bling-entries','bling-labels','bling-integrations','bling-dimensions'].find(page=>agentHasMenu(allowed,page));currentPage=agentHasMenu(allowed,currentPage)?currentPage:(firstAllowedPage||'chat');document.querySelector(`.nav-item[data-page="${currentPage}"]`)?.classList.add('active')}else{document.querySelectorAll('.nav-label,.nav-item,.side-help').forEach(el=>el.classList.remove('hidden'))}$('topAddLicense').classList.toggle('hidden',isAgent);renderPage(); }
 function updateUserUI(){if(!currentUser)return;const name=currentUser.nome||'Cliente';$('sideName').textContent=name;$('sideEmail').textContent=currentUser.email||'';$('sideAvatar').textContent=name.trim().charAt(0).toUpperCase()}
 async function refreshDashboard(){
   const [d,c]=await Promise.all([
@@ -324,7 +329,7 @@ $('doLogin').addEventListener('submit',async e=>{
 });
 $('doRegister').addEventListener('submit',async e=>{e.preventDefault();$('registerError').innerHTML='';const btn=e.submitter;btn.disabled=true;try{const r=await api('/api/portal/register',{method:'POST',body:JSON.stringify({nome:$('registerName').value,email:$('registerEmail').value,senha:$('registerPassword').value})});token=r.token;localStorage.setItem('mlsh_portal_token',token);currentUser=r.user;await refreshDashboard();showApp();toast('Conta criada com sucesso! Adicione sua primeira licença.');openAddLicense()}catch(err){$('registerError').innerHTML=`<div class="alert error">${esc(err.message)}</div>`}finally{btn.disabled=false}});
 document.querySelectorAll('[data-page]').forEach(btn=>btn.addEventListener('click',()=>navigate(btn.dataset.page)));
-function navigate(page){if(currentUser?.role==='support_agent'&&!(currentUser.menu_permissions||['chat']).includes(menuKeyForPage(page)) && !(page==='vendas'&&(currentUser.menu_permissions||[]).includes('sales'))){toast('O administrador não liberou este menu para sua conta.');return}const changed=page!==currentPage;currentPage=page;if(changed&&(page==='vendas'||page==='sales'))salesData=null;document.querySelectorAll('.nav-item[data-page]').forEach(b=>b.classList.toggle('active',b.dataset.page===page));const labels={overview:'Visão geral',vendas:'Vendas',licenses:'Minhas licenças',devices:'Dispositivos',sales:'Analytics de Vendas',shipping:'Frete comprador',codes:'Códigos ML',team:'Equipe de atendimento',chat:'Atendimento',support:'Suporte',settings:'Configurações'};$('crumbPage').textContent=labels[page]||'Portal';renderPage()}
+function navigate(page){if(page==='bling-dimensions'&&currentUser?.role==='support_agent'&&!(currentUser.bling_permissions||[]).some(p=>['bling.dimensions.view','bling.dimensions.manage'].includes(p))){toast('Sua conta não tem permissão para visualizar dimensões.');return;}if(currentUser?.role==='support_agent'&&!(currentUser.menu_permissions||['chat']).includes(menuKeyForPage(page)) && !(page==='vendas'&&(currentUser.menu_permissions||[]).includes('sales'))){toast('O administrador não liberou este menu para sua conta.');return}const changed=page!==currentPage;currentPage=page;if(changed&&(page==='vendas'||page==='sales'))salesData=null;document.querySelectorAll('.nav-item[data-page]').forEach(b=>b.classList.toggle('active',b.dataset.page===page));const labels={overview:'Visão geral',vendas:'Vendas',licenses:'Minhas licenças',devices:'Dispositivos',sales:'Analytics de Vendas',shipping:'Frete comprador',codes:'Códigos ML',team:'Equipe de atendimento',chat:'Atendimento',support:'Suporte',settings:'Configurações','bling-dimensions':'Dimensões de Embalagens'};$('crumbPage').textContent=labels[page]||'Portal';renderPage()}
 function fmtDate(v){if(!v)return '—';const d=new Date(v);return Number.isNaN(d.getTime())?'—':d.toLocaleDateString('pt-BR')}
 function statusBadge(status,expires){if(status!=='active')return '<span class="badge off">Inativa</span>';if(expires&&new Date(expires).getTime()<Date.now())return '<span class="badge off">Expirada</span>';return '<span class="badge">Ativa</span>'}
 function firstCompanyName(name){return String(name||'Empresa').trim().split(/\s+/)[0]||'Empresa'}
@@ -598,12 +603,13 @@ case'codes':html=pageHead('FERRAMENTAS','Códigos ML','Códigos configurados par
 case'team':html=pageHead('ATENDIMENTO','Equipe de atendimento','Gerencie os subusuários conforme as permissões concedidas pelo dono da licença.')+`<div class="panel"><div class="field"><label for="teamLicense">Licença / empresa</label><select id="teamLicense" class="filter-control"><option value="">Carregando licenças…</option></select></div><div class="panel-head"><div><h3>Subusuários</h3><div class="small muted">As ações disponíveis dependem das permissões da sua conta.</div></div><button class="btn btn-primary" id="addAgentBtn">＋ Novo subusuário</button></div><div id="teamNotice" class="muted small">Carregando equipe…</div><div class="table-wrap"><table class="table"><thead><tr><th>Nome</th><th>E-mail</th><th>Permissões</th><th>Status</th><th>Ações</th></tr></thead><tbody id="agentsTableBody"></tbody></table></div></div><div id="agentModalRoot"></div>`;break;
 case'chat':html=pageHead('MERCADO LIVRE','Atendimento','Converse com compradores e organize os atendimentos da sua licença.')+`<div class="chat-layout"><section class="panel chat-list"><div class="chat-toolbar"><select id="chatLicense" class="filter-control"><option value="">Carregando licenças…</option></select><span id="chatSyncStatus" class="small muted" aria-live="polite">Conversas salvas</span><button class="btn btn-ghost" id="chatRefresh">↻ Atualizar</button></div><input id="chatSearch" class="chat-search" placeholder="Buscar comprador, pedido ou mensagem…"><div id="chatConversationList" class="chat-conversation-list">Carregando conversas…</div></section><section class="panel chat-main"><div id="chatEmpty" class="empty"><div class="empty-icon">☏</div><h3>Selecione uma conversa</h3><p>As conversas disponíveis aparecerão aqui após sincronizar com o Mercado Livre.</p></div><div id="chatThread" class="hidden"></div></section></div>`;break;
 case'vendas':html=ordersMarkup();break;case'sales':html=salesMarkup();break;
-case'shipping':html=shippingMarkup();break;
+case'bling-dimensions':html=pageHead('BLING · CONFIGURAÇÕES','Dimensões de Embalagens','Gerencie os modelos de embalagem disponíveis para as licenças da sua empresa.',`<button class="btn btn-primary" id="dimAdd">＋ Novo modelo</button>`)+`<div class="panel dim-panel"><div class="dim-toolbar"><label class="dim-field">Empresa<select id="dimCompany" class="filter-control"><option value="">Carregando empresas…</option></select></label><label class="dim-field dim-grow">Pesquisar modelo<input id="dimSearch" class="filter-control" placeholder="Nome da embalagem" autocomplete="off"></label><span id="dimTotal" class="dim-total">0 modelos</span></div><div id="dimNotice" class="dim-notice" role="status" aria-live="polite"></div><div class="dim-table-wrap"><table class="dim-table"><thead><tr><th>Embalagem</th><th>Peso</th><th>Largura</th><th>Altura</th><th>Profundidade</th><th>Ações</th></tr></thead><tbody id="dimRows"><tr><td colspan="6">Carregando…</td></tr></tbody></table></div></div><div id="dimModalRoot"></div>`;break;
+ case'shipping':html=shippingMarkup();break;
 case'support':html=pageHead('AJUDA','Suporte','Precisa de ajuda com uma licença, dispositivo ou acesso?')+`<div class="panel settings-box"><div class="stat-icon" style="margin-bottom:15px">◉</div><h3 style="margin:0 0 7px">Fale com o suporte</h3><p class="muted">Ao entrar em contato, informe o e-mail da sua conta e a empresa relacionada ao problema. Não compartilhe sua senha.</p><div class="settings-row"><div><b>Conta atual</b><p>${esc(currentUser?.email||'')}</p></div><button class="btn btn-ghost" data-copy="${esc(currentUser?.email||'')}">Copiar e-mail</button></div><div class="settings-row"><div><b>Licenças cadastradas</b><p>${s.licenses||0} vinculada(s) a esta conta</p></div><button class="btn btn-ghost" data-go="licenses">Ver licenças</button></div><div style="margin-top:18px"><button class="btn btn-primary" id="supportMail">✉ Preparar e-mail para suporte</button></div></div>`;break;
 case'settings':html=pageHead('PREFERÊNCIAS','Configurações','Gerencie os dados básicos e a segurança da sua conta.')+`<div class="panel settings-box"><div class="panel-head"><div><h3>Perfil da conta</h3><div class="small muted">Informações usadas para identificar seu acesso ao portal.</div></div></div><div class="settings-row"><div><b>Nome</b><p>${esc(currentUser?.nome||'—')}</p></div><span class="small muted">Conta do portal</span></div><div class="settings-row"><div><b>E-mail</b><p>${esc(currentUser?.email||'—')}</p></div><span class="badge">Verificado no login</span></div><div class="settings-row"><div><b>Senha</b><p>Por segurança, a senha não é exibida.</p></div><span class="small muted">Redefinição futura</span></div><div class="settings-row"><div><b>Sessão</b><p>Encerre o acesso neste dispositivo.</p></div><button class="btn btn-danger" id="settingsLogout">Sair da conta</button></div></div>`;break;}
-$('pageContent').innerHTML=html;bindDynamicActions();if(currentPage==='vendas'&&!salesLoading&&!salesData)loadSales(1);if(currentPage==='shipping'&&!shippingLoading&&!shippingData)loadShippingItems();}}
+$('pageContent').innerHTML=html;bindDynamicActions();if(currentPage==='bling-dimensions')dimensionPageInit();if(currentPage==='vendas'&&!salesLoading&&!salesData)loadSales(1);if(currentPage==='shipping'&&!shippingLoading&&!shippingData)loadShippingItems();}}
 const userManagementLabels={"users.view":"Visualizar usuários","users.create":"Criar subusuários","users.edit":"Editar subusuários","users.delete":"Excluir/desativar subusuários","users.manage_permissions":"Gerenciar permissões da equipe"};
-const agentMenuLabels={overview:"Visão geral",licenses:"Minhas licenças",devices:"Dispositivos",orders:"Pedidos",sales:"Analytics de Vendas",shipping:"Frete comprador",codes:"Códigos ML",team:"Equipe de atendimento",chat:"Atendimento",support:"Suporte",settings:"Configurações","bling-entries":"Entradas de estoque","bling-labels":"Modelos de etiquetas","bling-integrations":"Conexões Bling"}; // BLING_MENU_LABELS_V1
+const agentMenuLabels={overview:"Visão geral",licenses:"Minhas licenças",devices:"Dispositivos",orders:"Pedidos",sales:"Analytics de Vendas",shipping:"Frete comprador",codes:"Códigos ML",team:"Equipe de atendimento",chat:"Atendimento",support:"Suporte",settings:"Configurações","bling-entries":"Entradas de estoque","bling-labels":"Modelos de etiquetas","bling-integrations":"Conexões Bling","bling-dimensions":"Dimensões de embalagens"}; // BLING_MENU_LABELS_V1
 const supportPermissionLabels={"conversations.view":"Visualizar conversas","conversations.reply":"Responder mensagens","conversations.assign":"Atribuir conversas","conversations.close":"Encerrar atendimentos","attachments.send":"Enviar fotos e PDFs","quick_replies.use":"Usar respostas rápidas","quick_replies.manage":"Gerenciar respostas rápidas","history.view":"Consultar histórico"};
 let teamLicenses=[], teamAgents=[], selectedTeamLicense='';
 async function initAgentTeamPage(){const body=$('agentTeamBody');if(!body)return;try{const r=await api('/api/portal/agent-team');const agents=r.agents||[];body.innerHTML=agents.length?agents.map(a=>`<tr><td><b>${esc(a.nome)}</b></td><td>${esc(a.email)}</td><td>${a.status==='active'?'<span class="badge">Ativo</span>':'<span class="badge off">Desativado</span>'}</td></tr>`).join(''):'<tr><td colspan="3">Nenhum membro da equipe disponível para as lojas autorizadas.</td></tr>';if($('agentTeamNotice'))$('agentTeamNotice').textContent=`${agents.length} membro(s) encontrado(s) nas lojas autorizadas.`}catch(e){if($('agentTeamNotice'))$('agentTeamNotice').textContent=e.message}}
@@ -657,7 +663,184 @@ setInterval(()=>{if(token&&currentPage==='chat'&&!document.hidden)loadChatConver
 boot();
 </script>
 <script src="/portal/bling-multi.js"></script>
-<script src="/portal/team-permissions.js"></script>
+<!-- Permissões da equipe integradas diretamente ao portal/index.html -->
+<script>
+/* ML Support — tela de permissões de subusuários (aditiva).
+ * Usa a API /api/portal/atendimento/agents já existente.
+ * O backend continua sendo a autoridade para todas as permissões.
+ */
+(() => {
+  'use strict';
+  const style = document.createElement('style');
+  style.textContent = `
+    .ml-perm-modal{width:min(96vw,960px)!important;max-width:960px!important;max-height:min(92dvh,920px)!important;display:flex;flex-direction:column;overflow:hidden!important}
+    .ml-perm-modal .ml-perm-body{overflow-y:auto;min-height:0;overscroll-behavior:contain;padding:18px 22px 8px}
+    .ml-perm-layout{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px}
+    .ml-perm-section{min-width:0;border:1px solid var(--line);background:var(--panel);border-radius:14px;padding:15px;margin-bottom:14px}
+    .ml-perm-section h3{font-size:14px;font-weight:750;margin:0 0 5px;color:var(--ink)}
+    .ml-perm-section p{margin:0 0 12px;font-size:12px;color:var(--muted)}
+    .ml-perm-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+    .ml-perm-choice{display:flex;align-items:center;gap:9px;min-width:0;border:1px solid var(--line);border-radius:10px;padding:11px;background:var(--panel-2);cursor:pointer;font-size:12px;color:var(--ink);transition:border-color .15s}
+    .ml-perm-choice:has(input:checked){border-color:var(--purple);background:color-mix(in srgb,var(--purple) 7%,var(--panel))}
+    .ml-perm-choice input{accent-color:var(--purple);flex-shrink:0;width:16px;height:16px;margin:0}
+    .ml-perm-choice span{overflow-wrap:anywhere;line-height:1.35}
+    .ml-perm-choice:has(input:disabled){opacity:.65;cursor:default}
+    .ml-perm-actions{display:flex;gap:8px;align-items:center;justify-content:flex-end;flex-wrap:wrap;padding:12px 22px 16px;background:var(--panel);border-top:1px solid var(--line)}
+    .ml-perm-head-actions{display:flex;gap:8px;align-items:center}
+    .ml-perm-link{border:0;background:none;color:var(--purple);font-size:12px;cursor:pointer;font-weight:650;padding:4px}
+    .ml-perm-headline{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+    .ml-perm-note{background:var(--panel-2);border:1px solid var(--line);border-radius:10px;padding:11px 12px;font-size:12px;color:var(--muted);margin-bottom:14px}
+    .ml-perm-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+    .ml-perm-fields .field{min-width:0}
+    .ml-perm-fields .field input{width:100%;min-width:0}
+    .ml-perm-modal input:focus-visible,.ml-perm-modal button:focus-visible{outline:2px solid var(--purple);outline-offset:2px}
+    @media(max-width:760px){.ml-perm-layout{grid-template-columns:1fr}.ml-perm-modal{width:min(100vw,680px)!important;max-height:94dvh!important}.ml-perm-modal .ml-perm-body{padding:14px}.ml-perm-actions{padding:12px 14px}.ml-perm-fields{grid-template-columns:1fr}}
+    @media(max-width:420px){.ml-perm-grid{grid-template-columns:1fr}.ml-perm-section{padding:12px}.ml-perm-actions .btn{flex:1}}
+  `;
+  document.head.appendChild(style);
+
+  // BLING_USER_UI_V1 — permissões granulares e conexão selecionada pelo titular.
+  const blingLabels={'bling.entries.view':'Visualizar entradas de estoque','bling.products.sync':'Sincronizar dados dos produtos','bling.labels.print':'Gerar e imprimir etiquetas','bling.templates.manage':'Gerenciar modelos de etiquetas','bling.connections.manage':'Gerenciar conexões existentes','bling.dimensions.view':'Visualizar dimensões de embalagens','bling.dimensions.manage':'Criar, renomear, editar e excluir dimensões'};
+  // Esta função substitui apenas o formulário de criação/edição, sem substituir o restante do portal.
+  window.openAgentModal = async function openAgentModal(agent = null) {
+    if (typeof teamCan !== 'function' || typeof api !== 'function') return;
+    const editing = !!agent;
+    if (!teamCan(editing ? 'users.edit' : 'users.create')) { toast('Você não tem permissão para esta operação.'); return; }
+    const manager = currentUser?.role !== 'support_agent' || teamCan('users.manage_permissions');
+    const selectedChat = new Set(agent?.permissions || (editing ? [] : ['conversations.view','conversations.reply','attachments.send','quick_replies.use']));
+    const selectedMenus = new Set(agent?.menu_permissions || ['chat']);
+    const selectedManagement = new Set(agent?.user_management_permissions || []);
+    const selectedBling = new Set(agent?.bling_permissions||[]);
+    const selectedBlingConnections = new Set(agent?.bling_connection_ids||[]);
+    const mainLicense = String(agent?.license_id || selectedTeamLicense);
+    const selectedStores = new Set((agent?.allowed_license_ids || [mainLicense]).map(String));
+    selectedStores.add(mainLicense);
+    const host = document.getElementById('agentModalRoot');
+    if (!host) return;
+    const options = (labels, name, set, disabled = false) => Object.entries(labels).map(([key, label]) =>
+      `<label class="ml-perm-choice"><input type="checkbox" name="${name}" value="${esc(key)}" ${set.has(key)?'checked':''} ${disabled?'disabled':''}><span>${esc(label)}</span></label>`
+    ).join('');
+    const stores = (teamLicenses || []).map(l => {
+      const id = String(l.id), primary = id === mainLicense;
+      return `<label class="ml-perm-choice"><input type="checkbox" name="agentStore" value="${esc(id)}" ${selectedStores.has(id)?'checked':''} ${primary||!manager?'disabled':''}><span>${esc(l.company_name||'Loja')}${primary?' · principal':''}</span></label>`;
+    }).join('');
+    let availableBling=[];
+    if(currentUser?.role!=='support_agent'){
+      try{const r=await api('/api/portal/bling/connections');availableBling=r.connections||[];}catch(e){console.warn('Conexões Bling indisponíveis:',e.message);}
+    }
+    host.innerHTML = `<div class="modal-backdrop" id="agentBackdrop"><section class="modal ml-perm-modal" role="dialog" aria-modal="true" aria-labelledby="mlAgentHeading">
+      <div class="modal-head"><div><h2 id="mlAgentHeading">${editing?'Editar subusuário':'Novo subusuário'}</h2><div class="small muted">Configure o acesso de forma simples e segura</div></div><button type="button" class="modal-close" id="agentClose" aria-label="Fechar">×</button></div>
+      <form id="agentForm" style="display:contents"><div class="ml-perm-body">
+        <section class="ml-perm-section"><h3>Dados de acesso</h3><p>Informações utilizadas para entrar no portal.</p><div class="ml-perm-fields">
+          <div class="field"><label for="agentName">Nome</label><input id="agentName" maxlength="100" required value="${esc(agent?.nome||'')}"></div>
+          <div class="field"><label for="agentEmail">E-mail</label><input id="agentEmail" type="email" required ${editing?'readonly':''} autocomplete="email" value="${esc(agent?.email||'')}"></div>
+          <div class="field"><label for="agentPassword">${editing?'Nova senha (opcional)':'Senha inicial (mínimo 8 caracteres)'}</label><input id="agentPassword" type="password" minlength="8" ${editing?'':'required'} autocomplete="new-password"></div>
+        </div></section>
+        <section class="ml-perm-section"><h3>Lojas permitidas</h3><p>Escolha as lojas acessíveis. A principal é obrigatória.</p><div class="ml-perm-grid">${stores}</div></section>
+        ${manager?`<div class="ml-perm-layout">
+          <section class="ml-perm-section"><div class="ml-perm-headline"><div><h3>Menus do portal</h3><p>Áreas visíveis no menu lateral.</p></div><div class="ml-perm-head-actions"><button type="button" class="ml-perm-link" data-check-group="agentMenuPermission">Todos</button><button type="button" class="ml-perm-link" data-uncheck-group="agentMenuPermission">Limpar</button></div></div><div class="ml-perm-grid">${options(agentMenuLabels,'agentMenuPermission',selectedMenus)}</div></section>
+          <section class="ml-perm-section"><div class="ml-perm-headline"><div><h3>Atendimento</h3><p>Ações permitidas dentro do chat.</p></div><button type="button" class="ml-perm-link" data-uncheck-group="agentPermission">Limpar</button></div><div class="ml-perm-grid">${options(supportPermissionLabels,'agentPermission',selectedChat)}</div></section>
+        </div>
+        <section class="ml-perm-section"><h3>Gerenciamento de usuários</h3><p>Permissões administrativas. Ao habilitar uma destas ações, a visualização da equipe e o menu Equipe serão liberados automaticamente.</p><div class="ml-perm-grid">${options(userManagementLabels,'agentUserManagementPermission',selectedManagement)}</div></section>
+        ${currentUser?.role!=='support_agent'?`<section class="ml-perm-section"><h3>Bling e etiquetas</h3><p>Conceda somente as ações necessárias. O acesso também fica limitado às conexões selecionadas.</p><div class="ml-perm-grid">${options(blingLabels,'agentBlingPermission',selectedBling)}</div><h3 style="margin-top:18px">Contas Bling autorizadas</h3><div class="ml-perm-grid">${availableBling.map(c=>`<label class="ml-perm-choice"><input type="checkbox" name="agentBlingConnection" value="${esc(c.id)}" ${selectedBlingConnections.has(c.id)?'checked':''}><span>${esc(c.name)}</span></label>`).join('')||'<div class="small muted">Nenhuma conexão disponível.</div>'}</div><div class="ml-perm-note" style="margin-top:12px">Uma conta Bling pode reunir várias lojas. O limite é por conexão; não separa produtos de lojas que compartilham a mesma conta.</div></section>`:'<div class="ml-perm-note">Somente o titular pode conceder permissões Bling.</div>'}
+        `:`<div class="ml-perm-note">Suas permissões não permitem alterar o acesso dos demais usuários. O novo usuário receberá apenas permissões autorizadas pelo servidor.</div>`}
+        <div id="agentFormError" aria-live="polite"></div>
+      </div><div class="ml-perm-actions"><button type="button" class="btn btn-ghost" id="agentCancel">Cancelar</button><button type="submit" class="btn btn-primary">${editing?'Salvar alterações':'Criar subusuário'}</button></div></form>
+    </section></div>`;
+    const $ = id => host.querySelector('#'+id);
+    const close = () => { host.innerHTML = ''; };
+    $('agentClose').onclick = close;
+    $('agentCancel').onclick = close;
+    $('agentBackdrop').onclick = e => { if(e.target === $('agentBackdrop')) close(); };
+    const checked = name => [...host.querySelectorAll(`input[name="${name}"]:checked`)].map(e => e.value);
+    const error = message => { $('agentFormError').innerHTML = `<div class="alert error">${esc(message)}</div>`; };
+    const synchronizeDependencies = () => {
+      if(!manager) return;
+      const mgmt = checked('agentUserManagementPermission');
+      if(mgmt.some(p => p !== 'users.view')){
+        host.querySelector('input[name="agentUserManagementPermission"][value="users.view"]').checked = true;
+      }
+      if(checked('agentUserManagementPermission').length) {
+        host.querySelector('input[name="agentMenuPermission"][value="team"]').checked = true;
+      }
+      if(host.querySelector('input[name="agentMenuPermission"][value="team"]').checked) {
+        host.querySelector('input[name="agentUserManagementPermission"][value="users.view"]').checked = true;
+      }
+      const chatPermissions = checked('agentPermission');
+      if(chatPermissions.length) host.querySelector('input[name="agentMenuPermission"][value="chat"]').checked = true;
+      if(chatPermissions.some(p => p !== 'conversations.view')) host.querySelector('input[name="agentPermission"][value="conversations.view"]').checked = true;
+    };
+    host.querySelectorAll('input[type="checkbox"]').forEach(c => c.addEventListener('change', synchronizeDependencies));
+    host.querySelectorAll('[data-check-group]').forEach(b => b.onclick=()=>{host.querySelectorAll(`input[name="${b.dataset.checkGroup}"]:not(:disabled)`).forEach(x=>x.checked=true);synchronizeDependencies();});
+    host.querySelectorAll('[data-uncheck-group]').forEach(b => b.onclick=()=>{
+      const name=b.dataset.uncheckGroup;
+      host.querySelectorAll(`input[name="${name}"]:not(:disabled)`).forEach(x=>x.checked=false);
+      if(name==='agentMenuPermission') host.querySelectorAll('input[name="agentUserManagementPermission"],input[name="agentPermission"]').forEach(x=>x.checked=false);
+      synchronizeDependencies();
+    });
+    synchronizeDependencies();
+    $('agentForm').onsubmit = async e => {
+      e.preventDefault();
+      const submit = $('agentForm').querySelector('button[type="submit"]');
+      const permissionMenus = checked('agentMenuPermission');
+      if(manager && !permissionMenus.length) return error('Selecione pelo menos um menu para este usuário.');
+      const allowed_license_ids=[...new Set([...checked('agentStore'), mainLicense])];
+      const payload={nome:$('agentName').value.trim()};
+      if(!payload.nome) return error('Informe o nome do usuário.');
+      if(currentUser?.role!=='support_agent'){
+        payload.bling_permissions=checked('agentBlingPermission');
+        if(payload.bling_permissions.some(p=>['bling.products.sync','bling.labels.print'].includes(p))&&!payload.bling_permissions.includes('bling.entries.view'))payload.bling_permissions.push('bling.entries.view');
+        payload.bling_connection_ids=checked('agentBlingConnection');
+        const menus=new Set(permissionMenus);
+        if(payload.bling_permissions.some(p=>['bling.entries.view','bling.products.sync','bling.labels.print'].includes(p)))menus.add('bling-entries');
+        if(payload.bling_permissions.includes('bling.templates.manage'))menus.add('bling-labels');
+        if(payload.bling_permissions.includes('bling.connections.manage'))menus.add('bling-integrations');
+        if(payload.bling_permissions.includes('bling.dimensions.manage')&&!payload.bling_permissions.includes('bling.dimensions.view'))payload.bling_permissions.push('bling.dimensions.view');
+        if(payload.bling_permissions.some(p=>p.startsWith('bling.dimensions.')))menus.add('bling-dimensions');
+        permissionMenus.splice(0,permissionMenus.length,...menus);
+        if(payload.bling_permissions.some(p=>!p.startsWith('bling.dimensions.'))&&!payload.bling_connection_ids.length)return error('Selecione ao menos uma conexão Bling autorizada.');
+      }
+      if(manager){
+        payload.permissions=checked('agentPermission');
+        payload.menu_permissions=permissionMenus;
+        payload.user_management_permissions=checked('agentUserManagementPermission');
+        payload.allowed_license_ids=allowed_license_ids;
+      } else if(!editing){
+        // Na criação sem permissão administrativa, o backend valida e limita o acesso.
+        payload.allowed_license_ids=allowed_license_ids;
+      }
+      if(!editing){
+        payload.license_id=mainLicense;
+        payload.email=$('agentEmail').value.trim().toLowerCase();
+        payload.senha=$('agentPassword').value;
+        if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(payload.email))return error('Informe um e-mail válido.');
+      }else if($('agentPassword').value) payload.senha=$('agentPassword').value;
+      submit.disabled=true;
+      try{
+        await api(editing?'/api/portal/atendimento/agents/'+encodeURIComponent(agent.id):'/api/portal/atendimento/agents',{
+          method: editing?'PATCH':'POST',body:JSON.stringify(payload)
+        });
+        close();await loadTeamAgents();toast(editing?'Subusuário atualizado.':'Subusuário criado.');
+      }catch(err){error(err.message)}finally{submit.disabled=false;}
+    };
+    $('agentName').focus();
+  };
+})();
+
+</script>
+<script>
+// Dimensões do Bling: tela nativa do portal, com permissão no cliente e validação na API.
+let dimCompanies=[],dimItems=[],dimCompanyId='',dimSearch='',dimLoadSerial=0;
+const dimCanManage=()=>currentUser?.role!=='support_agent'||(currentUser?.bling_permissions||[]).includes('bling.dimensions.manage');
+const dimPath=()=>'/api/portal/dimensoes/'+encodeURIComponent(dimCompanyId);
+const dimNumber=n=>Number(n).toLocaleString('pt-BR',{maximumFractionDigits:3});
+function dimMessage(message,failed=false){const el=$('dimNotice');if(el){el.textContent=message;el.style.color=failed?'#c23950':'';}}
+function dimRender(){const area=$('dimRows');if(!area)return;const q=dimSearch.toLocaleLowerCase('pt-BR');const filtered=dimItems.filter(x=>String(x.nome).toLocaleLowerCase('pt-BR').includes(q));$('dimTotal').textContent=dimItems.length+' modelo'+(dimItems.length===1?'':'s');area.innerHTML=filtered.length?filtered.map(x=>`<tr><td><strong>${esc(x.nome)}</strong></td><td>${dimNumber(x.peso)} kg</td><td>${dimNumber(x.largura)} cm</td><td>${dimNumber(x.altura)} cm</td><td>${dimNumber(x.profundidade)} cm</td><td><div class="dim-row-actions">${dimCanManage()?`<button class="btn btn-ghost" data-dim-edit="${esc(x.id)}">Editar</button><button class="btn btn-ghost" data-dim-rename="${esc(x.id)}">Renomear</button><button class="btn btn-danger" data-dim-delete="${esc(x.id)}">Excluir</button>`:'Somente leitura'}</div></td></tr>`).join(''):'<tr><td colspan="6" style="text-align:center;padding:35px">Nenhum modelo encontrado.</td></tr>';}
+async function dimLoad(){const requestId=++dimLoadSerial;if(!dimCompanyId){dimItems=[];dimRender();return}dimMessage('Carregando dimensões…');try{const d=await api(dimPath());if(requestId!==dimLoadSerial||currentPage!=='bling-dimensions')return;dimItems=d.items||[];dimRender();dimMessage('')}catch(e){if(requestId!==dimLoadSerial)return;dimItems=[];dimRender();dimMessage(e.message,true)}}
+async function dimensionPageInit(){const select=$('dimCompany');if(!select)return;dimItems=[];dimSearch='';const editable=dimCanManage();$('dimAdd').hidden=!editable;$('dimAdd').onclick=()=>dimEditor(null,false);$('dimSearch').oninput=e=>{dimSearch=e.target.value;dimRender()};select.onchange=e=>{dimCompanyId=e.target.value;dimLoad()};$('dimRows').onclick=async e=>{const btn=e.target.closest('button');if(!btn||!editable)return;const id=btn.dataset.dimEdit||btn.dataset.dimRename||btn.dataset.dimDelete;const item=dimItems.find(x=>String(x.id)===id);if(!item)return;if(btn.hasAttribute('data-dim-delete')){if(!confirm('Excluir "'+item.nome+'" desta empresa?'))return;try{await api(dimPath()+'/'+encodeURIComponent(id),{method:'DELETE'});await dimLoad();toast('Modelo excluído.')}catch(err){dimMessage(err.message,true)}return}dimEditor(item,btn.hasAttribute('data-dim-rename'))};
+try{const data=await api('/api/portal/dimensoes/empresas');if(currentPage!=='bling-dimensions')return;dimCompanies=data.companies||[];select.innerHTML=dimCompanies.length?dimCompanies.map(c=>`<option value="${esc(c.id)}">${esc(c.nome)}</option>`).join(''):'<option value="">Nenhuma empresa autorizada</option>';dimCompanyId=dimCompanies.some(c=>String(c.id)===String(dimCompanyId))?dimCompanyId:String(dimCompanies[0]?.id||'');select.value=dimCompanyId;$('dimAdd').disabled=!dimCompanyId;if(dimCompanyId)await dimLoad();else dimMessage('Nenhuma empresa com licença ativa e acesso autorizado.',true)}catch(err){dimMessage(err.message,true);$('dimAdd').disabled=true;select.innerHTML='<option value="">Não foi possível carregar</option>'}}
+function dimEditor(item,rename){if(!dimCanManage())return;const root=$('dimModalRoot');if(!root)return;const fields=rename?`<label class="wide">Nome da embalagem<input name="nome" maxlength="100" required value="${esc(item.nome)}"></label>`:`<label class="wide">Nome da embalagem<input name="nome" maxlength="100" required value="${esc(item?.nome||'')}"></label>${[['peso','Peso (kg)'],['largura','Largura (cm)'],['altura','Altura (cm)'],['profundidade','Profundidade (cm)']].map(([key,label])=>`<label>${label}<input name="${key}" type="number" min="0.001" max="10000" step="any" required value="${esc(item?.[key]??'')}"></label>`).join('')}`;root.innerHTML=`<div class="dim-modal-shade" id="dimShade"><section class="dim-modal" role="dialog" aria-modal="true" aria-labelledby="dimModalTitle"><h2 id="dimModalTitle">${rename?'Renomear embalagem':item?'Editar embalagem':'Novo modelo'}</h2><p class="muted">${rename?'Altere apenas o nome. As medidas serão mantidas.':'Os modelos são compartilhados apenas entre licenças da empresa selecionada.'}</p><form id="dimForm"><div class="dim-fields">${fields}</div><div class="dim-modal-actions"><button class="btn btn-ghost" type="button" id="dimCancel">Cancelar</button><button class="btn btn-primary" type="submit" id="dimSave">Salvar</button></div></form></section></div>`;const close=()=>root.innerHTML='';$('dimCancel').onclick=close;$('dimShade').onclick=e=>{if(e.target.id==='dimShade')close()};$('dimForm').onsubmit=async e=>{e.preventDefault();if(!dimCompanyId)return;const v=Object.fromEntries(new FormData(e.target));if(rename)for(const k of ['peso','largura','altura','profundidade'])v[k]=Number(item[k]);else for(const k of ['peso','largura','altura','profundidade'])v[k]=Number(v[k]);$('dimSave').disabled=true;try{await api(dimPath()+(item?'/'+encodeURIComponent(item.id):''),{method:item?'PUT':'POST',body:JSON.stringify(v)});close();await dimLoad();toast('Dimensões salvas com sucesso.')}catch(err){dimMessage(err.message,true);$('dimSave').disabled=false}};root.querySelector('input')?.focus()}
+</script>
 </body></html>
 <style>
 /* Correção de superfícies da página Vendas no tema escuro */

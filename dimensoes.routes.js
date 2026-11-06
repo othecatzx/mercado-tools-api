@@ -16,7 +16,17 @@ module.exports = function registerDimensionRoutes(app, { supabase, jwt }) {
   async function getPortalOwner(req,res,next) {
     try {
       const payload = jwt.verify(getToken(req),process.env.JWT_SECRET);
-      if(payload.type !== 'portal' || !payload.portal_user_id) return res.status(403).json({message:'Somente o administrador da conta pode editar dimensões.'});
+      if(payload.type === 'support_agent' && payload.support_agent_id) {
+        const {data:agent,error:agentError}=await supabase.from('support_agents').select('id,status,license_id,created_by_portal_user_id,menu_permissions,bling_permissions,allowed_license_ids,allowed_company_ids').eq('id',payload.support_agent_id).maybeSingle();
+        if(agentError)throw agentError;
+        if(!agent||agent.status!=='active')return res.status(403).json({message:'Usuário não autorizado.'});
+        const perms=agent.bling_permissions||[];
+        if(!(agent.menu_permissions||[]).includes('bling-dimensions')||!perms.some(x=>['bling.dimensions.view','bling.dimensions.manage'].includes(x)))return res.status(403).json({message:'Sem permissão para dimensões.'});
+        req.dimAgent=agent;req.ownerId=agent.created_by_portal_user_id;
+        if(!req.ownerId)return res.status(403).json({message:'Conta sem titular.'});
+        return next();
+      }
+      if(payload.type !== 'portal' || !payload.portal_user_id) return res.status(403).json({message:'Acesso negado.'});
       const {data:user,error} = await supabase.from('portal_users').select('id,status').eq('id',payload.portal_user_id).maybeSingle();
       if(error) throw error;
       if(!user || user.status !== 'active') return res.status(403).json({message:'Conta indisponível'});
@@ -40,12 +50,25 @@ module.exports = function registerDimensionRoutes(app, { supabase, jwt }) {
     return [...companies.values()];
   }
   app.get('/api/portal/dimensoes/empresas',getPortalOwner,async(req,res)=>{
-    try {res.json({companies:await ownedCompanies(req.ownerId)});} catch(e){fail(res,e)}
+    try {res.json({companies:await scopedDimensionCompanies(req)});} catch(e){fail(res,e)}
   });
+  async function scopedDimensionCompanies(req){
+    const owned=await ownedCompanies(req.ownerId);
+    if(!req.dimAgent)return owned;
+    const agent=req.dimAgent;
+    const licenseIds=[...new Set((agent.allowed_license_ids?.length?agent.allowed_license_ids:[agent.license_id]).map(String))];
+    if(!licenseIds.length)return [];
+    const {data,error}=await supabase.from('licenses').select('id,company_id,status,vencimento').in('id',licenseIds);
+    if(error)throw error;
+    const permitted=new Set((data||[]).filter(l=>l.status==='active'&&(!l.vencimento||new Date(l.vencimento).getTime()>=Date.now())).map(l=>String(l.company_id)));
+    if(Array.isArray(agent.allowed_company_ids)&&agent.allowed_company_ids.length){const allow=new Set(agent.allowed_company_ids.map(String));return owned.filter(c=>permitted.has(String(c.id))&&allow.has(String(c.id)))}
+    return owned.filter(c=>permitted.has(String(c.id)));
+  }
+  function mayWrite(req,res,next){if(req.dimAgent&&!(req.dimAgent.bling_permissions||[]).includes('bling.dimensions.manage'))return res.status(403).json({message:'Permissão para editar dimensões não concedida.'});next()}
   async function companyScope(req,res,next) {
     try {
       const companyId=req.params.companyId;
-      if(!(await ownedCompanies(req.ownerId)).some(c=>String(c.id)===String(companyId)))
+      if(!(await scopedDimensionCompanies(req)).some(c=>String(c.id)===String(companyId)))
         return res.status(403).json({message:'Empresa não autorizada ou sem licença ativa.'});
       req.dimCompanyId=companyId;next();
     }catch(e){fail(res,e)}
@@ -58,7 +81,7 @@ module.exports = function registerDimensionRoutes(app, { supabase, jwt }) {
       if(error)throw error;res.json({items:data||[]});
     }catch(e){fail(res,e)}
   });
-  app.post('/api/portal/dimensoes/:companyId',...ownerAccess,async(req,res)=>{
+  app.post('/api/portal/dimensoes/:companyId',...ownerAccess,mayWrite,async(req,res)=>{
     const value=normalize(req.body);if(!value)return res.status(400).json({message:'Nome e dimensões precisam ser positivos e válidos.'});
     try {
       const {data,error}=await supabase.from(table).insert({...value,company_id:req.dimCompanyId,ordem:100}).select().single();
@@ -66,7 +89,7 @@ module.exports = function registerDimensionRoutes(app, { supabase, jwt }) {
       res.status(201).json({item:data});
     }catch(e){fail(res,e)}
   });
-  app.put('/api/portal/dimensoes/:companyId/:id',...ownerAccess,async(req,res)=>{
+  app.put('/api/portal/dimensoes/:companyId/:id',...ownerAccess,mayWrite,async(req,res)=>{
     const value=normalize(req.body);if(!value)return res.status(400).json({message:'Nome e dimensões precisam ser positivos e válidos.'});
     try {
       const {data,error}=await supabase.from(table).update(value)
@@ -75,14 +98,14 @@ module.exports = function registerDimensionRoutes(app, { supabase, jwt }) {
       if(!data)return res.status(404).json({message:'Modelo não encontrado nesta empresa.'});res.json({item:data});
     }catch(e){fail(res,e)}
   });
-  app.delete('/api/portal/dimensoes/:companyId/:id',...ownerAccess,async(req,res)=>{
+  app.delete('/api/portal/dimensoes/:companyId/:id',...ownerAccess,mayWrite,async(req,res)=>{
     try {
       const {data,error}=await supabase.from(table).delete().eq('company_id',req.dimCompanyId).eq('id',req.params.id).select('id').maybeSingle();
       if(error)throw error;if(!data)return res.status(404).json({message:'Modelo não encontrado nesta empresa.'});res.json({ok:true});
     }catch(e){fail(res,e)}
   });
   // Bloqueia a API administrativa global antiga; nenhum administrador altera modelos entre empresas por acidente.
-  app.all(/^\/api\/admin\/dimensoes(?:\/.*)?$/,(_req,res)=>res.status(410).json({message:'O gerenciamento de dimensões foi movido para /portal/dimensoes.html e é isolado por empresa.'}));
+  app.all(/^\/api\/admin\/dimensoes(?:\/.*)?$/,(_req,res)=>res.status(410).json({message:'As dimensões são gerenciadas na aba do portal e isoladas por empresa.'}));
   app.post('/api/bling/dimensoes',async(req,res)=>{
     try {
       const {chave,device_id}=req.body||{};

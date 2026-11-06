@@ -81,7 +81,7 @@ module.exports = function registerAtendimentoRoutes(app, { supabase, jwt, bcrypt
   }
 
   // BLING_USER_PERMISSIONS_V1 — concedidas somente pelo titular da conta.
-  const blingPermissionKeys=new Set(['bling.entries.view','bling.products.sync','bling.labels.print','bling.templates.manage','bling.connections.manage']);
+  const blingPermissionKeys=new Set(['bling.entries.view','bling.products.sync','bling.labels.print','bling.templates.manage','bling.connections.manage','bling.dimensions.view','bling.dimensions.manage']);
   function blingPermissionsValid(values){return Array.isArray(values)&&values.length<=blingPermissionKeys.size&&values.every(v=>blingPermissionKeys.has(v));}
   async function validateBlingScope(owner, ids){
     if(!Array.isArray(ids)||ids.length>100||ids.some(v=>!/^[a-f0-9-]{36}$/i.test(String(v))))return false;
@@ -95,10 +95,12 @@ module.exports = function registerAtendimentoRoutes(app, { supabase, jwt, bcrypt
     if(permissions.includes('bling.entries.view')&&!menus.includes('bling-entries'))return false;
     if(permissions.includes('bling.templates.manage')&&!menus.includes('bling-labels'))return false;
     if(permissions.includes('bling.connections.manage')&&!menus.includes('bling-integrations'))return false;
+    if(permissions.includes('bling.dimensions.manage')&&!permissions.includes('bling.dimensions.view'))return false;
+    if(permissions.some(p=>['bling.dimensions.view','bling.dimensions.manage'].includes(p))&&!menus.includes('bling-dimensions'))return false;
     return true;
   }
 
-  const menuKeys = new Set(['overview','licenses','devices','orders','sales','shipping','codes','team','chat','support','settings','bling-entries','bling-labels','bling-integrations']);
+  const menuKeys = new Set(['overview','licenses','devices','orders','sales','shipping','codes','team','chat','support','settings','bling-entries','bling-labels','bling-integrations','bling-dimensions']);
 
   function agentCanGrantMenu(actor, menu) {
     const ownMenus = Array.isArray(actor?.menuPermissions) ? actor.menuPermissions : [];
@@ -186,7 +188,7 @@ module.exports = function registerAtendimentoRoutes(app, { supabase, jwt, bcrypt
       const bling_permissions=req.body?.bling_permissions||[];
       const bling_connection_ids=req.body?.bling_connection_ids||[];
       if(!blingPermissionsValid(bling_permissions)||!await validateBlingScope(req.portalUserId,bling_connection_ids)||!blingMenuDeps(menu_permissions,bling_permissions))return res.status(400).json({message:'Permissões Bling, menus ou conexões inválidos'});
-      if(bling_permissions.length&&!bling_connection_ids.length)return res.status(400).json({message:'Selecione ao menos uma conexão Bling autorizada'});
+      if(bling_permissions.some(p=>!p.startsWith('bling.dimensions.'))&&!bling_connection_ids.length)return res.status(400).json({message:'Selecione ao menos uma conexão Bling autorizada'});
 
       const requestedLicenseIds = Array.isArray(req.body?.allowed_license_ids) ? [...new Set(req.body.allowed_license_ids.map(String))] : [licenseId];
       if (req.teamActor.type === 'agent' && requestedLicenseIds.some(id => !req.teamActor.allowedLicenseIds.includes(id))) return res.status(403).json({ ok:false, error:'license_out_of_scope' });
@@ -269,7 +271,7 @@ module.exports = function registerAtendimentoRoutes(app, { supabase, jwt, bcrypt
         const bp=req.body.bling_permissions===undefined?(existing.bling_permissions||[]):req.body.bling_permissions;
         const bc=req.body.bling_connection_ids===undefined?(existing.bling_connection_ids||[]):req.body.bling_connection_ids;
         const menus=updates.menu_permissions||existing.menu_permissions||[];
-        if(!blingPermissionsValid(bp)||!await validateBlingScope(req.portalUserId,bc)||!blingMenuDeps(menus,bp)|| (bp.length&&!bc.length))return res.status(400).json({message:'Permissões Bling ou conexões inválidas'});
+        if(!blingPermissionsValid(bp)||!await validateBlingScope(req.portalUserId,bc)||!blingMenuDeps(menus,bp)|| (bp.some(p=>!p.startsWith('bling.dimensions.'))&&!bc.length))return res.status(400).json({message:'Permissões Bling ou conexões inválidas'});
         updates.bling_permissions=bp;
         updates.bling_connection_ids=bc;
       }
