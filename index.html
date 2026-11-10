@@ -2,69 +2,95 @@
 <html lang="pt-BR">
 <head>
 <link rel="icon" href="icon/icon.png" type="image/png">
-  <meta charset="utf-8">
+<meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="theme-color" content="#0b1020">
+<meta name="theme-color" content="#070913">
 <title>Bem-vindo · ML SH Support</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
 :root {
-  --bg: #f5f7fc;
+  --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --bg: #f8faff;
+  --bg-gradient: radial-gradient(at 0% 0%, rgba(99, 102, 241, 0.08) 0px, transparent 50%),
+                 radial-gradient(at 100% 0%, rgba(56, 189, 248, 0.08) 0px, transparent 50%),
+                 radial-gradient(at 50% 100%, rgba(139, 92, 246, 0.05) 0px, transparent 50%),
+                 #f8faff;
   --panel: #ffffff;
-  --panel-2: #f8f9fd;
-  --ink: #151a2d;
-  --muted: #778198;
-  --line: #e5e9f2;
-  --dark: #101427;
-  --purple: #6957f5;
-  --purple2: #8a68ff;
-  --shadow: 0 10px 28px rgba(20,29,65,.045), 0 2px 6px rgba(20,29,65,.025);
-  --shadow-hover: 0 18px 42px rgba(31,38,78,.09), 0 5px 12px rgba(31,38,78,.04);
-  --soft: #f0edff;
-  --soft-ink: #5f50dc;
-  --radius: 18px;
+  --panel-2: #f4f6fc;
+  --panel-glass: rgba(255, 255, 255, 0.8);
+  --panel-border: rgba(226, 232, 240, 0.85);
+  --ink: #0f172a;
+  --muted: #64748b;
+  --line: #e2e8f0;
+  --dark: #0a0f1d;
+  --purple: #6366f1;
+  --purple-hover: #4f46e5;
+  --purple2: #8b5cf6;
+  --primary-soft: rgba(99, 102, 241, 0.1);
+  --soft: rgba(99, 102, 241, 0.08);
+  --soft-ink: #4f46e5;
+  --radius: 20px;
+  --radius-sm: 12px;
+  --shadow: 0 10px 30px -5px rgba(15, 23, 42, 0.05), 0 4px 12px -2px rgba(15, 23, 42, 0.025);
+  --shadow-hover: 0 20px 42px -8px rgba(99, 102, 241, 0.16), 0 8px 18px -4px rgba(15, 23, 42, 0.04);
 }
 html[data-theme="dark"] {
-  --bg: #0b1020;
-  --panel: #121a2d;
-  --panel-2: #172137;
-  --ink: #edf1fc;
-  --muted: #9aa7c0;
-  --line: #26324a;
-  --dark: #090e1b;
-  --purple: #9a8bff;
-  --purple2: #b09aff;
-  --shadow: 0 10px 32px rgba(0,0,0,.18);
-  --shadow-hover: 0 18px 45px rgba(0,0,0,.3);
-  --soft: #252044;
-  --soft-ink: #c2b9ff;
+  --bg: #070913;
+  --bg-gradient: radial-gradient(at 0% 0%, rgba(99, 102, 241, 0.14) 0px, transparent 50%),
+                 radial-gradient(at 100% 20%, rgba(139, 92, 246, 0.12) 0px, transparent 45%),
+                 radial-gradient(at 50% 100%, rgba(14, 165, 233, 0.08) 0px, transparent 50%),
+                 #070913;
+  --panel: #0f1424;
+  --panel-2: #141b30;
+  --panel-glass: rgba(15, 20, 36, 0.82);
+  --panel-border: rgba(255, 255, 255, 0.08);
+  --ink: #f8fafc;
+  --muted: #8492a6;
+  --line: rgba(255, 255, 255, 0.09);
+  --dark: #05070d;
+  --purple: #818cf8;
+  --purple-hover: #93c5fd;
+  --purple2: #a78bfa;
+  --primary-soft: rgba(129, 140, 248, 0.16);
+  --soft: rgba(129, 140, 248, 0.14);
+  --soft-ink: #c7d2fe;
+  --shadow: 0 14px 40px -10px rgba(0, 0, 0, 0.5);
+  --shadow-hover: 0 22px 50px -10px rgba(99, 102, 241, 0.22);
 }
 * { box-sizing: border-box; }
 html { scroll-behavior: smooth; }
 body {
   margin: 0;
-  background: radial-gradient(ellipse at 75% -15%, rgba(112,97,245,.09), transparent 35%), var(--bg);
-  font: 14px/1.5 Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: var(--bg-gradient);
+  background-attachment: fixed;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.5;
   color: var(--ink);
   min-height: 100vh;
   display: flex;
   flex-direction: column;
+  -webkit-font-smoothing: antialiased;
 }
 button, a { font: inherit; text-decoration: none; }
 button:focus-visible, a:focus-visible {
-  outline: 3px solid color-mix(in srgb, var(--purple) 42%, transparent);
+  outline: 3px solid var(--purple);
   outline-offset: 2px;
 }
 
 /* Header */
 .top-header {
-  height: 76px;
+  height: 72px;
   padding: 0 clamp(20px, 4vw, 48px);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background: color-mix(in srgb, var(--panel) 85%, transparent);
-  border-bottom: 1px solid var(--line);
-  backdrop-filter: blur(16px);
+  background: var(--panel-glass);
+  border-bottom: 1px solid var(--panel-border);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
   position: sticky;
   top: 0;
   z-index: 10;
@@ -74,20 +100,20 @@ button:focus-visible, a:focus-visible {
   align-items: center;
   gap: 12px;
   font-weight: 800;
-  letter-spacing: -.4px;
+  letter-spacing: -0.03em;
   color: var(--ink);
 }
 .brand-mark {
-  width: 40px;
-  height: 40px;
+  width: 42px;
+  height: 42px;
   border-radius: 13px;
-  background: linear-gradient(145deg, #9a80ff 0%, #6652f5 48%, #4c3bd1 100%);
+  background: linear-gradient(135deg, #818cf8 0%, #4f46e5 100%);
   display: grid;
   place-items: center;
   color: white;
   font-size: 18px;
-  font-weight: 900;
-  box-shadow: 0 8px 22px rgba(105,87,245,.34);
+  font-weight: 800;
+  box-shadow: 0 8px 20px -2px rgba(79, 70, 229, 0.45);
 }
 .theme-toggle {
   height: 38px;
@@ -95,18 +121,18 @@ button:focus-visible, a:focus-visible {
   align-items: center;
   gap: 8px;
   padding: 0 14px;
-  border-radius: 11px;
+  border-radius: var(--radius-sm);
   border: 1px solid var(--line);
   background: var(--panel);
   color: var(--ink);
   font-size: 12px;
-  font-weight: 750;
+  font-weight: 700;
   cursor: pointer;
   box-shadow: 0 2px 5px rgba(0,0,0,.04);
-  transition: transform .18s ease, border-color .18s ease;
+  transition: all 0.2s ease;
 }
 .theme-toggle:hover {
-  border-color: color-mix(in srgb, var(--purple) 50%, var(--line));
+  border-color: var(--purple);
   transform: translateY(-1px);
 }
 
@@ -114,7 +140,7 @@ button:focus-visible, a:focus-visible {
 .welcome-shell {
   flex: 1;
   display: grid;
-  grid-template-columns: minmax(320px, 1fr) minmax(360px, 580px);
+  grid-template-columns: minmax(320px, 1.15fr) minmax(360px, 580px);
   max-width: 1440px;
   width: 100%;
   margin: 0 auto;
@@ -123,39 +149,63 @@ button:focus-visible, a:focus-visible {
   align-items: center;
 }
 
-/* Visual Banner Side */
+/* Visual Banner com Parallax Orbs */
 .welcome-visual {
-  background: radial-gradient(circle at 12% 15%, rgba(121,103,255,.5), transparent 29%),
-              radial-gradient(circle at 85% 80%, rgba(53,74,164,.25), transparent 32%),
-              linear-gradient(145deg, #11172b, #171d3b 65%, #29225e);
+  background: linear-gradient(135deg, #090d1a 0%, #10162f 50%, #1e1b4b 100%);
   color: white;
-  padding: clamp(36px, 5vw, 64px);
-  border-radius: clamp(20px, 3vw, 32px);
+  padding: clamp(38px, 5vw, 64px);
+  border-radius: var(--radius);
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  min-height: 520px;
+  min-height: 540px;
   position: relative;
   overflow: hidden;
-  box-shadow: 0 20px 50px rgba(17,23,43,.15);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.08);
 }
-.welcome-visual:after {
+.welcome-visual::before {
   content: "";
   position: absolute;
-  width: 480px;
-  height: 480px;
-  border: 1px solid rgba(255,255,255,.08);
+  top: -15%;
+  left: -15%;
+  width: 500px;
+  height: 500px;
   border-radius: 50%;
-  right: -160px;
-  bottom: -180px;
-  box-shadow: 0 0 0 45px rgba(255,255,255,.03), 0 0 0 100px rgba(255,255,255,.02);
+  background: radial-gradient(circle, rgba(99, 102, 241, 0.45) 0%, transparent 70%);
+  filter: blur(60px);
+  animation: visualFloatA 18s ease-in-out infinite alternate;
   pointer-events: none;
 }
+.welcome-visual::after {
+  content: "";
+  position: absolute;
+  bottom: -15%;
+  right: -15%;
+  width: 550px;
+  height: 550px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(14, 165, 233, 0.3) 0%, transparent 70%);
+  filter: blur(70px);
+  animation: visualFloatB 22s ease-in-out infinite alternate;
+  pointer-events: none;
+}
+@keyframes visualFloatA {
+  0% { transform: translate3d(0, 0, 0) scale(1); }
+  50% { transform: translate3d(30px, -35px, 0) scale(1.08); }
+  100% { transform: translate3d(-20px, 25px, 0) scale(0.96); }
+}
+@keyframes visualFloatB {
+  0% { transform: translate3d(0, 0, 0) scale(1); }
+  50% { transform: translate3d(-35px, 25px, 0) scale(1.1); }
+  100% { transform: translate3d(25px, -30px, 0) scale(0.94); }
+}
+
 .eyebrow {
   font-size: 10px;
-  letter-spacing: 1.8px;
-  color: #a99fff;
-  font-weight: 900;
+  letter-spacing: 0.16em;
+  color: #818cf8;
+  font-weight: 800;
   text-transform: uppercase;
   margin-bottom: 12px;
 }
@@ -164,38 +214,43 @@ button:focus-visible, a:focus-visible {
   z-index: 1;
 }
 .welcome-copy h1 {
-  font-size: clamp(32px, 3.8vw, 52px);
+  font-size: clamp(34px, 3.8vw, 54px);
   line-height: 1.08;
-  letter-spacing: -1.8px;
+  letter-spacing: -0.04em;
   margin: 0 0 20px;
   font-weight: 800;
 }
 .welcome-copy p {
-  color: #b8c0d9;
-  font-size: 15px;
-  line-height: 1.6;
-  max-width: 440px;
+  color: #94a3b8;
+  font-size: 16px;
+  line-height: 1.65;
+  max-width: 460px;
   margin: 0;
 }
 .feature-pills {
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
-  margin-top: 32px;
+  margin-top: 34px;
 }
 .feature-pills span {
-  border: 1px solid rgba(255,255,255,.14);
-  background: rgba(255,255,255,.05);
-  border-radius: 30px;
-  padding: 8px 14px;
-  color: #e3e5f3;
-  font-size: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 999px;
+  padding: 8px 16px;
+  color: #e2e8f0;
+  font-size: 13px;
   font-weight: 600;
-  backdrop-filter: blur(6px);
+  backdrop-filter: blur(12px);
+  transition: all 0.2s ease;
+}
+.feature-pills span:hover {
+  background: rgba(255, 255, 255, 0.12);
+  transform: translateY(-2px);
 }
 .welcome-foot {
-  color: #8790ad;
-  font-size: 12px;
+  color: #64748b;
+  font-size: 13px;
   position: relative;
   z-index: 1;
 }
@@ -208,18 +263,21 @@ button:focus-visible, a:focus-visible {
 }
 .welcome-card {
   background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: clamp(20px, 2.5vw, 28px);
-  padding: clamp(28px, 4vw, 44px);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  padding: clamp(30px, 4vw, 46px);
   box-shadow: var(--shadow);
-  transition: transform .2s ease, box-shadow .2s ease;
+  transition: all 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+  backdrop-filter: blur(20px);
 }
 .welcome-card:hover {
   box-shadow: var(--shadow-hover);
+  border-color: rgba(99, 102, 241, 0.35);
+  transform: translateY(-4px);
 }
 .welcome-card h2 {
   font-size: clamp(26px, 2.2vw, 32px);
-  letter-spacing: -1px;
+  letter-spacing: -0.035em;
   margin: 0 0 10px;
   color: var(--ink);
   font-weight: 800;
@@ -234,73 +292,69 @@ button:focus-visible, a:focus-visible {
 /* Action Buttons */
 .btn {
   border: 0;
-  border-radius: 13px;
-  padding: 14px 22px;
+  border-radius: var(--radius-sm);
+  padding: 14px 24px;
   font-size: 14px;
-  font-weight: 750;
+  font-weight: 700;
+  letter-spacing: -0.01em;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 10px;
   cursor: pointer;
-  transition: transform .18s ease, box-shadow .18s ease, background-color .18s ease;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   width: 100%;
   text-align: center;
 }
 .btn-primary {
   color: #fff;
-  background: linear-gradient(135deg, #806bff, #6250e8);
-  box-shadow: 0 8px 20px rgba(109,93,252,.3);
+  background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+  box-shadow: 0 8px 24px -2px rgba(79, 70, 229, 0.4), inset 0 1px 1px rgba(255, 255, 255, 0.25);
 }
 .btn-primary:hover {
   transform: translateY(-2px);
-  box-shadow: 0 12px 26px rgba(109,93,252,.4);
-}
-.btn-ghost {
-  background: var(--panel-2);
-  color: var(--ink);
-  border: 1px solid var(--line);
-  margin-top: 12px;
-}
-.btn-ghost:hover {
-  background: var(--soft);
-  color: var(--soft-ink);
-  border-color: color-mix(in srgb, var(--purple) 25%, var(--line));
+  box-shadow: 0 12px 30px -2px rgba(79, 70, 229, 0.55);
 }
 
 .highlights-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 14px;
-  margin-top: 28px;
+  gap: 16px;
+  margin-top: 30px;
 }
 .highlight-item {
-  padding: 16px;
+  padding: 18px;
   background: var(--panel-2);
   border: 1px solid var(--line);
-  border-radius: 14px;
+  border-radius: var(--radius-sm);
+  transition: all 0.2s ease;
+}
+.highlight-item:hover {
+  transform: translateY(-2px);
+  border-color: rgba(99, 102, 241, 0.3);
 }
 .highlight-item .icon {
-  width: 32px;
-  height: 32px;
-  border-radius: 9px;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
   background: var(--soft);
   color: var(--soft-ink);
   display: grid;
   place-items: center;
-  font-size: 15px;
-  margin-bottom: 10px;
+  font-size: 16px;
+  margin-bottom: 12px;
 }
 .highlight-item b {
   display: block;
   font-size: 13px;
   color: var(--ink);
-  margin-bottom: 3px;
+  margin-bottom: 4px;
+  font-weight: 700;
 }
 .highlight-item span {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--muted);
-  line-height: 1.4;
+  line-height: 1.45;
   display: block;
 }
 
@@ -346,7 +400,7 @@ try {
   <section class="welcome-visual">
     <div class="welcome-copy">
       <div class="eyebrow">PORTAL DO CLIENTE</div>
-      <h1>Seja bem-vindo ao ecossistema <span style="color:#a99fff">ML SH Support</span></h1>
+      <h1>Seja bem-vindo ao ecossistema <span style="color:#818cf8">ML SH Support</span></h1>
       <p>Gerencie suas licenças, acompanhe as vendas das suas lojas e acesse ferramentas operacionais em uma plataforma única.</p>
       
       <div class="feature-pills">
@@ -368,7 +422,7 @@ try {
       <p class="sub">Acesse seu painel exclusivo para gerenciar suas chaves de licença, dispositivos e integrações.</p>
 
       <!-- Botão Direcionando para o Portal -->
-      <a href="https://app.caickrigato.com.br/portal" class="btn btn-primary">
+      <a href="/portal" class="btn btn-primary">
         Acessar o Portal do Cliente <span>→</span>
       </a>
 

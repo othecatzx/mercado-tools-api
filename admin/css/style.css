@@ -55,7 +55,14 @@
 
 html,
 body {
-    min-height: 100%;
+    background: var(--bg-gradient);
+    background-attachment: fixed;
+    color: var(--text);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
 }
 
 body {
@@ -109,26 +116,21 @@ button {
    ========================================================= */
 
 .sidebar {
-    position: fixed;
-
-    top: 0;
-    left: 0;
-    bottom: 0;
-
-    width: 230px;
-
+    width: 260px;
+    height: 100vh;
+    height: 100dvh;
+    background: var(--sidebar);
+    border-right: 1px solid var(--sidebar-border);
+    box-shadow: 10px 0 40px rgba(0, 0, 0, 0.25);
     display: flex;
     flex-direction: column;
-
-    padding: 16px 10px;
-
-    background: rgba(8, 12, 19, .96);
-
-    border-right: 1px solid #171e2a;
-
+    justify-content: space-between;
+    padding: 24px 14px 18px;
+    position: fixed;
+    top: 0;
+    left: 0;
     z-index: 100;
-
-    backdrop-filter: blur(16px);
+    backdrop-filter: blur(20px);
 }
 
 
@@ -380,25 +382,19 @@ button {
    ========================================================= */
 
 .topbar {
-    position: sticky;
-
-    top: 0;
-
-    z-index: 50;
-
-    min-height: 70px;
-
+    height: 72px;
     display: flex;
-    align-items: center;
     justify-content: space-between;
-
-    padding: 0 30px;
-
-    background: rgba(11, 15, 23, .88);
-
-    border-bottom: 1px solid #1b2431;
-
-    backdrop-filter: blur(16px);
+    align-items: center;
+    padding: 0 clamp(20px, 3vw, 40px);
+    border-bottom: 1px solid var(--border);
+    background: rgba(15, 21, 39, 0.78);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    position: sticky;
+    top: 0;
+    z-index: 90;
+    box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.2);
 }
 
 .topbar h1 {
@@ -482,39 +478,27 @@ button {
 }
 
 .card {
-    position: relative;
-
-    min-width: 0;
+    background: var(--card);
+    border: 1px solid var(--card-border);
+    border-radius: var(--radius);
+    padding: 24px;
+    box-shadow: var(--shadow);
     display: flex;
-    align-items: center;
-    padding: 17px;
-padding-right: 35px;
-    background:
-        linear-gradient(
-            145deg,
-            #121925,
-            #0f151f
-        );
-
-    border: 1px solid var(--border);
-
-    border-radius: 12px;
-
-    box-shadow:
-        0 5px 18px rgba(0, 0, 0, .12);
-
-    transition:
-        transform .15s,
-        border-color .15s,
-        background .15s;
+    flex-direction: column;
+    justify-content: space-between;
+    min-height: 140px;
+    position: relative;
+    overflow: hidden;
+    transition: transform 0.26s cubic-bezier(0.16, 1, 0.3, 1),
+                box-shadow 0.26s cubic-bezier(0.16, 1, 0.3, 1),
+                border-color 0.26s ease;
 }
 
 .card:hover {
-    transform: translateY(-2px);
-
-    border-color: #2b3749;
-
-    background: #141c28;
+    transform: translateY(-4px);
+    box-shadow: var(--shadow-hover);
+    border-color: var(--border-hover);
+    background: var(--card-hover);
 }
 
 .card-icon {
@@ -567,21 +551,13 @@ padding-right: 35px;
    ========================================================= */
 
 .panel {
-    background:
-        linear-gradient(
-            145deg,
-            #111722,
-            #0f151f
-        );
-
-    border: 1px solid var(--border);
-
-    border-radius: 13px;
-
-    padding: 20px;
-
-    box-shadow:
-        0 6px 22px rgba(0, 0, 0, .12);
+    background: var(--card);
+    border: 1px solid var(--card-border);
+    border-radius: var(--radius);
+    padding: 26px;
+    box-shadow: var(--shadow);
+    margin-bottom: 24px;
+    backdrop-filter: blur(14px);
 }
 
 .panel-header {
@@ -1703,27 +1679,47 @@ padding-right: 35px;
 /* glow */
 
 .login-background {
+    position: fixed;
+    inset: 0;
+    background: radial-gradient(circle at 15% 20%, rgba(99, 102, 241, 0.25) 0%, transparent 45%),
+                radial-gradient(circle at 85% 80%, rgba(14, 165, 233, 0.2) 0%, transparent 45%),
+                linear-gradient(135deg, #070913 0%, #0d1222 50%, #151b36 100%);
+    z-index: -1;
+    overflow: hidden;
+}
+.login-background::before {
+    content: '';
     position: absolute;
-
-    width: 500px;
-    height: 500px;
-
-    top: -300px;
-
-    left: 50%;
-
-    transform: translateX(-50%);
-
-    background:
-        radial-gradient(
-            circle,
-            rgba(59,130,246,.14),
-            transparent 65%
-        );
-
-    filter: blur(20px);
-
-    pointer-events: none;
+    top: -15%;
+    left: -15%;
+    width: 600px;
+    height: 600px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(99, 102, 241, 0.35) 0%, transparent 70%);
+    filter: blur(80px);
+    animation: adminFloatA 20s ease-in-out infinite alternate;
+}
+.login-background::after {
+    content: '';
+    position: absolute;
+    bottom: -15%;
+    right: -15%;
+    width: 650px;
+    height: 650px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(14, 165, 233, 0.25) 0%, transparent 70%);
+    filter: blur(90px);
+    animation: adminFloatB 24s ease-in-out infinite alternate;
+}
+@keyframes adminFloatA {
+    0%   { transform: translate3d(0, 0, 0) scale(1); }
+    50%  { transform: translate3d(40px, -50px, 0) scale(1.1); }
+    100% { transform: translate3d(-30px, 30px, 0) scale(0.95); }
+}
+@keyframes adminFloatB {
+    0%   { transform: translate3d(0, 0, 0) scale(1); }
+    50%  { transform: translate3d(-50px, 40px, 0) scale(1.12); }
+    100% { transform: translate3d(40px, -40px, 0) scale(0.92); }
 }
 
 
@@ -1746,25 +1742,18 @@ padding-right: 35px;
 
 .login-card {
     width: 100%;
-
-    padding: 32px;
-
-    background:
-        linear-gradient(
-            145deg,
-            rgba(18,25,37,.98),
-            rgba(13,19,29,.98)
-        );
-
-    border: 1px solid #263244;
-
-    border-radius: 16px;
-
-    box-shadow:
-        0 30px 80px rgba(0,0,0,.45),
-        0 0 0 1px rgba(255,255,255,.015);
-
-    backdrop-filter: blur(20px);
+    max-width: 440px;
+    background: rgba(15, 21, 39, 0.85);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 24px;
+    padding: 38px 36px;
+    box-shadow: 0 25px 60px -10px rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(24px);
+    animation: adminCardIn 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@keyframes adminCardIn {
+    from { opacity: 0; transform: translateY(18px) scale(0.98); }
+    to   { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 
@@ -1998,44 +1987,27 @@ padding-right: 35px;
 
 .login-button {
     width: 100%;
-
-    height: 43px;
-
+    height: 46px;
+    margin-top: 10px;
+    background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+    border: 0;
+    border-radius: var(--radius-sm);
+    color: #ffffff;
+    font-weight: 700;
+    font-size: 14px;
+    letter-spacing: -0.01em;
     display: flex;
-
     align-items: center;
     justify-content: center;
-
-    gap: 8px;
-
-    margin-top: 23px;
-
-    padding: 0 14px;
-
-    border: 1px solid #3b82f6;
-
-    border-radius: 8px;
-
-    background:
-        linear-gradient(
-            135deg,
-            #2563eb,
-            #3b82f6
-        );
-
-    color: white;
-
-    font-size: 11px;
-
-    font-weight: 700;
-
-    box-shadow:
-        0 7px 20px rgba(37,99,235,.20);
-
-    transition:
-        transform .15s,
-        box-shadow .15s,
-        filter .15s;
+    gap: 10px;
+    cursor: pointer;
+    box-shadow: 0 6px 18px -2px rgba(79, 70, 229, 0.4), inset 0 1px 1px rgba(255, 255, 255, 0.25);
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.login-button:hover {
+    background: linear-gradient(135deg, #6d70ff 0%, #4338ca 100%);
+    box-shadow: 0 10px 25px -2px rgba(79, 70, 229, 0.55);
+    transform: translateY(-2px);
 }
 
 .login-button:hover {
