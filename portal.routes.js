@@ -756,7 +756,9 @@ const codes = [...companies.entries()].map(([companyId, company]) => {
           // pedidos ainda abertos, mesmo que a venda tenha sido feita em outro dia.
           // A data da venda NÃO define se precisa separar: isso vem do envio atual.
           await fetchOrdersRange(from, to, 0, 'order.date_created');
-          let orders = [...orderMap.values()];
+          // Pedidos aguardando pagamento não são vendas efetivadas e não devem
+          // aparecer nas listas nem compor os indicadores da página Vendas.
+          let orders = [...orderMap.values()].filter(order => String(order.status || '').trim().toLowerCase() !== 'waiting_for_payment');
           // Caminho exclusivo de leitura da IA: sem dados pessoais ou de envio.
           if (aiMetrics) for (const order of orders) {
             const products = (order.order_items || []).map(line => ({
