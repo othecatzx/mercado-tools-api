@@ -49,7 +49,7 @@
    '<div class="mlsh-command-header"><div><b>Buscar no ML SH</b><small>Ctrl + K · Esc para fechar</small></div><button type="button" id="mlshCommandClose" aria-label="Fechar">✕</button></div>'+
    '<div class="mlsh-command-tabs"><button type="button" data-mlsh-tab="search">⌕ Busca universal</button><button type="button" data-mlsh-tab="ai">✦ Assistente IA</button></div>'+
    '<div id="mlshCommandSearch"><input id="mlshCommandInput" autocomplete="off" maxlength="120" placeholder="Buscar páginas, pedidos ou SKUs já carregados…"><div id="mlshCommandResults" role="listbox"></div><p class="mlsh-command-hint">Busca instantânea nas informações já carregadas. Para dados novos, abra a página correspondente.</p></div>'+
-   '<div id="mlshCommandAi" hidden><div class="mlsh-ai-status" id="mlshAiStatus">Verificando disponibilidade…</div><div id="mlshAiMessages" class="mlsh-ai-messages"><div class="mlsh-ai-msg bot">Olá! Posso explicar recursos do portal e ajudar com orientações. Ainda não consulto números reais de vendas.</div></div><form id="mlshAiForm"><textarea id="mlshAiQuestion" maxlength="500" rows="2" placeholder="Faça uma pergunta sobre o ML SH Support…"></textarea><button class="btn btn-primary" id="mlshAiSend" type="submit">Perguntar ↗</button></form></div>'+
+   '<div id="mlshCommandAi" hidden><div class="mlsh-ai-status" id="mlshAiStatus">Verificando disponibilidade…</div><div id="mlshAiMessages" class="mlsh-ai-messages"><div class="mlsh-ai-msg bot">Olá! Posso explicar recursos do portal e ajudar com orientações. Já posso consultar vendas e produtos vendidos diretamente no Mercado Livre, conforme suas permissões.</div></div><form id="mlshAiForm"><textarea id="mlshAiQuestion" maxlength="500" rows="2" placeholder="Faça uma pergunta sobre o ML SH Support…"></textarea><button class="btn btn-primary" id="mlshAiSend" type="submit">Perguntar ↗</button></form></div>'+
    '</div>';
   document.body.appendChild(root);
   root.addEventListener('click',e=>{if(e.target===root)close();const row=e.target.closest('[data-mlsh-result]');if(row)choose(Number(row.dataset.mlshResult));const tab=e.target.closest('[data-mlsh-tab]');if(tab)setMode(tab.dataset.mlshTab);});
@@ -77,7 +77,7 @@
   try{
    const state=await api('/api/portal/ai/status');
    aiConfigured=!!state.enabled;
-   if(opened&&$s('mlshAiStatus'))$s('mlshAiStatus').textContent=aiConfigured?'● Cloudflare Workers AI · Somente leitura · Sem dados de vendas em tempo real':'IA não configurada: adicione as credenciais Cloudflare no Render.';
+   if(opened&&$s('mlshAiStatus'))$s('mlshAiStatus').textContent=aiConfigured?'● Cloudflare Workers AI · Somente leitura · Consultas reais de vendas disponíveis':'IA não configurada: adicione as credenciais Cloudflare no Render.';
   }catch(err){aiConfigured=false;if(opened&&$s('mlshAiStatus'))$s('mlshAiStatus').textContent='Não foi possível verificar a IA: '+err.message;}
  }
  function appendAi(text,kind){

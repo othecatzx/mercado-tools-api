@@ -6,7 +6,7 @@
 - Pesquisa local de IDs de pedidos, títulos e SKUs **já carregados** nas páginas de Vendas e Analytics.
 - Assistente de IA na mesma janela, disponível somente após configurar Cloudflare.
 - API autenticada, limite de 12 mensagens por dia por usuário no processo, intervalo mínimo de 5 segundos, timeout de 18 segundos.
-- Respostas somente de leitura. **Nesta primeira versão a IA não tem números nem status de vendas em tempo real.**
+- Respostas somente de leitura. Perguntas sobre faturamento, pedidos e produtos vendidos consultam o Mercado Livre automaticamente no servidor, utilizando as mesmas permissões do Analytics. Dados de pedidos pessoais não são enviados ao modelo Cloudflare.
 
 ## Como ativar a IA gratuita
 1. Abra Cloudflare > Workers AI > Use REST API.
@@ -32,4 +32,6 @@ Preços: https://developers.cloudflare.com/workers-ai/platform/pricing/
 - Evita armazenamento das perguntas no Supabase.
 - Não executa alterações. Nenhuma nova tabela ou migration.
 - A busca universal local não realiza novas consultas, para evitar lentidão e não contornar permissões.
-- Para criar respostas com números reais de vendas, será necessário um endpoint separado de métricas agregadas, com verificação de permissões no servidor e privacidade de dados.
+- Consultas de vendas usam a rotina autenticada do endpoint `/api/portal/sales`, sem exigir que o usuário abra a página de Vendas. O resultado é calculado no backend, sem gastar cota da Cloudflare nessas perguntas. Consultas podem levar algum tempo dependendo da API Mercado Livre.
+- Períodos aceitos nas perguntas: hoje, ontem, últimos 7 dias (padrão), últimos 30 dias. Pedidos cancelados são excluídos dos totais, mas a situação reflete o status atual.
+- A busca universal continua restrita a dados previamente carregados; o assistente consulta vendas diretamente no backend. O limite de consultas de vendas é 40 por usuário por dia no processo, com intervalo mínimo de 5 segundos.
