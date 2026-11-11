@@ -469,6 +469,7 @@ module.exports = function registerAtendimentoRoutes(app, { supabase, jwt, bcrypt
     const conv = await persistMlConversation(license, info, conversation.pack_id, payload, { id: conversation.order_id, buyer: { nickname: conversation.buyer_name }, order_items: [{ item: { title: conversation.item_title } }] });
     return { info, payload, conv };
   }
+  const buyerBackfillCursor = new Map();
   async function syncLicenseConversations(license, includeRecent = true) {
     const info = await mlAccountForLicense(license);
     const discovered = new Map();
@@ -495,23 +496,40 @@ module.exports = function registerAtendimentoRoutes(app, { supabase, jwt, bcrypt
         synced++;
       } catch (e) { failures++; console.warn('Conversation sync failed', packId, e.message); }
     }
-    // Recupera progressivamente os nomes antigos sem bloquear a abertura da caixa de entrada.
+    // Backfill em lotes rotativos: evita consultar sempre os mesmos primeiros 20 registros.
     if (includeRecent) {
       try {
         const { data: unnamed, error: lookupError } = await supabase.from('support_conversations')
           .select('id,order_id,pack_id,buyer_id').eq('license_id', license.id)
-          .is('buyer_name', null).order('last_message_at', { ascending: false }).limit(20);
+          .is('buyer_name', null).order('last_message_at', { ascending: false }).limit(200);
         if (lookupError) throw lookupError;
-        for (const conversation of unnamed || []) {
+        const pending = unnamed || [];
+        const cursorKey = String(license.id);
+        const start = (buyerBackfillCursor.get(cursorKey) || 0) % Math.max(1, pending.length);
+        const batch = Array.from({ length: Math.min(12, pending.length) }, (_, index) => pending[(start + index) % pending.length]);
+        buyerBackfillCursor.set(cursorKey, (start + batch.length) % Math.max(1, pending.length));
+        for (const conversation of batch) {
           try {
             const orderId = String(conversation.order_id || '');
-            if (!/^[0-9]+$/.test(orderId)) continue;
-            const order = await mlRequest(info.accessToken, '/orders/' + encodeURIComponent(orderId));
+            const packId = String(conversation.pack_id || '');
+            let order = null;
+            if (/^[0-9]+$/.test(orderId)) {
+              try { order = await mlRequest(info.accessToken, '/orders/' + encodeURIComponent(orderId)); }
+              catch (error) { if (error.status !== 404) throw error; }
+            }
+            // Algumas conversas foram gravadas com o pack_id também no campo order_id.
+            if (!order && /^[0-9]+$/.test(packId)) {
+              const pack = await mlRequest(info.accessToken, '/packs/' + encodeURIComponent(packId));
+              const candidate = (pack.orders || []).find(o => /^[0-9]+$/.test(String(o.id || '')));
+              if (candidate) order = await mlRequest(info.accessToken, '/orders/' + encodeURIComponent(candidate.id));
+            }
+            if (!order) continue;
             const buyerName = await resolveMlBuyerName(info.accessToken, order, info.siteId);
             if (!buyerName) continue;
+            const changes = { buyer_name: buyerName, buyer_id: order.buyer?.id ? String(order.buyer.id) : conversation.buyer_id };
+            if (order.id) changes.order_id = String(order.id);
             const { error: updateError } = await supabase.from('support_conversations')
-              .update({ buyer_name: buyerName, buyer_id: order.buyer?.id ? String(order.buyer.id) : conversation.buyer_id })
-              .eq('id', conversation.id).eq('license_id', license.id).is('buyer_name', null);
+              .update(changes).eq('id', conversation.id).eq('license_id', license.id).is('buyer_name', null);
             if (updateError) throw updateError;
           } catch (error) {
             console.warn('Buyer name backfill unavailable:', error.status || error.message);
