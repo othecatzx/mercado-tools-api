@@ -700,9 +700,17 @@ function ordersMarkup(){
 }
 function printSalesSeparationSheet(){
  const orders=Array.isArray(salesData?.orders)?salesData.orders:[];
+ const stores=Array.isArray(salesData?.stores)?salesData.stores:[];
  const store=String(salesOrderFilters.store||'all');
  const status=String(salesOrderFilters.status||'all');
  const logistic=String(salesOrderFilters.logistic||'all');
+ const cleanName=v=>String(v||'').trim();
+ const storeById=new Map(stores.map(s=>[String(s.company_id??s.id??s.license_id??''),cleanName(s.company_name||s.nome||s.name)]));
+ const getStoreName=o=>{
+  const direct=cleanName(o.company_name||o.store_name||o.nome_loja||o.store?.company_name||o.store?.name);
+  const mapped=storeById.get(String(o.company_id??''));
+  return direct||mapped||'Loja não identificada';
+ };
  const filtered=orders.filter(o=>{
   if(store!=='all'&&String(o.company_id)!==store)return false;
   if(status==='separation'&&!o.needs_separation)return false;
@@ -712,19 +720,27 @@ function printSalesSeparationSheet(){
   if(logistic==='other'&&o.shipping_logistic_type==='self_service')return false;
   return true;
  }).filter(o=>o.status_group!=='cancelled'&&!o.already_separated&&o.needs_separation);
+ const getImage=p=>{
+  const candidates=[p.image,p.thumbnail,p.picture,p.thumbnail_url,p.image_url,p.secure_thumbnail,p.secure_picture,p.product?.image,p.product?.thumbnail,p.product?.picture,p.item?.image,p.item?.thumbnail,p.item?.picture,p.pictures?.[0]?.secure_url,p.pictures?.[0]?.url,p.pictures?.[0],p.product?.pictures?.[0]?.secure_url,p.product?.pictures?.[0]?.url,p.product?.pictures?.[0]];
+  return candidates.find(v=>typeof v==='string'&&/^https?:\/\//i.test(v))||'';
+ };
  const flexList=[],normalList=[];
  filtered.forEach(order=>(order.products||[]).forEach(product=>{
-  const item={title:product.title||'Produto sem título',sku:product.sku||product.seller_sku||product.seller_custom_field||'SEM SKU',quantity:Number(product.quantity||1),image:product.image||product.thumbnail||product.picture||product.thumbnail_url||product.image_url||product.pictures?.[0]?.url||product.pictures?.[0]||'',store:firstCompanyName(order.company_name||order.store_name||'Loja')};
+  const item={title:product.title||product.name||'Produto sem título',sku:product.sku||product.seller_sku||product.seller_custom_field||'SEM SKU',quantity:Number(product.quantity||1),image:getImage(product),store:getStoreName(order)};
   if(order.shipping_logistic_type==='self_service')flexList.push(item);else normalList.push(item);
  }));
  const totalProducts=[...flexList,...normalList].reduce((sum,item)=>sum+item.quantity,0);
- const storeName=store==='all'?'Todas as lojas':(orders.find(o=>String(o.company_id)===store)?.company_name||'Loja selecionada');
+ const storeName=store==='all'?'Todas as lojas':(getStoreName(orders.find(o=>String(o.company_id)===store)||{})||'Loja selecionada');
  const date=new Date().toLocaleDateString('pt-BR');
  const popup=window.open('','_blank');
  if(!popup){toast('Permita pop-ups para imprimir a folha.');return;}
- const row=item=>`<tr><td class="image-cell">${item.image?`<img src="${esc(item.image)}" alt="" onerror="this.style.display='none'">`:'—'}</td><td>${esc(item.store)}</td><td>${item.quantity}</td><td>${esc(item.title)}</td><td>${esc(item.sku)}</td></tr>`;
- const table=list=>{if(!list.length)return '<div class="empty-row">Nenhum produto nesta modalidade.</div>';const names=[...new Set(list.map(x=>x.store))].sort((a,b)=>a.localeCompare(b,'pt-BR',{sensitivity:'base'}));return names.map(name=>{const items=list.filter(x=>x.store===name);return `<div class="store-group"><div class="store-heading">LOJA: ${esc(name)} <span>${items.length} linha(s) · ${items.reduce((n,x)=>n+x.quantity,0)} unidade(s)</span></div><table><thead><tr><th>Imagem</th><th>Loja</th><th>Un.</th><th>Produto</th><th>SKU</th></tr></thead><tbody>${items.map(row).join('')}</tbody></table></div>`}).join('')};
- popup.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Lista de Separação</title><style>*{box-sizing:border-box}body{font-family:Arial,sans-serif;margin:10px;background:#f4f7fb;color:#172033}h1{text-align:center;margin:0;font-size:20px;color:#2563eb}.subtitle{text-align:center;font-size:14px;font-weight:bold;margin:8px 0 2px}.date{text-align:center;font-weight:bold;margin-bottom:12px;font-size:12px}.totals{display:flex;justify-content:space-between;gap:12px;font-size:13px;font-weight:bold;margin:10px 0}.section-title{font-size:14px;margin-top:15px;margin-bottom:7px;font-weight:bold;border-bottom:2px solid #2563eb;padding-bottom:4px;color:#2563eb}.store-group{margin:8px 0 13px;break-inside:avoid}.store-heading{font-size:12px;font-weight:bold;background:#e8eefc;border-left:4px solid #2563eb;padding:7px 9px;margin-bottom:4px}.store-heading span{float:right;font-weight:normal}table{width:100%;border-collapse:collapse;font-size:11px;background:#fff;table-layout:fixed}th,td{border:1px solid #cbd5e1;padding:5px 6px;text-align:left;overflow-wrap:anywhere}th{background:#2563eb;color:#fff}th:first-child,td:first-child{width:58px;text-align:center}td.image-cell img{width:46px;height:46px;object-fit:contain;display:block;margin:auto}th:nth-child(2),td:nth-child(2){width:105px}th:nth-child(3),td:nth-child(3){width:42px;text-align:center}th:last-child,td:last-child{width:130px}.empty-row{text-align:center;color:#666;padding:10px}@media print{@page{margin:8mm}body{background:#fff;color:#000}h1{color:#000}.section-title{color:#000;border-bottom:1px solid #000}.store-heading{background:#eee!important;border-left:3px solid #000;print-color-adjust:exact;-webkit-print-color-adjust:exact}th,td{border:1px solid #000;color:#000;background:#fff!important}th{font-weight:bold}}</style></head><body><h1>Lista de Separação – Mercado Livre</h1><div class="subtitle">${esc(storeName)}</div><div class="date">${date}</div><div class="totals"><span>Total de vendas: ${filtered.length}</span><span>Total de produtos: ${totalProducts}</span></div><div class="section-title">Envio FLEX</div>${table(flexList)}<div class="section-title">Envio Normal</div>${table(normalList)}</body></html>`);
+ const row=item=>`<tr><td class="image-cell">${item.image?`<img src="${esc(item.image)}" alt="Foto do produto" onerror="this.closest('td').textContent='Sem foto'">`:'<span class="no-image">Sem foto</span>'}</td><td>${esc(item.quantity)}</td><td>${esc(item.title)}</td><td>${esc(item.sku)}</td></tr>`;
+ const table=list=>{
+  if(!list.length)return '<div class="empty-row">Nenhum produto nesta modalidade.</div>';
+  const names=[...new Set(list.map(x=>x.store))].sort((a,b)=>a.localeCompare(b,'pt-BR',{sensitivity:'base'}));
+  return names.map(name=>{const items=list.filter(x=>x.store===name).sort((a,b)=>a.title.localeCompare(b.title,'pt-BR',{sensitivity:'base'}));return `<section class="store-group"><h3 class="store-heading">${esc(name)} <span>${items.length} produto(s) · ${items.reduce((n,x)=>n+x.quantity,0)} unidade(s)</span></h3><table><thead><tr><th>Imagem</th><th>Un.</th><th>Produto</th><th>SKU</th></tr></thead><tbody>${items.map(row).join('')}</tbody></table></section>`}).join('');
+ };
+ popup.document.write(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Lista de Separação</title><style>*{box-sizing:border-box}body{font-family:Arial,sans-serif;margin:10px;background:#fff;color:#172033}h1{text-align:center;margin:0;font-size:20px;color:#1d4ed8}.subtitle{text-align:center;font-size:14px;font-weight:bold;margin:8px 0 2px}.date{text-align:center;font-weight:bold;margin-bottom:12px;font-size:12px}.totals{display:flex;justify-content:space-between;gap:12px;font-size:13px;font-weight:bold;margin:10px 0}.section-title{font-size:15px;margin-top:17px;margin-bottom:8px;font-weight:bold;border-bottom:2px solid #1d4ed8;padding-bottom:5px;color:#1d4ed8}.store-group{margin:9px 0 15px;break-inside:avoid}.store-heading{font-size:13px;font-weight:bold;background:#e8eefc;border-left:4px solid #1d4ed8;padding:8px 10px;margin:0 0 5px}.store-heading span{float:right;font-weight:normal;font-size:11px}table{width:100%;border-collapse:collapse;font-size:11px;background:#fff;table-layout:fixed}th,td{border:1px solid #cbd5e1;padding:5px 6px;text-align:left;overflow-wrap:anywhere;vertical-align:middle}th{background:#e8eefc;color:#172033}th:first-child,td:first-child{width:65px;text-align:center}td.image-cell img{width:54px;height:48px;object-fit:contain;display:block;margin:auto}th:nth-child(2),td:nth-child(2){width:42px;text-align:center}th:last-child,td:last-child{width:145px}.no-image{font-size:9px;color:#777}.empty-row{text-align:center;color:#666;padding:10px}@media print{@page{margin:8mm}body{margin:0}.section-title{color:#000;border-bottom:1px solid #000}.store-heading{background:#eee!important;border-left:3px solid #000;print-color-adjust:exact;-webkit-print-color-adjust:exact}th,td{border:1px solid #000;color:#000}th{background:#eee!important;print-color-adjust:exact;-webkit-print-color-adjust:exact}}</style></head><body><h1>Lista de Separação – Mercado Livre</h1><div class="subtitle">${esc(storeName)}</div><div class="date">${date}</div><div class="totals"><span>Total de vendas: ${filtered.length}</span><span>Total de produtos: ${totalProducts}</span></div><div class="section-title">Envio FLEX</div>${table(flexList)}<div class="section-title">Envio Normal</div>${table(normalList)}</body></html>`);
  popup.document.close();
  popup.onload=()=>{popup.focus();popup.print();};
 }
