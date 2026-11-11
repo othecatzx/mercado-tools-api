@@ -19,8 +19,8 @@ async function loadOperationalReport(force=false){
  if(currentPage==='operational-report')renderPage();
  try{
   const results=await Promise.allSettled([
-   api('/api/portal/sales?days='+opReportDays),
-   api('/api/portal/sales?today=1')
+   fetchPortalSalesSnapshot('/api/portal/sales?days='+opReportDays+'&reportOnly=1',{force}),
+   fetchPortalSalesSnapshot('/api/portal/sales?today=1',{force})
   ]);
   if(seq!==opReportRequest)return;
   if(results[0].status==='fulfilled')opReportData=results[0].value;
@@ -91,7 +91,7 @@ function initOperationalReport(){
  $('opReportRefresh').onclick=()=>loadOperationalReport(true);
  $('opReportCsv').onclick=exportOperationalReportCsv;
  document.querySelectorAll('[data-op-day]').forEach(b=>b.onclick=()=>{opReportDay=b.dataset.opDay;renderPage();});
- if(!opReportData&&!opReportLoading&&!opReportError)loadOperationalReport();
+ if(!opReportLoading&&(!opReportData&&!opReportError||(opReportLastUpdate&&Date.now()-opReportLastUpdate.getTime()>120000)))loadOperationalReport(true);
 }
 function exportOperationalReportCsv(){
  if(!opReportData)return;

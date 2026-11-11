@@ -487,6 +487,7 @@ body.sidebar-collapsed .sidebar-scroll .nav-item{justify-content:center;padding:
   <div class="sidebar-scrim" id="sidebarScrim"></div><main class="main"><header class="topbar"><div class="topbar-left"><button id="sidebarToggle" type="button" aria-label="Abrir ou recolher menu" title="Abrir ou recolher menu">☰</button><div class="crumb">Portal do Cliente <span style="color:#b4bbca"> / </span> <b id="crumbPage">Visão geral</b></div></div><div class="top-right"><button class="theme-toggle" id="themeToggle" type="button" aria-label="Alternar tema" title="Alternar tema claro/escuro"><span class="theme-glyph" id="themeGlyph">☾</span><span class="theme-label" id="themeLabel">Tema escuro</span></button><span class="status-pill"><span class="dot"></span> Sistema operacional</span><button class="btn btn-primary" id="topAddLicense">＋ <span>Adicionar licença</span></button></div></header><div class="content" id="pageContent"></div></main>
 </div>
 <div id="modalRoot"></div><div id="toastRoot"></div>
+<script src="sales-snapshot.js"></script>
 <script src="operational-report.js"></script>
 <script>
 const API='';
@@ -572,7 +573,7 @@ async function refreshCodes(){
 
 async function boot(){if(!token){showAuth();return}try{const r=await api('/api/portal/me');currentUser=r.user;await refreshDashboard();showApp()}catch(e){token='';localStorage.removeItem('mlsh_portal_token');showAuth()}}
 
-function logout(show=true){token='';currentUser=null;opReportData=null;opReportQueue=null;opReportError='';opReportDay='';opReportRequest++;overviewOrdersData=null;overviewOrdersLoaded=false;overviewOrdersLoading=false;overviewOrdersUpdatedAt=null;overviewOrdersError='';localStorage.removeItem('mlsh_portal_token');if(show)toast('Você saiu da sua conta.');showAuth()}
+function logout(show=true){resetSalesSnapshots();token='';currentUser=null;opReportData=null;opReportQueue=null;opReportError='';opReportDay='';opReportRequest++;overviewOrdersData=null;overviewOrdersLoaded=false;overviewOrdersLoading=false;overviewOrdersUpdatedAt=null;overviewOrdersError='';localStorage.removeItem('mlsh_portal_token');if(show)toast('Você saiu da sua conta.');showAuth()}
 $('showRegister').onclick=()=>showAuth('register');$('showLogin').onclick=()=>showAuth('login');$('logoutBtn').onclick=()=>logout();$('topAddLicense').onclick=()=>openAddLicense();
 applyTheme(document.documentElement.dataset.theme||'light');if($('themeToggle'))$('themeToggle').addEventListener('click',()=>applyTheme(document.documentElement.dataset.theme==='dark'?'light':'dark'));
 let mlshLoginSubmitting=false;
@@ -833,19 +834,19 @@ function renderSalesProductRows(){
   $('salesPrevPage')?.addEventListener('click',()=>{salesPage--;renderSalesProductRows()});$('salesNextPage')?.addEventListener('click',()=>{salesPage++;renderSalesProductRows()});pagination.querySelectorAll('[data-sales-page]').forEach(b=>b.addEventListener('click',()=>{salesPage=Number(b.dataset.salesPage);renderSalesProductRows()}));}
 }
 
-async function loadSales(days=30){
+async function loadSales(days=30,force=false){
  if(currentPage==='sales')mlshSelectedSalesDays=days;
  const todayOnly=currentPage==='vendas';
  salesLoading=true;salesComparison={loading:true};salesData={...(salesData||{}),days,stores:salesData?.stores||[],products:salesData?.products||[],orders:salesData?.orders||[],totals:salesData?.totals||{orders:0,revenue:0,units:0,products:0}};
  if(currentPage==='sales'||currentPage==='vendas')renderPage();
  try{
   if(todayOnly){
-   salesData=await api('/api/portal/sales?today=1');
+   salesData=await fetchPortalSalesSnapshot('/api/portal/sales?today=1',{force});
    salesComparison=null;
   }else{
    const [current,previous]=await Promise.all([
-    api('/api/portal/sales?days='+encodeURIComponent(days)),
-    api('/api/portal/sales?days='+encodeURIComponent(days)+'&offsetDays='+encodeURIComponent(days)+'&summaryOnly=1')
+    fetchPortalSalesSnapshot('/api/portal/sales?days='+encodeURIComponent(days),{force}),
+    fetchPortalSalesSnapshot('/api/portal/sales?days='+encodeURIComponent(days)+'&offsetDays='+encodeURIComponent(days)+'&summaryOnly=1',{force})
    ]);
    salesData=current;salesComparison=previous;
   }
@@ -908,12 +909,12 @@ async function applyShippingChanges(){
 
 
 let overviewOrdersData=null,overviewOrdersLoading=false,overviewOrdersLoaded=false,overviewOrdersUpdatedAt=null,overviewOrdersError='';
-async function loadOverviewOrders(){
+async function loadOverviewOrders(force=false){
  if(overviewOrdersLoading)return;
  overviewOrdersLoading=true;overviewOrdersError='';
  if(currentPage==='overview')renderPage();
  try{
-  const result=await api('/api/portal/sales?today=1');
+  const result=await fetchPortalSalesSnapshot('/api/portal/sales?today=1',{force});
   overviewOrdersData=result;
   overviewOrdersLoaded=true;
   overviewOrdersUpdatedAt=new Date();
@@ -981,7 +982,7 @@ case'bling-dimensions':html=pageHead('BLING · CONFIGURAÇÕES','Dimensões de E
  case'shipping':html=shippingMarkup();break;
 case'support':html=pageHead('AJUDA','Suporte','Precisa de ajuda com uma licença, dispositivo ou acesso?')+`<div class="panel settings-box"><div class="stat-icon" style="margin-bottom:15px">◉</div><h3 style="margin:0 0 7px">Fale com o suporte</h3><p class="muted">Ao entrar em contato, informe o e-mail da sua conta e a empresa relacionada ao problema. Não compartilhe sua senha.</p><div class="settings-row"><div><b>Conta atual</b><p>${esc(currentUser?.email||'')}</p></div><button class="btn btn-ghost" data-copy="${esc(currentUser?.email||'')}">Copiar e-mail</button></div><div class="settings-row"><div><b>Licenças cadastradas</b><p>${s.licenses||0} vinculada(s) a esta conta</p></div><button class="btn btn-ghost" data-go="licenses">Ver licenças</button></div><div style="margin-top:18px"><button class="btn btn-primary" id="supportMail">✉ Preparar e-mail para suporte</button></div></div>`;break;
 case'settings':html=pageHead('PREFERÊNCIAS','Configurações','Gerencie os dados básicos e a segurança da sua conta.')+`<div class="panel settings-box"><div class="panel-head"><div><h3>Perfil da conta</h3><div class="small muted">Informações usadas para identificar seu acesso ao portal.</div></div></div><div class="settings-row"><div><b>Nome</b><p>${esc(currentUser?.nome||'—')}</p></div><span class="small muted">Conta do portal</span></div><div class="settings-row"><div><b>E-mail</b><p>${esc(currentUser?.email||'—')}</p></div><span class="badge">Verificado no login</span></div><div class="settings-row"><div><b>Senha</b><p>Por segurança, a senha não é exibida.</p></div><span class="small muted">Redefinição futura</span></div><div class="settings-row"><div><b>Sessão</b><p>Encerre o acesso neste dispositivo.</p></div><button class="btn btn-danger" id="settingsLogout">Sair da conta</button></div></div>`;break;}
-$('pageContent').innerHTML=html;bindDynamicActions();if(currentPage==='overview'){const btn=$('overviewRefresh');if(btn)btn.onclick=()=>loadOverviewOrders();if(!overviewOrdersLoaded&&!overviewOrdersLoading&&!overviewOrdersError)loadOverviewOrders();}if(currentPage==='operational-report')initOperationalReport();if(currentPage==='bling-dimensions')dimensionPageInit();if(currentPage==='vendas'&&!salesLoading&&!salesData)loadSales(1);if(currentPage==='shipping'&&!shippingLoading&&!shippingData)loadShippingItems();}}
+$('pageContent').innerHTML=html;bindDynamicActions();if(currentPage==='overview'){const btn=$('overviewRefresh');if(btn)btn.onclick=()=>loadOverviewOrders(true);if(!overviewOrdersLoaded&&!overviewOrdersLoading&&!overviewOrdersError)loadOverviewOrders();}if(currentPage==='operational-report')initOperationalReport();if(currentPage==='bling-dimensions')dimensionPageInit();if(currentPage==='vendas'&&!salesLoading&&!salesData)loadSales(1);if(currentPage==='shipping'&&!shippingLoading&&!shippingData)loadShippingItems();}}
 const userManagementLabels={"users.view":"Visualizar usuários","users.create":"Criar subusuários","users.edit":"Editar subusuários","users.delete":"Excluir/desativar subusuários","users.manage_permissions":"Gerenciar permissões da equipe"};
 const agentMenuLabels={overview:"Visão geral",licenses:"Minhas licenças",devices:"Dispositivos",orders:"Pedidos",sales:"Analytics de Vendas",shipping:"Frete comprador",codes:"Códigos ML",team:"Equipe de atendimento",chat:"Atendimento",support:"Suporte",settings:"Configurações","bling-entries":"Entradas de estoque","bling-labels":"Modelos de etiquetas","bling-integrations":"Conexões Bling","bling-dimensions":"Dimensões de embalagens"}; // BLING_MENU_LABELS_V1
 const supportPermissionLabels={"conversations.view":"Visualizar conversas","conversations.reply":"Responder mensagens","conversations.assign":"Atribuir conversas","conversations.close":"Encerrar atendimentos","attachments.send":"Enviar fotos e PDFs","quick_replies.use":"Usar respostas rápidas","quick_replies.manage":"Gerenciar respostas rápidas","history.view":"Consultar histórico"};
@@ -1026,7 +1027,7 @@ if($('refreshCodes')) $('refreshCodes').onclick=refreshCodes;
  if($('deviceAccessFilter'))$('deviceAccessFilter').onchange=e=>{deviceFilters.lastAccess=e.target.value;renderDeviceRows()};
  if($('deviceSortFilter'))$('deviceSortFilter').onchange=e=>{deviceFilters.sort=e.target.value;renderDeviceRows()};
  if($('devicesTableBody'))renderDeviceRows();
- document.querySelectorAll('[data-sales-refresh]').forEach(b=>b.onclick=()=>loadSales(currentPage==='vendas'?1:Number($('salesPeriod')?.value||30)));if($('salesOrderStore'))$('salesOrderStore').onchange=e=>{salesOrderFilters.store=e.target.value;salesOrderPage=1;renderPage()};if($('salesOrderStatus'))$('salesOrderStatus').onchange=e=>{salesOrderFilters.status=e.target.value;salesOrderPage=1;renderPage()};if($('salesOrderLogistic'))$('salesOrderLogistic').onchange=e=>{salesOrderFilters.logistic=e.target.value;salesOrderPage=1;renderPage()};if($('salesPrintSheet'))$('salesPrintSheet').onclick=printSalesSeparationSheet;if($('salesOrderPrev'))$('salesOrderPrev').onclick=()=>{salesOrderPage--;renderPage()};if($('salesOrderNext'))$('salesOrderNext').onclick=()=>{salesOrderPage++;renderPage()};
+ document.querySelectorAll('[data-sales-refresh]').forEach(b=>b.onclick=()=>loadSales(currentPage==='vendas'?1:Number($('salesPeriod')?.value||30),true));if($('salesOrderStore'))$('salesOrderStore').onchange=e=>{salesOrderFilters.store=e.target.value;salesOrderPage=1;renderPage()};if($('salesOrderStatus'))$('salesOrderStatus').onchange=e=>{salesOrderFilters.status=e.target.value;salesOrderPage=1;renderPage()};if($('salesOrderLogistic'))$('salesOrderLogistic').onchange=e=>{salesOrderFilters.logistic=e.target.value;salesOrderPage=1;renderPage()};if($('salesPrintSheet'))$('salesPrintSheet').onclick=printSalesSeparationSheet;if($('salesOrderPrev'))$('salesOrderPrev').onclick=()=>{salesOrderPage--;renderPage()};if($('salesOrderNext'))$('salesOrderNext').onclick=()=>{salesOrderPage++;renderPage()};
  if($('salesProductSearch'))$('salesProductSearch').oninput=()=>{salesPage=1;renderSalesProductRows()}; if($('salesClearSearch'))$('salesClearSearch').onclick=()=>{const input=$('salesProductSearch');if(input)input.value='';salesFilters.search='';salesPage=1;renderSalesProductRows();input?.focus()}; if($('salesStoreFilter'))$('salesStoreFilter').onchange=()=>{salesPage=1;renderSalesProductRows()}; if($('salesSort'))$('salesSort').onchange=()=>{salesPage=1;renderSalesProductRows()}; if($('salesLimit'))$('salesLimit').onchange=()=>{salesPage=1;renderSalesProductRows()}; if($('salesProductsBody'))renderSalesProductRows();
  if($('mlshSalesDays'))$('mlshSalesDays').onchange=e=>{mlshSelectedSalesDays=Number(e.target.value)||30};if($('mlshStartSales'))$('mlshStartSales').onclick=()=>loadSales(mlshSelectedSalesDays);if($('salesExportExcel'))$('salesExportExcel').onclick=exportSalesExcel; if($('salesPeriod'))$('salesPeriod').onchange=e=>{mlshSelectedSalesDays=Number(e.target.value)||30;loadSales(mlshSelectedSalesDays)};document.querySelectorAll('[data-refresh]').forEach(b=>b.onclick=async()=>{try{await refreshDashboard();renderPage();toast('Dados atualizados.')}catch(e){toast(e.message)}});if($('settingsLogout'))$('settingsLogout').onclick=()=>logout();if($('supportMail'))$('supportMail').onclick=()=>{const subject=encodeURIComponent('Suporte ML SH Support');const body=encodeURIComponent(`Olá, preciso de ajuda com o Portal do Cliente.\n\nConta: ${currentUser?.email||''}\nLicenças cadastradas: ${(dashboard.summary||{}).licenses||0}\n\nDescrição do problema:\n`);location.href=`mailto:?subject=${subject}&body=${body}`}}
 async function copyText(text){try{await navigator.clipboard.writeText(text);toast('Copiado para a área de transferência.')}catch(e){const t=document.createElement('textarea');t.value=text;document.body.appendChild(t);t.select();try{document.execCommand('copy');toast('Copiado para a área de transferência.')}catch(_){toast('Não foi possível copiar automaticamente.')}t.remove()}}

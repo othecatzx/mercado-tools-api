@@ -612,6 +612,9 @@ const codes = [...companies.entries()].map(([companyId, company]) => {
       const days = Math.max(1, Math.min(90, Number.parseInt(req.query.days, 10) || 30));
       const offsetDays = Math.max(0, Math.min(180, Number.parseInt(req.query.offsetDays, 10) || 0));
       const summaryOnly = req.query.summaryOnly === '1';
+      // O relatório diário só precisa de pedidos, valores e status. Não consulta
+      // detalhes de anúncios que a tela não apresenta; a fila permanece intacta.
+      const reportOnly = req.query.reportOnly === '1' && !todayOnly;
       if (!scopedMenuAllowed(req, todayOnly ? 'orders' : 'sales')) return res.status(403).json({ ok: false, error: 'menu_not_allowed', message: todayOnly ? 'O administrador não liberou Pedidos para esta conta.' : 'O administrador não liberou Analytics de Vendas para esta conta.' });
       const companies = new Map();
       if (req.portalRole === 'support_agent') {
@@ -796,7 +799,7 @@ const codes = [...companies.entries()].map(([companyId, company]) => {
             }
 
             // Carrega título, SKU e foto dos anúncios exibidos na fila operacional.
-            const queueItemIds = [...new Set(orders
+            const queueItemIds = [...new Set((reportOnly ? [] : orders)
               .filter(order => ['paid', 'confirmed', 'cancelled'].includes(String(order.status || '').toLowerCase()))
               .flatMap(order => (order.order_items || []).map(line => String(line.item?.id || line.item_id || '').trim()))
               .filter(Boolean))];
@@ -998,7 +1001,7 @@ const codes = [...companies.entries()].map(([companyId, company]) => {
           totalUnits += storeProducts.reduce((sum, product) => sum + product.quantity_sold, 0);
           // Enrich the best-selling listings with photos, current price, stock and direct link.
           // Limit detail lookups to the top 100 per account to keep the endpoint responsive.
-          const enrichmentTargets = (summaryOnly || todayOnly) ? [] : storeProducts.slice().sort((a, b) => b.quantity_sold - a.quantity_sold).slice(0, 100);
+          const enrichmentTargets = (summaryOnly || todayOnly || reportOnly) ? [] : storeProducts.slice().sort((a, b) => b.quantity_sold - a.quantity_sold).slice(0, 100);
           let enrichIndex = 0;
           const enrichWorker = async () => {
             while (enrichIndex < enrichmentTargets.length) {
