@@ -115,6 +115,21 @@
     if(!c || String(activeConversation?.id)!==String(c.id))return;
     const head=document.querySelector('#chatThread .chat-thread-head');
     if(!head)return;
+    const actions=head.querySelector('.actions') || head;
+    const closeButton=document.createElement('button');
+    closeButton.type='button';
+    closeButton.id='chatCloseViewBtn';
+    closeButton.className='btn btn-ghost chat-close-view-btn';
+    closeButton.textContent='✕ Fechar visualização';
+    closeButton.title='Voltar à lista sem encerrar o atendimento';
+    closeButton.onclick=()=>{
+      activeConversation=null;
+      document.querySelector('.chat-layout')?.classList.remove('chat-mobile-open');
+      document.querySelector('#chatThread')?.classList.add('hidden');
+      document.querySelector('#chatEmpty')?.classList.remove('hidden');
+      renderChatConversations();
+    };
+    actions.append(closeButton);
     // A abertura foi concluída no backend, e o marcador é compartilhado.
     c.has_unread_buyer=false;c.waiting_since=null;
     const stored=chatConversations.find(x=>String(x.id)===String(c.id));
