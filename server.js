@@ -30,8 +30,10 @@ app.use(express.json({
 }));
 app.use(cors());
 
+// Uma única entrada para o portal: a página raiz antiga estava defasada.
 app.get("/", (req, res) => {
-    res.sendFile(path.join(__dirname, "index.html"));
+    res.set('Cache-Control', 'no-store');
+    return res.redirect(302, '/portal/');
 });
 
 app.use("/admin", express.static(path.join(__dirname, "admin")));
