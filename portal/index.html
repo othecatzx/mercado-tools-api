@@ -491,6 +491,7 @@ body.sidebar-collapsed .sidebar-scroll .nav-item{justify-content:center;padding:
 <script src="sales-snapshot.js"></script>
 <script src="operational-report.js"></script>
 <script src="universal-search.js" defer></script>
+<script src="ai-ui-extras.js" defer></script>
 <script>
 const API='';
 let portalCodes=[];
@@ -575,7 +576,7 @@ async function refreshCodes(){
 
 async function boot(){if(!token){showAuth();return}try{const r=await api('/api/portal/me');currentUser=r.user;await refreshDashboard();showApp()}catch(e){token='';localStorage.removeItem('mlsh_portal_token');showAuth()}}
 
-function logout(show=true){window.mlshCloseCommand?.();resetSalesSnapshots();token='';currentUser=null;opReportData=null;opReportQueue=null;opReportError='';opReportDay='';opReportRequest++;overviewOrdersData=null;overviewOrdersLoaded=false;overviewOrdersLoading=false;overviewOrdersUpdatedAt=null;overviewOrdersError='';localStorage.removeItem('mlsh_portal_token');if(show)toast('Você saiu da sua conta.');showAuth()}
+function logout(show=true){window.mlshAIExtras?.reset();window.mlshCloseCommand?.();resetSalesSnapshots();token='';currentUser=null;opReportData=null;opReportQueue=null;opReportError='';opReportDay='';opReportRequest++;overviewOrdersData=null;overviewOrdersLoaded=false;overviewOrdersLoading=false;overviewOrdersUpdatedAt=null;overviewOrdersError='';localStorage.removeItem('mlsh_portal_token');if(show)toast('Você saiu da sua conta.');showAuth()}
 $('showRegister').onclick=()=>showAuth('register');$('showLogin').onclick=()=>showAuth('login');$('logoutBtn').onclick=()=>logout();$('topAddLicense').onclick=()=>openAddLicense();
 applyTheme(document.documentElement.dataset.theme||'light');if($('themeToggle'))$('themeToggle').addEventListener('click',()=>applyTheme(document.documentElement.dataset.theme==='dark'?'light':'dark'));
 let mlshLoginSubmitting=false;

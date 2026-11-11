@@ -36,3 +36,13 @@ Preços: https://developers.cloudflare.com/workers-ai/platform/pricing/
 - Períodos aceitos nas perguntas: hoje, ontem, últimos 7 dias (padrão), últimos 30 dias e intervalo explícito DD/MM/AAAA até DD/MM/AAAA ou até hoje (até aproximadamente 89 dias para trás). Também responde à data de hoje sem chamar IA externa. Pedidos cancelados são excluídos dos totais, mas a situação reflete o status atual.
 - O modo `aiMetrics=1` reutiliza a mesma autorização da API de vendas, mas retorna pedidos minimizados e evita consultas extras de envio; a sumarização e o filtro de datas ficam no servidor. Os nomes e motivos de falhas de conexão são exibidos para que o usuário saiba quando a resposta é parcial.
 - A busca universal continua restrita a dados previamente carregados; o assistente consulta vendas diretamente no backend. O limite de consultas de vendas é 40 por usuário por dia no processo, com intervalo mínimo de 5 segundos.
+
+## Novidades do Assistente (versão avançada)
+- **Memória de sessão:** "Quanto a 4Show vendeu hoje?", "E ontem?", "Qual a diferença?". Guarda somente contexto de consulta (loja/período/pergunta), no sessionStorage do navegador e separado por usuário. Não armazena as respostas no servidor.
+- **Gráfico por dia:** "Mostre um gráfico do faturamento dos últimos 15 dias". Desenha as barras no navegador com os números do backend, sem depender do modelo Cloudflare.
+- **Filtros por linguagem natural:** "Quais notebooks Dell foram vendidos hoje acima de R$ 1.500 pela 4Show?". Filtros de produto, loja e mínimo de preço unitário. Usa apenas termos de catálogo reconhecidos; perguntas complexas fora desses padrões exigem novas regras.
+- **Comparação:** "Compare as vendas de 01/11/2026 a 10/11/2026 com 01/10/2026 a 10/10/2026"; "Compare hoje com ontem"; "Compare últimos 7 dias com 7 anteriores".
+- **Sugestões baseadas nos números:** "O que merece atenção nas vendas hoje?". Não afirma causas não comprovadas.
+- **Favoritos:** ☆ Salvar pergunta / ★ Favoritas dentro da aba de IA. Só o texto da pergunta é salvo em localStorage, por usuário, neste navegador; não é sincronizado entre computadores.
+
+Notas: toda consulta de números usa a rotina autenticada de vendas do Mercado Livre e respeita o escopo de licenças e a permissão de Analytics. Se uma loja não responder, a mensagem continua indicando que o resultado é parcial. Comparações e gráficos usam a data de criação dos pedidos; os valores de produtos filtrados são estimados por quantidade × preço unitário retornado. Nenhum desses cálculos exige uma chamada ao modelo Cloudflare. Quando a pergunta não corresponder às consultas estruturadas, o assistente segue usando a Cloudflare dentro dos limites atuais.

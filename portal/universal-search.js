@@ -70,7 +70,7 @@
   document.querySelectorAll('[data-mlsh-tab]').forEach(b=>b.classList.toggle('selected',b.dataset.mlshTab===mode));
   $s('mlshCommandSearch').hidden=mode!=='search';
   $s('mlshCommandAi').hidden=mode!=='ai';
-  if(mode==='ai'){refreshAiStatus();$s('mlshAiQuestion').focus();}else{$s('mlshCommandInput').focus();update();}
+  if(mode==='ai'){window.mlshAIExtras?.init();refreshAiStatus();$s('mlshAiQuestion').focus();}else{$s('mlshCommandInput').focus();update();}
  }
  async function refreshAiStatus(){
   const el=$s('mlshAiStatus');if(!el)return;
@@ -88,11 +88,13 @@
   if(busy||!field)return;
   const question=field.value.trim();if(question.length<3)return;
   if(!aiConfigured){appendAi('A IA ainda precisa ser ativada no Render. Use a Busca Universal enquanto isso.','bot');return;}
+  const context=window.mlshAIExtras?.prepare(question)||null;
   busy=true;send.disabled=true;field.value='';
   appendAi(question,'user');const msg=appendAi('Consultando a IA…','bot');
   try{
-   const answer=await api('/api/portal/ai/ask',{method:'POST',body:JSON.stringify({question})});
+   const answer=await api('/api/portal/ai/ask',{method:'POST',body:JSON.stringify({question,context})});
    msg.textContent=answer.answer||'Não recebi uma resposta.';
+   window.mlshAIExtras?.received(answer,msg);
   }catch(err){msg.textContent=err.message||'Não foi possível consultar a IA.';}
   finally{busy=false;send.disabled=false;field.focus();}
  }
