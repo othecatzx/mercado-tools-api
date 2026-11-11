@@ -278,9 +278,8 @@ module.exports = function registerAtendimentoRoutes(app, { supabase, jwt, bcrypt
 
       if(req.body?.menu_permissions!==undefined&&!blingMenuDeps(updates.menu_permissions||existing.menu_permissions||[],updates.bling_permissions||existing.bling_permissions||[]))return res.status(400).json({message:'O menu Bling necessário deve permanecer habilitado'});
 
-      if (req.body?.allowed_company_ids !== undefined) {
-        const ids = Array.isArray(req.body.allowed_company_ids) ? [...new Set(req.body.allowed_company_ids.map(String))] : [];
-        updates.allowed_company_ids = ids;
+      if (req.body?.allowed_company_ids !== undefined && req.body?.allowed_license_ids === undefined) {
+        return res.status(400).json({ ok: false, error: 'invalid_store_scope', message: 'Altere as lojas pelas licenças autorizadas; as empresas são calculadas automaticamente.' });
       }
       if (req.body?.allowed_license_ids !== undefined) {
         const ids = Array.isArray(req.body.allowed_license_ids) ? [...new Set(req.body.allowed_license_ids.map(String))] : [];

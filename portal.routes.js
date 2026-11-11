@@ -123,7 +123,7 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
       const { data: user, error } = await supabase.from('portal_users').select('*').eq('email', email).maybeSingle();
       if (error) throw error;
       if (user) {
-        if (user.status !== 'active' || !(await bcrypt.compare(senha, user.senha_hash))) {
+        if (user.status !== 'active' || user.access_revoked === true || !(await bcrypt.compare(senha, user.senha_hash))) {
           return res.status(401).json({ ok: false, error: 'invalid_credentials', message: 'E-mail ou senha incorretos.' });
         }
         const token = jwt.sign({ type: 'portal', portal_user_id: user.id, email: user.email, session_version: Number(user.session_version ?? 0) }, process.env.JWT_SECRET, { expiresIn: '7d' });
@@ -132,12 +132,12 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
 
       // Se não existir conta principal com esse e-mail, tenta o subusuário cadastrado na equipe.
       const { data: candidates, error: agentError } = await supabase.from('support_agents')
-        .select('id,license_id,nome,email,senha_hash,status,permissions,user_management_permissions,menu_permissions,bling_permissions,bling_connection_ids,allowed_company_ids,allowed_license_ids,created_by_portal_user_id,licenses(id,status,company_id,companies(nome)),session_version')
+        .select('id,license_id,nome,email,senha_hash,status,permissions,user_management_permissions,menu_permissions,bling_permissions,bling_connection_ids,allowed_company_ids,allowed_license_ids,created_by_portal_user_id,licenses(id,status,company_id,companies(nome)),session_version,access_revoked')
         .eq('email', email);
       if (agentError) throw agentError;
       const matching = [];
       for (const agent of (candidates || [])) {
-        if (agent.status === 'active' && agent.licenses?.status === 'active' && await bcrypt.compare(senha, agent.senha_hash)) matching.push(agent);
+        if (agent.status === 'active' && agent.access_revoked !== true && agent.licenses?.status === 'active' && await bcrypt.compare(senha, agent.senha_hash)) matching.push(agent);
       }
       if (matching.length > 1) {
         return res.status(409).json({ ok: false, error: 'agent_email_ambiguous', message: 'Este e-mail está cadastrado em mais de uma equipe. Peça ao administrador para usar um e-mail exclusivo para este subusuário.' });
