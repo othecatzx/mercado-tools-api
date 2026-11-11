@@ -4,7 +4,14 @@
 const path = require('path');
 
 module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
-  app.use('/portal', require('express').static(path.join(__dirname, 'portal')));
+  // Sempre revalidar o HTML do portal para que subusuários não recebam versões antigas da interface.
+  app.use('/portal', require('express').static(path.join(__dirname, 'portal'), {
+    setHeaders(res, filePath) {
+      if (path.extname(filePath).toLowerCase() === '.html') {
+        res.setHeader('Cache-Control', 'no-store, max-age=0');
+      }
+    }
+  }));
 
   function authPortal(req, res, next) {
     try {
