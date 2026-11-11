@@ -758,7 +758,8 @@ const codes = [...companies.entries()].map(([companyId, company]) => {
           await fetchOrdersRange(from, to, 0, 'order.date_created');
           // Pedidos aguardando pagamento não são vendas efetivadas e não devem
           // aparecer nas listas nem compor os indicadores da página Vendas.
-          let orders = [...orderMap.values()].filter(order => String(order.status || '').trim().toLowerCase() !== 'waiting_for_payment');
+          const excludedUnpaidStatuses = new Set(['waiting_for_payment', 'shipment_paid']);
+          let orders = [...orderMap.values()].filter(order => !excludedUnpaidStatuses.has(String(order.status || '').trim().toLowerCase()));
           // Caminho exclusivo de leitura da IA: sem dados pessoais ou de envio.
           if (aiMetrics) for (const order of orders) {
             const products = (order.order_items || []).map(line => ({
