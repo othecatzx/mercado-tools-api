@@ -405,7 +405,7 @@ module.exports = function registerAtendimentoRoutes(app, { supabase, jwt, bcrypt
     const from = String(m.from?.user_id ?? '');
     const text = typeof m.text === 'string' ? m.text : (m.text?.plain || '');
     const dt = m.message_date?.created || m.message_date?.received || m.date_created || m.date || new Date().toISOString();
-    return { external_message_id: String(m.id || m.message_id || `${from}-${dt}-${text.slice(0,20)}`), sender_id: from, sender_role: [String(sellerId), '3037675074', '3020819166', '3037674934', '3037204279', '3037204123', '3037204685'].includes(from) ? 'seller' : 'buyer', text, created_at: new Date(dt).toISOString(), status: m.status || 'available', attachments: (Array.isArray(m.message_attachments) ? m.message_attachments : (Array.isArray(m.attachments) ? m.attachments : [])).map(a => typeof a === 'string' ? { id: a, filename: a } : a), raw: m };
+    return { external_message_id: String(m.id || m.message_id || `${from}-${dt}-${text.slice(0,20)}`), sender_id: from, sender_role: from === String(sellerId) ? 'seller' : 'buyer', text, created_at: new Date(dt).toISOString(), status: m.status || 'available', attachments: (Array.isArray(m.message_attachments) ? m.message_attachments : (Array.isArray(m.attachments) ? m.attachments : [])).map(a => typeof a === 'string' ? { id: a, filename: a } : a), raw: m };
   }
   function mlBuyerDisplayName(buyer) {
     if (!buyer || typeof buyer !== 'object') return null;
@@ -592,11 +592,64 @@ module.exports = function registerAtendimentoRoutes(app, { supabase, jwt, bcrypt
       if (!text && !attachments.length) return res.status(400).json({ ok: false, message: 'Escreva uma mensagem ou anexe um arquivo.' });
       if (text.length > 350) return res.status(400).json({ ok: false, message: 'A mensagem pode ter no máximo 350 caracteres.' });
       const info = await mlAccountForLicense(actor.license);
-      const toUserId = info.siteId === 'MLB' ? '3037675074' : (info.siteId === 'MLC' ? '3020819166' : info.siteId === 'MLA' ? '3037674934' : info.siteId === 'MLM' ? '3037204279' : info.siteId === 'MCO' ? '3037204123' : '3037204685');
+      const agentIds = { MLB: '3037675074', MLC: '3020819166', MLA: '3037674934', MLM: '3037204279', MCO: '3037204123', MLU: '3037204685' };
+      const agentId = agentIds[String(info.siteId || 'MLB').toUpperCase()] || agentIds.MLU;
+      const messagePath = `/messages/packs/${encodeURIComponent(conversation.pack_id)}/sellers/${encodeURIComponent(info.sellerId)}?tag=post_sale`;
+      // A migração para agentes de mensageria é progressiva. O destinatário
+      // deve vir da conversa, e não de um ID fixo por país.
+      const latest = await mlRequest(info.accessToken, messagePath + '&limit=50&offset=0&mark_as_read=false');
+      const incoming = (latest.messages || []).filter(m => {
+        const from = String(m.from?.user_id || '');
+        return /^[0-9]+$/.test(from) && from !== String(info.sellerId);
+      }).sort((a, b) => new Date(b.message_date?.created || b.date_created || 0) - new Date(a.message_date?.created || a.date_created || 0));
+      const participants = [...new Set(incoming.map(m => String(m.from.user_id)))];
+      const buyerId = String(conversation.buyer_id || '');
+      let toUserId = participants[0] || (/^[0-9]+$/.test(buyerId) ? buyerId : '');
+      if (!toUserId) return res.status(409).json({ ok: false, message: 'Não foi possível identificar o destinatário desta conversa no Mercado Livre. Atualize o atendimento.' });
       const body = { from: { user_id: String(info.sellerId) }, to: { user_id: toUserId } };
       if (text || attachments.length) body.text = text || 'Segue o anexo.';
       if (attachments.length) body.attachments = attachments;
-      const sent = await mlRequest(info.accessToken, `/messages/packs/${encodeURIComponent(conversation.pack_id)}/sellers/${encodeURIComponent(info.sellerId)}?tag=post_sale`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      const send = () => mlRequest(info.accessToken, messagePath, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      let sent;
+      try {
+        sent = await send();
+      } catch (error) {
+        // Só tenta outro destinatário quando o ML confirmar explicitamente
+        // que o primeiro não pertence ao pacote (a mensagem não foi enviada).
+        const mismatch = /(?:to_user_id|receiver|recipient).*(?:does not belong|doesn't belong|not belong)|(?:does not belong|doesn't belong|not belong).*pack/i.test(error.message || '');
+        if (!mismatch) throw error;
+        let verifiedBuyerId = /^[0-9]+$/.test(buyerId) && buyerId !== agentId ? buyerId : '';
+        // Consulta o pedido apenas após rejeição explícita do destinatário.
+        if (!verifiedBuyerId) {
+          const orderIds = [];
+          if (/^[0-9]+$/.test(String(conversation.order_id || ''))) orderIds.push(String(conversation.order_id));
+          try {
+            if (/^[0-9]+$/.test(String(conversation.pack_id || ''))) {
+              const pack = await mlRequest(info.accessToken, '/packs/' + encodeURIComponent(conversation.pack_id));
+              for (const order of pack.orders || []) if (/^[0-9]+$/.test(String(order.id || ''))) orderIds.push(String(order.id));
+            }
+          } catch (lookupError) {
+            console.warn('Chat recipient pack lookup unavailable:', lookupError.status || lookupError.message);
+          }
+          for (const orderId of new Set(orderIds)) {
+            try {
+              const order = await mlRequest(info.accessToken, '/orders/' + encodeURIComponent(orderId));
+              const id = String(order.buyer?.id || '');
+              if (/^[0-9]+$/.test(id) && id !== agentId && id !== String(info.sellerId)) {
+                verifiedBuyerId = id;
+                break;
+              }
+            } catch (lookupError) {
+              console.warn('Chat recipient order lookup unavailable:', lookupError.status || lookupError.message);
+            }
+          }
+        }
+        // Jamais repetir para IDs arbitrários: apenas para o comprador do pedido.
+        if (!verifiedBuyerId || verifiedBuyerId === toUserId) throw error;
+        body.to.user_id = verifiedBuyerId;
+        sent = await send();
+        toUserId = alternate;
+      }
       await writeAudit(conversation.license_id, actor.owner ? actor.agent?.id || req.actor.id : null, 'conversation.message_sent', { conversation_id: conversation.id, agent_id: actor.agent?.id || null, message_id: sent.id || sent.message_id || null });
       try { await refreshConversationFromMl(actor.license, conversation, false); } catch (_) {}
       return res.status(201).json({ ok: true, message: 'Mensagem enviada ao Mercado Livre.', result: sent });
