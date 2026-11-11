@@ -710,8 +710,8 @@ module.exports = function registerAtendimentoRoutes(app, { supabase, jwt, bcrypt
         const agent = (candidates || []).find(a => a.status === 'active' && (Array.isArray(a.allowed_license_ids) && a.allowed_license_ids.length ? a.allowed_license_ids.map(String) : [String(a.license_id)]).includes(String(conversation.license_id)));
         if (!agent) return res.status(404).json({ ok: false, message: 'Atendente ativo não encontrado ou sem acesso a esta loja.' }); agentId = agent.id;
       }
-      const { error } = await supabase.from('support_conversations').update({ assigned_agent_id: agentId, updated_at: new Date().toISOString() }).eq('id', conversation.id); if (error) throw error;
-      await writeAudit(conversation.license_id, actor.owner ? req.actor.id : null, 'conversation.assigned', { conversation_id: conversation.id, assigned_agent_id: agentId, agent_id: actor.agent?.id || null });
+      const { error } = await supabase.from('support_conversations').update({ assigned_agent_id: agentId, updated_at: new Date().toISOString() }).eq('id', conversation.id).eq('license_id', conversation.license_id); if (error) throw error;
+      await writeAudit(conversation.license_id, actor.owner ? req.actor.id : null, agentId ? 'conversation.assigned' : 'conversation.unassigned', { conversation_id: conversation.id, previous_assigned_agent_id: conversation.assigned_agent_id || null, assigned_agent_id: agentId, agent_id: actor.agent?.id || null });
       return res.json({ ok: true, assigned_agent_id: agentId });
     } catch (e) { console.error('Chat assign:', e.code || e.message); return res.status(500).json({ ok: false, message: 'Não foi possível atribuir o atendimento.' }); }
   });
