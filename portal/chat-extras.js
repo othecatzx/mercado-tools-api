@@ -42,7 +42,7 @@
       const key = license + ':' + String(c.id);
       const stamp = c.last_message_at ? new Date(c.last_message_at).getTime() : 0;
       const previous = baseline.get(key);
-      if (previous !== undefined && stamp > previous && c.last_sender_role === 'buyer') {
+      if (previous !== undefined && stamp > previous && c.has_unread_buyer && c.last_sender_role === 'buyer') {
         newMessages++;
         if (typeof toast === 'function') toast('Nova mensagem: ' + (c.buyer_name || 'comprador') + ' · ' + (c.company_name || 'Loja'));
         if ('Notification' in window && Notification.permission === 'granted') {
@@ -51,7 +51,8 @@
       }
       baseline.set(key, Math.max(stamp, previous || 0));
     }
-    if (newMessages) {unread += newMessages;ring();}
+    if (newMessages) ring();
+    unread = (chatConversations || []).filter(c=>c.has_unread_buyer).length;
     document.title = unread ? '(' + unread + ') ' + originalTitle : originalTitle;
     let btn = document.getElementById('chatAlerts');
     const count = document.getElementById('chatAlertCount');
@@ -92,6 +93,10 @@
       visibleRows++;
       const bottom=row.querySelector('.wa-conv-bottom');
       if(!bottom)continue;
+      if(c.has_unread_buyer){
+        const dot=document.createElement('span');dot.className='chat-unread-dot';dot.title='Nova mensagem do comprador';dot.setAttribute('aria-label','Nova mensagem do comprador');
+        const top=row.querySelector('.wa-conv-top');if(top)top.append(dot);
+      }
       if(c.waiting_since) {
         const time=document.createElement('small');time.className='chat-wait-time';time.textContent='Cliente aguardando '+duration(c.waiting_since);bottom.append(time);
       }
@@ -106,12 +111,19 @@
   }
   const baseOpen=openChatConversation;
   openChatConversation=async function(c,...rest) {
-    unread=0;document.title=originalTitle;
     await baseOpen.call(this,c,...rest);
     if(!c || String(activeConversation?.id)!==String(c.id))return;
     const head=document.querySelector('#chatThread .chat-thread-head');
     if(!head)return;
-    const details=document.createElement('details');details.className='chat-extra-details';details.open=true;
+    // A abertura foi concluída no backend, e o marcador é compartilhado.
+    c.has_unread_buyer=false;c.waiting_since=null;
+    const stored=chatConversations.find(x=>String(x.id)===String(c.id));
+    if(stored){stored.has_unread_buyer=false;stored.waiting_since=null}
+    const license=String(document.querySelector('#chatLicense')?.value || '');
+    baseline.set(license+':'+String(c.id),new Date(c.last_message_at||0).getTime());
+    renderChatConversations();
+    loadChatConversations(false).catch(()=>{});
+    const details=document.createElement('details');details.className='chat-extra-details';
     details.innerHTML='<summary>Informações do atendimento e notas internas</summary><div class="chat-extra-grid"><section><h4>Etiquetas</h4><div id="chatTagChecks">'+labels.map(l=>'<label><input type="checkbox" value="'+safe(l)+'" '+((c.labels||[]).includes(l)?'checked':'')+'> '+safe(l)+'</label>').join('')+'</div><button class="mini-btn" id="chatSaveLabels">Salvar etiquetas</button><h4>Pedido</h4><div id="chatOrderSummary" class="small muted">Consultando pedido…</div></section><section><h4>Notas internas <span class="muted small">(não enviadas ao comprador)</span></h4><div id="chatInternalNotes" class="chat-notes-list small">Carregando notas…</div><textarea id="chatInternalNoteText" maxlength="3000" rows="2" placeholder="Escreva uma observação só para a equipe…"></textarea><button class="mini-btn" id="chatAddInternalNote">Adicionar nota interna</button></section></div>';
     head.after(details);
     const valid=()=>String(activeConversation?.id)===String(c.id)&&details.isConnected;

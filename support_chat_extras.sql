@@ -18,3 +18,27 @@ alter table public.support_internal_notes enable row level security;
 revoke all on public.support_internal_notes from anon, authenticated;
 comment on table public.support_internal_notes is
   'Internal support notes accessed exclusively through authenticated server routes and service role';
+
+-- Leitura compartilhada: ao abrir um chat, todos da equipe deixam de vê-lo como novo.
+alter table public.support_conversations
+  add column if not exists last_viewed_buyer_at timestamptz;
+
+-- Na implantação, mensagens antigas já são consideradas visualizadas; somente
+-- mensagens recebidas após a implantação serão indicadas como novas.
+update public.support_conversations as c
+set last_viewed_buyer_at = (
+  select max(m.created_at)
+  from public.support_messages m
+  where m.conversation_id = c.id
+    and m.license_id = c.license_id
+    and m.sender_role = 'buyer'
+)
+where c.last_viewed_buyer_at is null
+  and exists (
+    select 1 from public.support_messages m
+    where m.conversation_id = c.id
+      and m.license_id = c.license_id
+      and m.sender_role = 'buyer'
+  );
+comment on column public.support_conversations.last_viewed_buyer_at is
+  'Most recent buyer message seen by any authorized support user; shared unread marker across team';

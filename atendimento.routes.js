@@ -575,7 +575,7 @@ module.exports = function registerAtendimentoRoutes(app, { supabase, jwt, bcrypt
           if (!latestByConversation.has(message.conversation_id)) latestByConversation.set(message.conversation_id, message);
         }
       }
-      const assignedIds = [...new Set((data || []).map(c => c.assigned_agent_id).filter(Boolean))]; let assigned = new Map(); if (assignedIds.length) { const { data: agents, error: agentsError } = await supabase.from('support_agents').select('id,nome,email').in('id', assignedIds); if (agentsError) throw agentsError; assigned = new Map((agents || []).map(a => [a.id, a])); } const conversations = (data || []).map(c => ({ ...c, company_name: c.licenses?.companies?.nome || actor.license?.companies?.nome || 'Empresa', assigned_agent_name: assigned.get(c.assigned_agent_id)?.nome || null, assigned_agent_email: assigned.get(c.assigned_agent_id)?.email || null, last_sender_role: latestByConversation.get(c.id)?.sender_role || null, waiting_since: latestByConversation.get(c.id)?.sender_role === 'buyer' ? latestByConversation.get(c.id)?.created_at : null, licenses: undefined }));
+      const assignedIds = [...new Set((data || []).map(c => c.assigned_agent_id).filter(Boolean))]; let assigned = new Map(); if (assignedIds.length) { const { data: agents, error: agentsError } = await supabase.from('support_agents').select('id,nome,email').in('id', assignedIds); if (agentsError) throw agentsError; assigned = new Map((agents || []).map(a => [a.id, a])); } const conversations = (data || []).map(c => ({ ...c, company_name: c.licenses?.companies?.nome || actor.license?.companies?.nome || 'Empresa', assigned_agent_name: assigned.get(c.assigned_agent_id)?.nome || null, assigned_agent_email: assigned.get(c.assigned_agent_id)?.email || null, last_sender_role: latestByConversation.get(c.id)?.sender_role || null, waiting_since: latestByConversation.get(c.id)?.sender_role === 'buyer' && (!c.last_viewed_buyer_at || new Date(latestByConversation.get(c.id)?.created_at).getTime() > new Date(c.last_viewed_buyer_at).getTime()) ? latestByConversation.get(c.id)?.created_at : null, has_unread_buyer: latestByConversation.get(c.id)?.sender_role === 'buyer' && (!c.last_viewed_buyer_at || new Date(latestByConversation.get(c.id)?.created_at).getTime() > new Date(c.last_viewed_buyer_at).getTime()), licenses: undefined }));
       return res.json({ ok: true, conversations, sync });
     } catch (e) { console.error('Chat conversation list:', e.code || e.message); return res.status(500).json({ ok: false, message: 'Não foi possível carregar as conversas.' }); }
   });
@@ -668,6 +668,24 @@ module.exports = function registerAtendimentoRoutes(app, { supabase, jwt, bcrypt
       catch (e) { console.warn('Refresh messages failed:', e.message); }
       const { data, error } = await supabase.from('support_messages').select('id,external_message_id,sender_id,sender_role,text,status,attachments,raw,created_at').eq('license_id', conversation.license_id).eq('conversation_id', conversation.id).order('created_at', { ascending: true }).limit(500);
       if (error) throw error;
+      // Abrir a conversa marca como visualizadas, para TODA a equipe, apenas
+      // as mensagens de comprador efetivamente retornadas nesta consulta.
+      const newestBuyer = (data || []).filter(m => m.sender_role === 'buyer').reduce((latest, m) => {
+        const ms = new Date(m.created_at).getTime();
+        return Number.isFinite(ms) && ms > latest ? ms : latest;
+      }, 0);
+      const previousRead = conversation.last_viewed_buyer_at ? new Date(conversation.last_viewed_buyer_at).getTime() : 0;
+      if (newestBuyer > previousRead) {
+        let mark = supabase.from('support_conversations')
+          .update({ last_viewed_buyer_at: new Date(newestBuyer).toISOString() })
+          .eq('id', conversation.id).eq('license_id', conversation.license_id);
+        // Evita que duas pessoas abrindo juntas façam o marcador retroceder.
+        mark = conversation.last_viewed_buyer_at
+          ? mark.eq('last_viewed_buyer_at', conversation.last_viewed_buyer_at)
+          : mark.is('last_viewed_buyer_at', null);
+        const { error: markError } = await mark;
+        if (markError) throw markError;
+      }
       const messages = (data || []).map(m => ({ ...m, sender_name: m.sender_role === 'seller' ? 'Sua loja' : (conversation.buyer_name || 'Comprador') }));
       return res.json({ ok: true, messages, ml_status: result?.payload?.conversation_status?.status || conversation.ml_status });
     } catch (e) { console.error('Chat messages list:', e.code || e.message); return res.status(500).json({ ok: false, message: e.message || 'Não foi possível carregar as mensagens.' }); }

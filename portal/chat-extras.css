@@ -3,6 +3,7 @@
 #chatAlertCount{white-space:nowrap;font-size:11px}
 .chat-label-filter{margin:8px 12px;width:calc(100% - 24px);padding:9px 11px;border:1px solid var(--line);border-radius:9px;background:var(--panel);color:var(--ink)}
 .chat-conversation[hidden]{display:none!important}
+.chat-unread-dot{width:9px;height:9px;min-width:9px;border-radius:50%;background:#1685f5;box-shadow:0 0 0 2px rgba(22,133,245,.14);display:inline-block;margin:0 5px}
 .chat-wait-time{font-size:10px;color:var(--muted);font-weight:600}
 .chat-label-chip{display:inline-block;font-size:10px;border:1px solid var(--line);background:var(--panel-2);color:var(--ink);border-radius:10px;padding:2px 6px}
 .chat-extra-details{border-bottom:1px solid var(--line);background:var(--panel);font-size:12px}
