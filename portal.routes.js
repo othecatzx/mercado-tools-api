@@ -611,7 +611,8 @@ const codes = [...companies.entries()].map(([companyId, company]) => {
       const todayOnly = req.query.today === '1';
       const days = Math.max(1, Math.min(90, Number.parseInt(req.query.days, 10) || 30));
       const offsetDays = Math.max(0, Math.min(180, Number.parseInt(req.query.offsetDays, 10) || 0));
-      const summaryOnly = req.query.summaryOnly === '1';
+      const aiMetrics = req.query.aiMetrics === '1';
+      const summaryOnly = req.query.summaryOnly === '1' || aiMetrics;
       // O relatório diário só precisa de pedidos, valores e status. Não consulta
       // detalhes de anúncios que a tela não apresenta; a fila permanece intacta.
       const reportOnly = req.query.reportOnly === '1' && !todayOnly;
@@ -749,6 +750,21 @@ const codes = [...companies.entries()].map(([companyId, company]) => {
           // A data da venda NÃO define se precisa separar: isso vem do envio atual.
           await fetchOrdersRange(from, to, 0, 'order.date_created');
           let orders = [...orderMap.values()];
+          // Caminho exclusivo de leitura da IA: sem dados pessoais ou de envio.
+          if (aiMetrics) for (const order of orders) {
+            const products = (order.order_items || []).map(line => ({
+              item_id: String(line.item?.id || line.item_id || ''),
+              title: String(line.item?.title || 'Produto').slice(0, 120),
+              sku: String(line.item?.seller_sku || line.seller_sku || ''),
+              quantity: Math.max(0, Number(line.quantity || 0))
+            }));
+            allOrders.push({
+              company_id: account.company_id, company_name: company?.nome || 'Empresa',
+              date_created: order.date_created || null, status: String(order.status || '').toLowerCase(),
+              total_amount: Number(order.total_amount || 0),
+              units: products.reduce((sum, item) => sum + item.quantity, 0), products
+            });
+          }
           const localDay = value => {
             if (!value) return '';
             const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date(value));
@@ -1065,7 +1081,7 @@ const codes = [...companies.entries()].map(([companyId, company]) => {
           products: allProducts.length
         },
         stores,
-        orders: summaryOnly ? [] : allOrders,
+        orders: summaryOnly && !aiMetrics ? [] : allOrders,
         products: allProducts
       });
     } catch (error) {
@@ -1080,96 +1096,19 @@ const codes = [...companies.entries()].map(([companyId, company]) => {
   // Desativado até que as duas variáveis de ambiente sejam configuradas no Render.
   // Consultas objetivas: o backend obtém dados novos usando a mesma rotina
   // de vendas autenticada; nenhuma tela precisa ser aberta previamente.
-  const aiLocalDay = value => {
-    const parts = new Intl.DateTimeFormat('en-CA', {
-      timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit'
-    }).formatToParts(new Date(value));
-    const obj = Object.fromEntries(parts.map(p => [p.type, p.value]));
-    return obj.year + '-' + obj.month + '-' + obj.day;
-  };
-  const aiNorm = value => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-  function aiSalesIntent(question) {
-    const q = aiNorm(question);
-    if (!/vend|fatur|pedido|produto|item|ranking|loja|receita|unidade/.test(q) ||
-        !/quanto|quantos|quantas|quais|qual |mais vend|total|mostr|list|ranking|compar|resum|hoje|ontem|ultim|semana|mes/.test(q)) return null;
-    const period = /\bontem\b/.test(q) ? 'ontem' :
-      /\bhoje\b|\bhj\b/.test(q) ? 'hoje' :
-      /\b30 dias\b|\bmes\b|\bmensal\b/.test(q) ? 'últimos 30 dias' : 'últimos 7 dias';
-    return { period, days: period==='hoje'||period==='ontem'?2:period==='últimos 30 dias'?30:7,
-      wantsProducts: /produto|item|sku|mais vend|ranking/.test(q), q };
-  }
+  const aiMetricsLib = require('./portal-ai-metrics');
   async function aiReadSales(req, intent) {
-    if (req.portalRole === 'support_agent' && !scopedMenuAllowed(req, 'sales')) {
-      return { answer: 'Sua conta não tem permissão para consultar Analytics de Vendas. Peça acesso ao administrador.', available: false };
-    }
-    const scopedReq = {
-      portalRole: req.portalRole, portalUserId: req.portalUserId,
-      agentAllowedLicenses: req.agentAllowedLicenses,
-      query: { days: String(intent.days), reportOnly: '1' }
-    };
+    if (req.portalRole === 'support_agent' && !scopedMenuAllowed(req, 'sales'))
+      return { answer: 'Sua conta não tem permissão para consultar Analytics de Vendas.', available: false };
+    const scopedReq = { portalRole: req.portalRole, portalUserId: req.portalUserId,
+      agentAllowedLicenses: req.agentAllowedLicenses, query: { days: String(intent.days), aiMetrics: '1' } };
     let payload = null, code = 200;
-    const internalRes = {
-      status(value) { code = value; return this; },
-      json(value) { payload = value; return this; }
-    };
+    const internalRes = { status(value) { code = value; return this; }, json(value) { payload = value; return this; } };
     await portalSalesHandler(scopedReq, internalRes);
-    if (code !== 200 || !payload?.ok) {
-      return { answer: 'A consulta ao Mercado Livre falhou. Não vou apresentar números incompletos como se fossem reais.', available: false };
-    }
-    const companies = Array.isArray(payload.stores) ? payload.stores : [];
-    const failures = companies.filter(x => !x.connected);
-    const allOrders = Array.isArray(payload.orders) ? payload.orders : [];
-    const words = intent.q.split(/[^a-z0-9]+/);
-    const company = companies.find(x => {
-      const name = aiNorm(x.company_name), first = name.split(/\s+/)[0];
-      return (first.length >= 3 && words.includes(first)) || (name.length >= 4 && intent.q.includes(name));
-    });
-    const matched = company ? allOrders.filter(o => String(o.company_id) === String(company.company_id)) : allOrders;
-    const now = new Date(), today = aiLocalDay(now);
-    const yesterday = aiLocalDay(new Date(now.getTime() - 86400000));
-    const filtered = matched.filter(o => intent.period === 'hoje' ? o.date_created && aiLocalDay(o.date_created) === today
-      : intent.period === 'ontem' ? o.date_created && aiLocalDay(o.date_created) === yesterday : true);
-    const valid = filtered.filter(o => !['cancelled','canceled'].includes(String(o.status||'').toLowerCase()));
-    const value = valid.reduce((n,o) => n + Number(o.total_amount || 0), 0);
-    const units = valid.reduce((n,o) => n + Number(o.units || 0), 0);
-    const money = n => n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-    const label = company ? String(company.company_name) : 'todas as lojas autorizadas';
-    const lines = ['Consulta real do Mercado Livre — ' + intent.period + ' · ' + label, '',
-      'Pedidos não cancelados criados no período: ' + valid.length,
-      'Valor total desses pedidos: ' + money(value), 'Unidades: ' + units,
-      'Pedidos criados no período atualmente cancelados: ' + (filtered.length - valid.length)];
-    if (!company && /lojas?|compar/.test(intent.q)) {
-      const breakdown = new Map();
-      for (const order of valid) {
-        const name = String(order.company_name || 'Loja');
-        const row = breakdown.get(name) || { count: 0, revenue: 0 };
-        row.count++; row.revenue += Number(order.total_amount || 0);
-        breakdown.set(name, row);
-      }
-      lines.push('', 'Resultado por loja:');
-      for (const [name, row] of [...breakdown.entries()].sort((a,b) => b[1].revenue-a[1].revenue)) {
-        lines.push(name + ': ' + row.count + ' pedidos · ' + money(row.revenue));
-      }
-    }
-    if (intent.wantsProducts) {
-      const products = new Map();
-      for (const order of valid) for (const line of (order.products || [])) {
-        const key = String(line.item_id || line.sku || line.title || '').trim();
-        if (!key) continue;
-        const entry = products.get(key) || { title: String(line.title || line.sku || 'Produto').slice(0, 90), units: 0 };
-        entry.units += Math.max(0, Number(line.quantity || 0));
-        products.set(key, entry);
-      }
-      const best = [...products.values()].sort((a,b) => b.units - a.units).slice(0, 10);
-      lines.push('', 'Produtos mais vendidos por unidades:');
-      if (best.length) best.forEach((x,i) => lines.push((i+1) + '. ' + x.title + ' — ' + x.units + ' un.'));
-      else lines.push('Nenhum produto encontrado nesse período.');
-    }
-    if (failures.length) lines.push('', 'Atenção: ' + failures.length + ' loja(s) não puderam ser consultadas; os valores são parciais.');
-    lines.push('', 'Referência: data de criação do pedido (horário de São Paulo). Cancelamentos refletem o status atual, não o dia do cancelamento.');
-    return { answer: lines.join('\n'), available: true };
+    if (code !== 200 || !payload?.ok)
+      return { answer: 'A consulta ao Mercado Livre falhou. Não vou inventar valores.', available: false };
+    return aiMetricsLib.summarize(payload, intent);
   }
-
   const aiUsage = new Map();
   app.get('/api/portal/ai/status', authPortalOrAgent, (req, res) => {
     res.set('Cache-Control', 'no-store');
@@ -1204,7 +1143,11 @@ const codes = [...companies.entries()].map(([companyId, company]) => {
       console.error('AI scope error:', error.message);
       return res.status(500).json({ ok: false, message: 'Não foi possível validar as lojas autorizadas.' });
     }
-    const salesIntent = aiSalesIntent(question);
+    if (aiMetricsLib.isDateQuestion(question))
+      return res.json({ ok: true, answer: aiMetricsLib.answerDate(), provider: 'Servidor ML SH', real_time_data: true });
+    const salesIntent = aiMetricsLib.parseSalesIntent(question);
+    if (salesIntent?.error)
+      return res.json({ ok: true, answer: salesIntent.error, provider: 'Servidor ML SH', real_time_data: false });
     if (salesIntent) {
       if ((usage.metricsUsed || 0) >= 40) return res.status(429).json({ ok: false, message: 'Limite diário de consultas de vendas atingido. Tente amanhã.' });
       usage.last = Date.now(); usage.metricsUsed = (usage.metricsUsed || 0) + 1; aiUsage.set(usageKey, usage);

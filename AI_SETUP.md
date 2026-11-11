@@ -33,5 +33,6 @@ Preços: https://developers.cloudflare.com/workers-ai/platform/pricing/
 - Não executa alterações. Nenhuma nova tabela ou migration.
 - A busca universal local não realiza novas consultas, para evitar lentidão e não contornar permissões.
 - Consultas de vendas usam a rotina autenticada do endpoint `/api/portal/sales`, sem exigir que o usuário abra a página de Vendas. O resultado é calculado no backend, sem gastar cota da Cloudflare nessas perguntas. Consultas podem levar algum tempo dependendo da API Mercado Livre.
-- Períodos aceitos nas perguntas: hoje, ontem, últimos 7 dias (padrão), últimos 30 dias. Pedidos cancelados são excluídos dos totais, mas a situação reflete o status atual.
+- Períodos aceitos nas perguntas: hoje, ontem, últimos 7 dias (padrão), últimos 30 dias e intervalo explícito DD/MM/AAAA até DD/MM/AAAA ou até hoje (até aproximadamente 89 dias para trás). Também responde à data de hoje sem chamar IA externa. Pedidos cancelados são excluídos dos totais, mas a situação reflete o status atual.
+- O modo `aiMetrics=1` reutiliza a mesma autorização da API de vendas, mas retorna pedidos minimizados e evita consultas extras de envio; a sumarização e o filtro de datas ficam no servidor. Os nomes e motivos de falhas de conexão são exibidos para que o usuário saiba quando a resposta é parcial.
 - A busca universal continua restrita a dados previamente carregados; o assistente consulta vendas diretamente no backend. O limite de consultas de vendas é 40 por usuário por dia no processo, com intervalo mínimo de 5 segundos.
