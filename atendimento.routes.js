@@ -407,13 +407,32 @@ module.exports = function registerAtendimentoRoutes(app, { supabase, jwt, bcrypt
     const dt = m.message_date?.created || m.message_date?.received || m.date_created || m.date || new Date().toISOString();
     return { external_message_id: String(m.id || m.message_id || `${from}-${dt}-${text.slice(0,20)}`), sender_id: from, sender_role: [String(sellerId), '3037675074', '3020819166', '3037674934', '3037204279', '3037204123', '3037204685'].includes(from) ? 'seller' : 'buyer', text, created_at: new Date(dt).toISOString(), status: m.status || 'available', attachments: (Array.isArray(m.message_attachments) ? m.message_attachments : (Array.isArray(m.attachments) ? m.attachments : [])).map(a => typeof a === 'string' ? { id: a, filename: a } : a), raw: m };
   }
+  function mlBuyerDisplayName(buyer) {
+    if (!buyer || typeof buyer !== 'object') return null;
+    const full = [buyer.first_name, buyer.last_name].map(v => String(v || '').trim()).filter(Boolean).join(' ');
+    const nickname = String(buyer.nickname || '').trim();
+    return (full || nickname || '').slice(0, 150) || null;
+  }
+  async function resolveMlBuyerName(accessToken, order) {
+    let name = mlBuyerDisplayName(order?.buyer);
+    if (name) return name;
+    const buyerId = String(order?.buyer?.id || '');
+    if (!/^[0-9]+$/.test(buyerId)) return null;
+    try {
+      const user = await mlRequest(accessToken, '/users/' + encodeURIComponent(buyerId));
+      name = mlBuyerDisplayName(user);
+    } catch (error) {
+      console.warn('Buyer public profile unavailable:', error.status || error.message);
+    }
+    return name;
+  }
   async function persistMlConversation(license, accountInfo, packId, messagesPayload, order = null) {
     const messages = (messagesPayload.messages || []).map(m => normalizeMlMessage(m, accountInfo.sellerId)).sort((a,b) => new Date(a.created_at)-new Date(b.created_at));
     const last = messages[messages.length - 1];
     const currentStatus = messagesPayload.conversation_status || {};
     const { data: previous } = await supabase.from('support_conversations').select('order_id,buyer_id,buyer_name,item_title,closed_at,assigned_agent_id').eq('license_id', license.id).eq('pack_id', String(packId)).eq('seller_id', accountInfo.sellerId).maybeSingle();
-    const buyerId = messages.find(m => m.sender_role === 'buyer')?.sender_id || (order?.buyer?.id ? String(order.buyer.id) : null) || previous?.buyer_id || null;
-    const buyerName = order?.buyer?.nickname || order?.buyer?.first_name || previous?.buyer_name || null;
+    const buyerId = (order?.buyer?.id ? String(order.buyer.id) : null) || previous?.buyer_id || null;
+    const buyerName = mlBuyerDisplayName(order?.buyer) || previous?.buyer_name || null;
     const itemTitle = order?.order_items?.[0]?.item?.title || previous?.item_title || null;
     const row = { license_id: license.id, company_id: license.company_id, pack_id: String(packId), seller_id: accountInfo.sellerId, order_id: String(order?.id || previous?.order_id || packId), buyer_id: buyerId, buyer_name: buyerName, item_title: itemTitle, site_id: accountInfo.siteId, ml_status: currentStatus.status || 'unknown', ml_substatus: currentStatus.substatus || null, last_message: last?.text || null, last_message_at: last?.created_at || null, updated_at: new Date().toISOString() };
     const { data: conv, error } = await supabase.from('support_conversations').upsert(row, { onConflict: 'license_id,pack_id,seller_id' }).select('*').single();
@@ -457,6 +476,32 @@ module.exports = function registerAtendimentoRoutes(app, { supabase, jwt, bcrypt
         await persistMlConversation(license, info, packId, payload, order);
         synced++;
       } catch (e) { failures++; console.warn('Conversation sync failed', packId, e.message); }
+    }
+    // Recupera progressivamente os nomes antigos sem bloquear a abertura da caixa de entrada.
+    if (includeRecent) {
+      try {
+        const { data: unnamed, error: lookupError } = await supabase.from('support_conversations')
+          .select('id,order_id,pack_id,buyer_id').eq('license_id', license.id)
+          .is('buyer_name', null).order('last_message_at', { ascending: false }).limit(20);
+        if (lookupError) throw lookupError;
+        for (const conversation of unnamed || []) {
+          try {
+            const orderId = String(conversation.order_id || '');
+            if (!/^[0-9]+$/.test(orderId)) continue;
+            const order = await mlRequest(info.accessToken, '/orders/' + encodeURIComponent(orderId));
+            const buyerName = await resolveMlBuyerName(info.accessToken, order);
+            if (!buyerName) continue;
+            const { error: updateError } = await supabase.from('support_conversations')
+              .update({ buyer_name: buyerName, buyer_id: order.buyer?.id ? String(order.buyer.id) : conversation.buyer_id })
+              .eq('id', conversation.id).eq('license_id', license.id).is('buyer_name', null);
+            if (updateError) throw updateError;
+          } catch (error) {
+            console.warn('Buyer name backfill unavailable:', error.status || error.message);
+          }
+        }
+      } catch (error) {
+        console.warn('Buyer name backfill query unavailable:', error.message);
+      }
     }
     return { synced, failures };
   }
