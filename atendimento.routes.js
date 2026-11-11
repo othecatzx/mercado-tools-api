@@ -413,18 +413,36 @@ module.exports = function registerAtendimentoRoutes(app, { supabase, jwt, bcrypt
     const nickname = String(buyer.nickname || '').trim();
     return (full || nickname || '').slice(0, 150) || null;
   }
-  async function resolveMlBuyerName(accessToken, order) {
-    let name = mlBuyerDisplayName(order?.buyer);
-    if (name) return name;
-    const buyerId = String(order?.buyer?.id || '');
-    if (!/^[0-9]+$/.test(buyerId)) return null;
-    try {
-      const user = await mlRequest(accessToken, '/users/' + encodeURIComponent(buyerId));
-      name = mlBuyerDisplayName(user);
-    } catch (error) {
-      console.warn('Buyer public profile unavailable:', error.status || error.message);
+  async function resolveMlBuyerName(accessToken, order, siteId = 'MLB') {
+    // Pedidos atuais costumam devolver apenas buyer.id; o nome para faturamento
+    // fica no recurso billing-info, não necessariamente em /users/{id}.
+    const direct = mlBuyerDisplayName(order?.buyer);
+    if (direct) return direct;
+    const billingId = String(order?.buyer?.billing_info?.id || '');
+    const site = String(siteId || order?.site_id || 'MLB').toUpperCase();
+    if (/^[0-9]+$/.test(billingId) && /^[A-Z]{3}$/.test(site)) {
+      try {
+        const billing = await mlRequest(accessToken, '/orders/billing-info/' + site + '/' + encodeURIComponent(billingId));
+        const info = billing?.buyer?.billing_info || billing?.billing_info || {};
+        const given = String(info.name || info.first_name || '').trim();
+        const family = String(info.last_name || '').trim();
+        const fiscalName = [given, family].filter(Boolean).join(' ').slice(0, 150);
+        if (fiscalName) return fiscalName;
+      } catch (error) {
+        console.warn('Buyer billing name unavailable:', error.status || error.message);
+      }
     }
-    return name;
+    const buyerId = String(order?.buyer?.id || '');
+    if (/^[0-9]+$/.test(buyerId)) {
+      try {
+        const user = await mlRequest(accessToken, '/users/' + encodeURIComponent(buyerId));
+        const profileName = mlBuyerDisplayName(user);
+        if (profileName) return profileName;
+      } catch (error) {
+        console.warn('Buyer public profile unavailable:', error.status || error.message);
+      }
+    }
+    return null;
   }
   async function persistMlConversation(license, accountInfo, packId, messagesPayload, order = null) {
     const messages = (messagesPayload.messages || []).map(m => normalizeMlMessage(m, accountInfo.sellerId)).sort((a,b) => new Date(a.created_at)-new Date(b.created_at));
@@ -489,7 +507,7 @@ module.exports = function registerAtendimentoRoutes(app, { supabase, jwt, bcrypt
             const orderId = String(conversation.order_id || '');
             if (!/^[0-9]+$/.test(orderId)) continue;
             const order = await mlRequest(info.accessToken, '/orders/' + encodeURIComponent(orderId));
-            const buyerName = await resolveMlBuyerName(info.accessToken, order);
+            const buyerName = await resolveMlBuyerName(info.accessToken, order, info.siteId);
             if (!buyerName) continue;
             const { error: updateError } = await supabase.from('support_conversations')
               .update({ buyer_name: buyerName, buyer_id: order.buyer?.id ? String(order.buyer.id) : conversation.buyer_id })
