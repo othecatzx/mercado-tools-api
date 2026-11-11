@@ -3,6 +3,7 @@
 <head>
 <link rel="icon" href="icon/icon.png" type="image/png">
 <link rel="stylesheet" href="operational-report.css">
+<link rel="stylesheet" href="universal-search.css">
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="theme-color" content="#0b1020"><title>Portal do Cliente · ML SH Support</title>
 <style>html[data-auth-check="1"] #authView{display:none!important}
@@ -484,11 +485,12 @@ body.sidebar-collapsed .sidebar-scroll .nav-item{justify-content:center;padding:
     </div><!-- /sidebar-scroll -->
     <div class="side-bottom"><div class="side-help"><b>Precisa de ajuda?</b><p>Estamos aqui para ajudar com sua conta e licenças.</p><button data-page="support">Acessar suporte ↗</button></div><div class="side-user"><div class="avatar" id="sideAvatar">C</div><div class="user-meta"><b id="sideName">Cliente</b><small id="sideEmail">cliente@email.com</small></div><button class="logout" id="logoutBtn" title="Sair">↪</button></div></div>
   </aside>
-  <div class="sidebar-scrim" id="sidebarScrim"></div><main class="main"><header class="topbar"><div class="topbar-left"><button id="sidebarToggle" type="button" aria-label="Abrir ou recolher menu" title="Abrir ou recolher menu">☰</button><div class="crumb">Portal do Cliente <span style="color:#b4bbca"> / </span> <b id="crumbPage">Visão geral</b></div></div><div class="top-right"><button class="theme-toggle" id="themeToggle" type="button" aria-label="Alternar tema" title="Alternar tema claro/escuro"><span class="theme-glyph" id="themeGlyph">☾</span><span class="theme-label" id="themeLabel">Tema escuro</span></button><span class="status-pill"><span class="dot"></span> Sistema operacional</span><button class="btn btn-primary" id="topAddLicense">＋ <span>Adicionar licença</span></button></div></header><div class="content" id="pageContent"></div></main>
+  <div class="sidebar-scrim" id="sidebarScrim"></div><main class="main"><header class="topbar"><div class="topbar-left"><button id="sidebarToggle" type="button" aria-label="Abrir ou recolher menu" title="Abrir ou recolher menu">☰</button><div class="crumb">Portal do Cliente <span style="color:#b4bbca"> / </span> <b id="crumbPage">Visão geral</b></div></div><div class="top-right"><button type="button" class="mlsh-global-search" id="mlshCommandButton" onclick="window.mlshOpenCommand?.()">⌕ Buscar <kbd>Ctrl K</kbd></button><button class="theme-toggle" id="themeToggle" type="button" aria-label="Alternar tema" title="Alternar tema claro/escuro"><span class="theme-glyph" id="themeGlyph">☾</span><span class="theme-label" id="themeLabel">Tema escuro</span></button><span class="status-pill"><span class="dot"></span> Sistema operacional</span><button class="btn btn-primary" id="topAddLicense">＋ <span>Adicionar licença</span></button></div></header><div class="content" id="pageContent"></div></main>
 </div>
 <div id="modalRoot"></div><div id="toastRoot"></div>
 <script src="sales-snapshot.js"></script>
 <script src="operational-report.js"></script>
+<script src="universal-search.js" defer></script>
 <script>
 const API='';
 let portalCodes=[];
@@ -573,7 +575,7 @@ async function refreshCodes(){
 
 async function boot(){if(!token){showAuth();return}try{const r=await api('/api/portal/me');currentUser=r.user;await refreshDashboard();showApp()}catch(e){token='';localStorage.removeItem('mlsh_portal_token');showAuth()}}
 
-function logout(show=true){resetSalesSnapshots();token='';currentUser=null;opReportData=null;opReportQueue=null;opReportError='';opReportDay='';opReportRequest++;overviewOrdersData=null;overviewOrdersLoaded=false;overviewOrdersLoading=false;overviewOrdersUpdatedAt=null;overviewOrdersError='';localStorage.removeItem('mlsh_portal_token');if(show)toast('Você saiu da sua conta.');showAuth()}
+function logout(show=true){window.mlshCloseCommand?.();resetSalesSnapshots();token='';currentUser=null;opReportData=null;opReportQueue=null;opReportError='';opReportDay='';opReportRequest++;overviewOrdersData=null;overviewOrdersLoaded=false;overviewOrdersLoading=false;overviewOrdersUpdatedAt=null;overviewOrdersError='';localStorage.removeItem('mlsh_portal_token');if(show)toast('Você saiu da sua conta.');showAuth()}
 $('showRegister').onclick=()=>showAuth('register');$('showLogin').onclick=()=>showAuth('login');$('logoutBtn').onclick=()=>logout();$('topAddLicense').onclick=()=>openAddLicense();
 applyTheme(document.documentElement.dataset.theme||'light');if($('themeToggle'))$('themeToggle').addEventListener('click',()=>applyTheme(document.documentElement.dataset.theme==='dark'?'light':'dark'));
 let mlshLoginSubmitting=false;
