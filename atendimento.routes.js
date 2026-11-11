@@ -564,9 +564,100 @@ module.exports = function registerAtendimentoRoutes(app, { supabase, jwt, bcrypt
       }
       let query = supabase.from('support_conversations').select('*,licenses(company_id,companies(nome))').eq('license_id', licenseId).order('last_message_at', { ascending: false, nullsFirst: false }).limit(200);
       const { data, error } = await query; if (error) throw error;
-      const assignedIds = [...new Set((data || []).map(c => c.assigned_agent_id).filter(Boolean))]; let assigned = new Map(); if (assignedIds.length) { const { data: agents, error: agentsError } = await supabase.from('support_agents').select('id,nome,email').in('id', assignedIds); if (agentsError) throw agentsError; assigned = new Map((agents || []).map(a => [a.id, a])); } const conversations = (data || []).map(c => ({ ...c, company_name: c.licenses?.companies?.nome || actor.license?.companies?.nome || 'Empresa', assigned_agent_name: assigned.get(c.assigned_agent_id)?.nome || null, assigned_agent_email: assigned.get(c.assigned_agent_id)?.email || null, licenses: undefined }));
+      const conversationIds = (data || []).map(c => c.id);
+      const latestByConversation = new Map();
+      if (conversationIds.length) {
+        const { data: recentMessages, error: recentError } = await supabase.from('support_messages')
+          .select('conversation_id,sender_role,created_at').eq('license_id', licenseId)
+          .in('conversation_id', conversationIds).order('created_at', { ascending: false }).limit(3000);
+        if (recentError) throw recentError;
+        for (const message of recentMessages || []) {
+          if (!latestByConversation.has(message.conversation_id)) latestByConversation.set(message.conversation_id, message);
+        }
+      }
+      const assignedIds = [...new Set((data || []).map(c => c.assigned_agent_id).filter(Boolean))]; let assigned = new Map(); if (assignedIds.length) { const { data: agents, error: agentsError } = await supabase.from('support_agents').select('id,nome,email').in('id', assignedIds); if (agentsError) throw agentsError; assigned = new Map((agents || []).map(a => [a.id, a])); } const conversations = (data || []).map(c => ({ ...c, company_name: c.licenses?.companies?.nome || actor.license?.companies?.nome || 'Empresa', assigned_agent_name: assigned.get(c.assigned_agent_id)?.nome || null, assigned_agent_email: assigned.get(c.assigned_agent_id)?.email || null, last_sender_role: latestByConversation.get(c.id)?.sender_role || null, waiting_since: latestByConversation.get(c.id)?.sender_role === 'buyer' ? latestByConversation.get(c.id)?.created_at : null, licenses: undefined }));
       return res.json({ ok: true, conversations, sync });
     } catch (e) { console.error('Chat conversation list:', e.code || e.message); return res.status(500).json({ ok: false, message: 'Não foi possível carregar as conversas.' }); }
+  });
+  const supportLabelOptions = new Set(['Urgente','Garantia','Defeito','Atraso','Devolução','Dúvida técnica']);
+  app.patch('/api/portal/atendimento/chat/conversations/:id/labels', authChat, async (req, res) => {
+    try {
+      const scope = await getConversationScoped(req, res, req.params.id, 'conversations.view'); if (!scope) return;
+      const labels = req.body?.labels;
+      if (!Array.isArray(labels) || labels.length > 6 || labels.some(v => typeof v !== 'string' || !supportLabelOptions.has(v))) return res.status(400).json({ ok: false, message: 'Etiquetas inválidas.' });
+      const unique = [...new Set(labels)];
+      const { data, error } = await supabase.from('support_conversations').update({ labels: unique }).eq('id', scope.conversation.id).eq('license_id', scope.conversation.license_id).select('labels').single();
+      if (error) throw error;
+      await writeAudit(scope.conversation.license_id, scope.actor.owner ? req.actor.id : null, 'conversation.labels_updated', { conversation_id: scope.conversation.id, labels: unique, agent_id: scope.actor.agent?.id || null });
+      return res.json({ ok: true, labels: data.labels });
+    } catch (error) { console.error('Chat labels:', error.message); return res.status(500).json({ ok: false, message: 'Não foi possível salvar as etiquetas.' }); }
+  });
+  app.get('/api/portal/atendimento/chat/conversations/:id/notes', authChat, async (req, res) => {
+    try {
+      const scope = await getConversationScoped(req, res, req.params.id, 'conversations.view'); if (!scope) return;
+      const { data, error } = await supabase.from('support_internal_notes').select('id,note,author_name,created_at').eq('license_id', scope.conversation.license_id).eq('conversation_id', scope.conversation.id).order('created_at', { ascending: false }).limit(100);
+      if (error) throw error;
+      return res.json({ ok: true, notes: data || [] });
+    } catch (error) { console.error('Chat notes:', error.message); return res.status(500).json({ ok: false, message: 'Não foi possível carregar as notas.' }); }
+  });
+  app.post('/api/portal/atendimento/chat/conversations/:id/notes', authChat, async (req, res) => {
+    try {
+      const scope = await getConversationScoped(req, res, req.params.id, 'conversations.view'); if (!scope) return;
+      const note = String(req.body?.note || '').trim();
+      if (!note || note.length > 3000) return res.status(400).json({ ok: false, message: 'Escreva uma nota de até 3000 caracteres.' });
+      const authorName = scope.actor.owner ? 'Titular da licença' : String(scope.actor.agent?.nome || 'Atendente').slice(0, 100);
+      const { data, error } = await supabase.from('support_internal_notes').insert({
+        conversation_id: scope.conversation.id, license_id: scope.conversation.license_id,
+        author_id: req.actor.id, author_name: authorName, note
+      }).select('id,note,author_name,created_at').single();
+      if (error) throw error;
+      await writeAudit(scope.conversation.license_id, scope.actor.owner ? req.actor.id : null, 'conversation.note_added', { conversation_id: scope.conversation.id, note_id: data.id, agent_id: scope.actor.agent?.id || null });
+      return res.status(201).json({ ok: true, note: data });
+    } catch (error) { console.error('Chat add note:', error.message); return res.status(500).json({ ok: false, message: 'Não foi possível salvar a nota.' }); }
+  });
+  app.get('/api/portal/atendimento/chat/conversations/:id/order-summary', authChat, async (req, res) => {
+    try {
+      const scope = await getConversationScoped(req, res, req.params.id, 'conversations.view'); if (!scope) return;
+      const info = await mlAccountForLicense(scope.actor.license);
+      const id = String(scope.conversation.order_id || '');
+      let order = null;
+      if (/^[0-9]+$/.test(id)) {
+        try { order = await mlRequest(info.accessToken, '/orders/' + encodeURIComponent(id)); }
+        catch (error) { if (error.status !== 404) throw error; }
+      }
+      if (!order && /^[0-9]+$/.test(String(scope.conversation.pack_id || ''))) {
+        const pack = await mlRequest(info.accessToken, '/packs/' + encodeURIComponent(scope.conversation.pack_id));
+        const first = (pack.orders || []).find(v => /^[0-9]+$/.test(String(v.id || '')));
+        if (first) order = await mlRequest(info.accessToken, '/orders/' + encodeURIComponent(first.id));
+      }
+      if (!order) return res.status(404).json({ ok: false, message: 'Pedido não encontrado na conta conectada.' });
+      const shippingId = order.shipping?.id ? String(order.shipping.id) : null;
+      let shipping = null;
+      if (shippingId) {
+        try { shipping = await mlRequest(info.accessToken, '/shipments/' + encodeURIComponent(shippingId)); }
+        catch (error) { console.warn('Chat shipment details unavailable:', error.status || error.message); }
+      }
+      const products = await Promise.all((order.order_items || []).slice(0, 30).map(async (v, index) => {
+        const itemId = String(v.item?.id || '');
+        let image = v.item?.secure_thumbnail || v.item?.thumbnail || v.item?.picture || null;
+        if (!image && itemId && index < 8) {
+          try {
+            const catalogItem = await mlRequest(info.accessToken, '/items/' + encodeURIComponent(itemId));
+            image = catalogItem.secure_thumbnail || catalogItem.thumbnail || catalogItem.pictures?.[0]?.secure_url || catalogItem.pictures?.[0]?.url || null;
+          } catch (error) { console.warn('Chat item thumbnail unavailable:', error.status || error.message); }
+        }
+        return {
+          title: String(v.item?.title || 'Produto'), sku: String(v.item?.seller_sku || v.item?.seller_custom_field || ''),
+          item_id: itemId, quantity: Number(v.quantity || 0),
+          image: typeof image === 'string' && /^https:\/\//.test(image) ? image : null
+        };
+      }));
+      return res.json({ ok: true, order: {
+        id: String(order.id), total: Number(order.total_amount || 0), status: String(order.status || ''),
+        shipping_id: shippingId, shipping_status: String(shipping?.status || order.shipping?.status || ''),
+        logistic_type: String(shipping?.logistic_type || ''), products
+      } });
+    } catch (error) { console.error('Chat order summary:', error.status || error.message); return res.status(error.status && error.status < 500 ? error.status : 502).json({ ok: false, message: 'Não foi possível consultar os detalhes do pedido.' }); }
   });
   app.get('/api/portal/atendimento/chat/conversations/:id/messages', authChat, async (req, res) => {
     try {
