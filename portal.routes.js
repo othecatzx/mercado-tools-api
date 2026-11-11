@@ -801,6 +801,16 @@ const codes = [...companies.entries()].map(([companyId, company]) => {
             };
             await Promise.all(Array.from({ length: Math.min(6, shipmentIds.length) }, () => shipmentWorker()));
 
+            // Os status de pagamento podem estar no envio, apesar de order.status="paid".
+            // Filtra ANTES da montagem da fila e dos totais para excluir pedidos
+            // cujo envio esteja em waiting_for_payment ou shipment_paid.
+            orders = orders.filter(order => {
+              const shipment = shipmentDetails.get(String(order.shipping?.id || '')) || {};
+              const shipping = { ...(order.shipping || {}), ...shipment };
+              return ![order.status_detail, shipping.status, shipping.substatus]
+                .some(value => excludedUnpaidStatuses.has(String(value || '').trim().toLowerCase()));
+            });
+
             // Na fila operacional, considera também o prazo oficial de despacho do SLA.
             // Pedidos com expected_date em dias futuros não entram na fila de hoje.
             // Se o endpoint de SLA falhar ou não retornar expected_date, preservamos
