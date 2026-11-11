@@ -705,11 +705,12 @@ function printSalesSeparationSheet(){
  const status=String(salesOrderFilters.status||'all');
  const logistic=String(salesOrderFilters.logistic||'all');
  const cleanName=v=>String(v||'').trim();
- const storeById=new Map(stores.map(s=>[String(s.company_id??s.id??s.license_id??''),cleanName(s.company_name||s.nome||s.name)]));
+ const shortStoreName=v=>firstCompanyName(cleanName(v)||'Loja');
+ const storeById=new Map(stores.map(s=>[String(s.company_id??s.id??s.license_id??''),shortStoreName(s.nickname||s.company_name||s.nome||s.name)]));
  const getStoreName=o=>{
-  const direct=cleanName(o.company_name||o.store_name||o.nome_loja||o.store?.company_name||o.store?.name);
+  const direct=cleanName(o.nickname||o.store?.nickname||o.company_name||o.store_name||o.nome_loja||o.store?.company_name||o.store?.name);
   const mapped=storeById.get(String(o.company_id??''));
-  return direct||mapped||'Loja não identificada';
+  return shortStoreName(direct||mapped||'Loja não identificada');
  };
  const filtered=orders.filter(o=>{
   if(store!=='all'&&String(o.company_id)!==store)return false;
