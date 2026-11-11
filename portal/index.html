@@ -570,7 +570,7 @@ async function refreshCodes(){
 
 async function boot(){if(!token){showAuth();return}try{const r=await api('/api/portal/me');currentUser=r.user;await refreshDashboard();showApp()}catch(e){token='';localStorage.removeItem('mlsh_portal_token');showAuth()}}
 
-function logout(show=true){token='';currentUser=null;localStorage.removeItem('mlsh_portal_token');if(show)toast('Você saiu da sua conta.');showAuth()}
+function logout(show=true){token='';currentUser=null;overviewOrdersData=null;overviewOrdersLoaded=false;overviewOrdersLoading=false;overviewOrdersUpdatedAt=null;overviewOrdersError='';localStorage.removeItem('mlsh_portal_token');if(show)toast('Você saiu da sua conta.');showAuth()}
 $('showRegister').onclick=()=>showAuth('register');$('showLogin').onclick=()=>showAuth('login');$('logoutBtn').onclick=()=>logout();$('topAddLicense').onclick=()=>openAddLicense();
 applyTheme(document.documentElement.dataset.theme||'light');if($('themeToggle'))$('themeToggle').addEventListener('click',()=>applyTheme(document.documentElement.dataset.theme==='dark'?'light':'dark'));
 let mlshLoginSubmitting=false;
@@ -904,7 +904,66 @@ async function applyShippingChanges(){
  await loadShippingItems(true);shippingResult=aggregate;renderPage();toast(`${aggregate.success.length} anúncio(s) alterado(s), ${aggregate.failed.length} com erro.`);
 }
 
-function renderPage(){if(!$('appView').classList.contains('hidden')){const s=dashboard.summary||{};let html='';switch(currentPage){case'overview':html=pageHead('SEU WORKSPACE','Visão geral','Acompanhe suas licenças e dispositivos em um único lugar.')+`<div class="grid">${stat('Licenças cadastradas',s.licenses||0,'⌘',`${s.active_licenses||0} ativas`)}${stat('Empresas vinculadas',s.companies||0,'▦','Lojas associadas às licenças')}${stat('Dispositivos registrados',s.devices||0,'▣',`${s.active_devices||0} ativos`)}${stat('Códigos ML',portalCodes.filter(c=>c.code).length,'▤','Configurados para suas lojas')}</div><div class="section-row"><div><h2>Suas licenças</h2><p>Resumo das empresas vinculadas à sua conta.</p></div><button class="btn btn-ghost" data-go="licenses">Ver todas →</button></div>${(dashboard.licenses||[]).length?`<div class="license-list">${dashboard.licenses.slice(0,4).map(l=>licenseCard(l)).join('')}</div>`: `<div class="panel">${emptyState('⌘','Nenhuma licença cadastrada','Adicione uma chave que você já possui. Vamos identificar a empresa automaticamente.',(currentUser?.role==='support_agent'?'':`<button class="btn btn-primary" data-add>＋ Cadastrar primeira licença</button>`))}</div>`}<div class="section-row"><div><h2>Acesso rápido</h2><p>Ferramentas úteis para o seu dia a dia.</p></div></div><div class="placeholder-grid"><div class="placeholder-card"><div class="stat-icon">▤</div><h3>Códigos ML</h3><p>Copie os códigos das lojas em poucos segundos.</p><button class="btn btn-ghost" data-go="codes">Abrir códigos →</button></div><div class="placeholder-card"><div class="stat-icon">▣</div><h3>Dispositivos</h3><p>Consulte os computadores que estão usando suas licenças.</p><button class="btn btn-ghost" data-go="devices">Ver dispositivos →</button></div><div class="placeholder-card"><div class="stat-icon">↗</div><h3>Relatórios de vendas</h3><p>Área preparada para indicadores de vendas das lojas conectadas.</p><button class="btn btn-ghost" data-go="sales">Ver Analytics de Vendas →</button></div></div>`;break;
+
+let overviewOrdersData=null,overviewOrdersLoading=false,overviewOrdersLoaded=false,overviewOrdersUpdatedAt=null,overviewOrdersError='';
+async function loadOverviewOrders(){
+ if(overviewOrdersLoading)return;
+ overviewOrdersLoading=true;overviewOrdersError='';
+ if(currentPage==='overview')renderPage();
+ try{
+  const result=await api('/api/portal/sales?today=1');
+  overviewOrdersData=result;
+  overviewOrdersLoaded=true;
+  overviewOrdersUpdatedAt=new Date();
+ }catch(e){
+  overviewOrdersError=e.message||'Falha ao consultar pedidos.';
+ }finally{
+  overviewOrdersLoading=false;
+  if(currentPage==='overview')renderPage();
+ }
+}
+function overviewMarkup(){
+ const orders=Array.isArray(overviewOrdersData?.orders)?overviewOrdersData.orders:[];
+ const pending=orders.filter(o=>o.needs_separation&&o.status_group!=='cancelled');
+ const separated=orders.filter(o=>o.already_separated&&o.status_group!=='cancelled');
+ const flex=pending.filter(o=>o.shipping_logistic_type==='self_service');
+ const cancelled=orders.filter(o=>o.status_group==='cancelled');
+ const money=v=>Number(v||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
+ const num=v=>Number(v||0).toLocaleString('pt-BR');
+ const display=overviewOrdersLoaded?true:false;
+ const v=n=>display?num(n):'—';
+ const stores=Array.isArray(overviewOrdersData?.stores)?overviewOrdersData.stores:[];
+ const storeRows=stores.map(s=>{
+  const related=orders.filter(o=>String(o.company_id)===String(s.company_id));
+  return {name:firstCompanyName(s.company_name||s.nickname||'Loja'),count:related.length,pending:related.filter(o=>o.needs_separation&&o.status_group!=='cancelled').length,flex:related.filter(o=>o.needs_separation&&o.shipping_logistic_type==='self_service').length,connected:s.connected,error:s.error};
+ }).sort((a,b)=>a.name.localeCompare(b.name,'pt-BR',{numeric:true,sensitivity:'base'}));
+ const activeDevices=(dashboard.devices||[]).filter(d=>String(d.status||'').toLowerCase()==='active').length;
+ const expiry=(dashboard.licenses||[]).map(l=>({name:firstCompanyName(l.company?.nome||l.company||'Loja'),time:new Date(l.vencimento).getTime()})).filter(l=>Number.isFinite(l.time)&&l.time>Date.now()&&l.time-Date.now()<=30*86400000).sort((a,b)=>a.time-b.time);
+ const critical=pending.filter(o=>o.shipping_logistic_type==='self_service');
+ const rows=pending.slice().sort((a,b)=>(a.shipping_logistic_type==='self_service'?0:1)-(b.shipping_logistic_type==='self_service'?0:1)||new Date(a.date_created||0)-new Date(b.date_created||0)).slice(0,8);
+ const style='<style>.overview-grid{display:grid;grid-template-columns:1.4fr 1fr;gap:16px}.overview-pills{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:15px}.overview-pill{padding:6px 10px;border:1px solid var(--line);border-radius:30px;background:var(--panel);font-size:11px;color:var(--muted)}.overview-highlight{border-left:3px solid #8573ff}.overview-table{width:100%;border-collapse:collapse}.overview-table th,.overview-table td{text-align:left;border-bottom:1px solid var(--line);padding:12px 9px;font-size:12px}.overview-table th{font-size:10px;color:var(--muted)}.overview-actions{display:flex;align-items:center;gap:9px;flex-wrap:wrap}.overview-actions .btn{padding:8px 11px}.overview-store{display:flex;align-items:center;justify-content:space-between;padding:11px 0;border-bottom:1px solid var(--line);gap:12px;font-size:12px}.overview-store:last-child{border:0}.overview-store strong{font-size:13px}@media(max-width:1050px){.overview-grid{grid-template-columns:1fr}}@media(max-width:650px){.overview-table{min-width:600px}} </style>';
+ return style+pageHead('CENTRAL DE OPERAÇÕES','Visão geral','Pedidos e prioridades das suas lojas em um único painel.', '<button class="btn btn-ghost" id="overviewRefresh" '+(overviewOrdersLoading?'disabled':'')+'>↻ '+(overviewOrdersLoading?'Atualizando…':'Atualizar agora')+'</button>')+
+ '<div class="overview-pills"><span class="overview-pill">Fila operacional · consulta de hoje</span><span class="overview-pill">'+(overviewOrdersUpdatedAt?'Atualizado em '+esc(overviewOrdersUpdatedAt.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})):'Ainda não consultado')+'</span><span class="overview-pill">'+num((dashboard.licenses||[]).length)+' licenças · '+num((dashboard.devices||[]).length)+' dispositivos</span></div>'+
+ (overviewOrdersError?'<div class="alert error">Não foi possível atualizar a fila: '+esc(overviewOrdersError)+(overviewOrdersLoaded?' · Exibindo últimos dados carregados.':'')+'</div>':'')+
+ '<div class="grid">'+
+ stat('Precisam separar',v(pending.length),'▣','Pedidos na fila atual')+
+ stat('Envios FLEX pendentes',v(flex.length),'↗','Priorize os envios FLEX')+
+ stat('Já separados',v(separated.length),'✓','Etiqueta impressa')+
+ stat('Cancelados na fila',v(cancelled.length),'×','Cancelamentos encontrados')+
+ '</div>'+
+ '<div class="section-row"><div><h2>Atenção agora</h2><p>Prioridades que merecem sua conferência.</p></div><button class="btn btn-ghost" data-go="vendas">Abrir vendas →</button></div>'+
+ '<div class="overview-grid"><section class="panel overview-highlight"><div class="panel-head"><h3>Fila prioritária</h3><span class="badge warn">'+(display?num(critical.length)+' FLEX pendentes':'Aguardando consulta')+'</span></div>'+
+ (overviewOrdersLoading&&!overviewOrdersLoaded?'<p class="muted">Carregando pedidos…</p>':!overviewOrdersLoaded?'<p class="muted">Não foi possível carregar a fila. Clique em Atualizar agora.</p>':rows.length?'<div class="table-wrap"><table class="overview-table"><thead><tr><th>Pedido / Produto</th><th>Loja</th><th>Envio</th><th>Un.</th></tr></thead><tbody>'+rows.map(o=>'<tr><td><b>#'+esc(o.id||'—')+'</b><div class="product-sub">'+esc((o.products||[]).map(p=>p.title).filter(Boolean).slice(0,2).join(' · ')||'Pedido')+'</div></td><td>'+esc(firstCompanyName(o.company_name||'Loja'))+'</td><td>'+(o.shipping_logistic_type==='self_service'?'<span class="badge warn">FLEX</span>':'Normal')+'</td><td>'+num(o.units||0)+'</td></tr>').join('')+'</tbody></table></div>':'<div class="small muted">Nenhum pedido aguardando separação na fila atual.</div>')+
+ '</section><section class="panel"><div class="panel-head"><h3>Por loja</h3><span class="small muted">Fila operacional</span></div>'+
+ (storeRows.length?storeRows.map(s=>'<div class="overview-store"><div><strong>'+esc(s.name)+'</strong><div class="small muted">'+num(s.count)+' pedidos encontrados'+(s.error?' · Consulta com erro':'')+'</div></div><div style="text-align:right"><b>'+num(s.pending)+' pendentes</b><div class="small muted">'+num(s.flex)+' FLEX</div></div></div>').join(''):'<div class="small muted">'+(overviewOrdersLoading?'Consultando lojas…':'Sem dados de lojas na consulta atual.')+'</div>')+
+ '</section></div>'+
+ '<div class="section-row"><div><h2>Administração e acessos</h2><p>Informações que precisam de acompanhamento, sem ocupar a parte principal.</p></div></div>'+
+ '<div class="overview-grid"><section class="panel"><div class="panel-head"><h3>Licenças próximas do vencimento</h3><button class="mini-btn" data-go="licenses">Ver licenças</button></div>'+
+ (expiry.length?expiry.map(l=>'<div class="overview-store"><b>'+esc(l.name)+'</b><span>'+esc(new Date(l.time).toLocaleDateString('pt-BR'))+'</span></div>').join(''):'<span class="small muted">Nenhuma licença com vencimento nos próximos 30 dias.</span>')+
+ '</section><section class="panel"><div class="panel-head"><h3>Atalhos úteis</h3></div><div class="overview-actions"><button class="btn btn-ghost" data-go="vendas">▤ Separação</button><button class="btn btn-ghost" data-go="codes">▤ Códigos ML</button><button class="btn btn-ghost" data-go="chat">☏ Atendimento</button><button class="btn btn-ghost" data-go="devices">▣ Dispositivos</button></div><div class="small muted" style="margin-top:15px">Dados de licenças e dispositivos vêm do portal. A fila operacional é uma consulta separada, sujeita à sincronização das contas Mercado Livre.</div></section></div>';
+}
+
+function renderPage(){if(!$('appView').classList.contains('hidden')){const s=dashboard.summary||{};let html='';switch(currentPage){case'overview':html=overviewMarkup();break;
 case'licenses':html=pageHead('GESTÃO','Minhas licenças','Cadastre as chaves que você possui e veja a empresa vinculada a cada uma.',)+((dashboard.licenses||[]).length?`<div class="license-list">${dashboard.licenses.map(l=>licenseCard(l)).join('')}</div>`:`<div class="panel">${emptyState('⌘','Seu painel começa aqui','Adicione uma licença válida. O nome da empresa e o status serão carregados pelo sistema.',(currentUser?.role==='support_agent'?'':`<button class="btn btn-primary" data-add>＋ Adicionar licença</button>`))}</div>`);break;
 case'devices':{
  const companyOptions=[...new Map((dashboard.devices||[]).map(d=>[String(d.company_id),{id:d.company_id,name:d.company_name||'Empresa'}])).values()];
@@ -919,7 +978,7 @@ case'bling-dimensions':html=pageHead('BLING · CONFIGURAÇÕES','Dimensões de E
  case'shipping':html=shippingMarkup();break;
 case'support':html=pageHead('AJUDA','Suporte','Precisa de ajuda com uma licença, dispositivo ou acesso?')+`<div class="panel settings-box"><div class="stat-icon" style="margin-bottom:15px">◉</div><h3 style="margin:0 0 7px">Fale com o suporte</h3><p class="muted">Ao entrar em contato, informe o e-mail da sua conta e a empresa relacionada ao problema. Não compartilhe sua senha.</p><div class="settings-row"><div><b>Conta atual</b><p>${esc(currentUser?.email||'')}</p></div><button class="btn btn-ghost" data-copy="${esc(currentUser?.email||'')}">Copiar e-mail</button></div><div class="settings-row"><div><b>Licenças cadastradas</b><p>${s.licenses||0} vinculada(s) a esta conta</p></div><button class="btn btn-ghost" data-go="licenses">Ver licenças</button></div><div style="margin-top:18px"><button class="btn btn-primary" id="supportMail">✉ Preparar e-mail para suporte</button></div></div>`;break;
 case'settings':html=pageHead('PREFERÊNCIAS','Configurações','Gerencie os dados básicos e a segurança da sua conta.')+`<div class="panel settings-box"><div class="panel-head"><div><h3>Perfil da conta</h3><div class="small muted">Informações usadas para identificar seu acesso ao portal.</div></div></div><div class="settings-row"><div><b>Nome</b><p>${esc(currentUser?.nome||'—')}</p></div><span class="small muted">Conta do portal</span></div><div class="settings-row"><div><b>E-mail</b><p>${esc(currentUser?.email||'—')}</p></div><span class="badge">Verificado no login</span></div><div class="settings-row"><div><b>Senha</b><p>Por segurança, a senha não é exibida.</p></div><span class="small muted">Redefinição futura</span></div><div class="settings-row"><div><b>Sessão</b><p>Encerre o acesso neste dispositivo.</p></div><button class="btn btn-danger" id="settingsLogout">Sair da conta</button></div></div>`;break;}
-$('pageContent').innerHTML=html;bindDynamicActions();if(currentPage==='bling-dimensions')dimensionPageInit();if(currentPage==='vendas'&&!salesLoading&&!salesData)loadSales(1);if(currentPage==='shipping'&&!shippingLoading&&!shippingData)loadShippingItems();}}
+$('pageContent').innerHTML=html;bindDynamicActions();if(currentPage==='overview'){const btn=$('overviewRefresh');if(btn)btn.onclick=()=>loadOverviewOrders();if(!overviewOrdersLoaded&&!overviewOrdersLoading&&!overviewOrdersError)loadOverviewOrders();}if(currentPage==='bling-dimensions')dimensionPageInit();if(currentPage==='vendas'&&!salesLoading&&!salesData)loadSales(1);if(currentPage==='shipping'&&!shippingLoading&&!shippingData)loadShippingItems();}}
 const userManagementLabels={"users.view":"Visualizar usuários","users.create":"Criar subusuários","users.edit":"Editar subusuários","users.delete":"Excluir/desativar subusuários","users.manage_permissions":"Gerenciar permissões da equipe"};
 const agentMenuLabels={overview:"Visão geral",licenses:"Minhas licenças",devices:"Dispositivos",orders:"Pedidos",sales:"Analytics de Vendas",shipping:"Frete comprador",codes:"Códigos ML",team:"Equipe de atendimento",chat:"Atendimento",support:"Suporte",settings:"Configurações","bling-entries":"Entradas de estoque","bling-labels":"Modelos de etiquetas","bling-integrations":"Conexões Bling","bling-dimensions":"Dimensões de embalagens"}; // BLING_MENU_LABELS_V1
 const supportPermissionLabels={"conversations.view":"Visualizar conversas","conversations.reply":"Responder mensagens","conversations.assign":"Atribuir conversas","conversations.close":"Encerrar atendimentos","attachments.send":"Enviar fotos e PDFs","quick_replies.use":"Usar respostas rápidas","quick_replies.manage":"Gerenciar respostas rápidas","history.view":"Consultar histórico"};
