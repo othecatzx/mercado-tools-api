@@ -173,5 +173,53 @@
       container.innerHTML='<p><strong>Pedido #'+safe(o.id)+'</strong> · '+safe(o.status)+'</p><p>Valor: '+Number(o.total||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})+'</p><p>Envio: '+safe(o.shipping_id||'—')+' '+safe(o.shipping_status||'')+' · '+safe(o.logistic_type||'')+'</p>'+products;
     }).catch(e=>{if(valid())showError('#chatOrderSummary',e)});
   };
+  // Atualiza somente as mensagens do chat aberto, sem reconstruir o cabeçalho,
+  // o campo de digitação, os anexos ou as notas que o usuário estiver editando.
+  let activeChatPollBusy = false;
+  const chatMessageMarkup = m =>
+    '<div class="chat-bubble '+(m.sender_role==='seller'?'mine':'')+'">'+safe(m.text||'')+
+    (m.attachments||[]).map(a=>'<div><button type="button" class="mini-btn" data-attachment-id="'+safe(a.id||a.filename||'')+'">📎 '+safe(a.filename||a.id||'Anexo')+'</button></div>').join('')+
+    '<small>'+safe(m.sender_name||m.sender_role||'Mensagem')+' · '+safe(m.created_at?new Date(m.created_at).toLocaleString('pt-BR'):'')+
+    ' '+chatReadReceipt(m)+'</small></div>';
+  async function refreshOpenChatMessages(){
+    if(activeChatPollBusy || document.hidden || !token || currentPage!=='chat' || !activeConversation)return;
+    const box=document.querySelector('#chatMessages');
+    if(!box || !box.isConnected || document.querySelector('#chatThread')?.classList.contains('hidden'))return;
+    const id=String(activeConversation.id);
+    const license=String(activeConversation.license_id);
+    const marker=box.dataset.messageFingerprint || '';
+    activeChatPollBusy=true;
+    try{
+      const result=await api(conversationUrl(id)+'/messages');
+      if(currentPage!=='chat' || !activeConversation || String(activeConversation.id)!==id ||
+         String(activeConversation.license_id)!==license || !box.isConnected ||
+         document.querySelector('#chatMessages')!==box || document.hidden)return;
+      const messages=result.messages||[];
+      const fingerprint=messages.map(m=>[m.external_message_id||m.id,m.status,m.raw?.read,m.raw?.is_read].join(':')).join('|');
+      if(fingerprint===marker)return;
+      const atBottom=box.scrollHeight-box.scrollTop-box.clientHeight<90;
+      const previousScroll=box.scrollTop;
+      box.innerHTML=messages.map(chatMessageMarkup).join('')||'<div class="muted small">Nenhuma mensagem disponível.</div>';
+      box.dataset.messageFingerprint=fingerprint;
+      box.querySelectorAll('[data-attachment-id]').forEach(btn=>btn.onclick=()=>downloadChatAttachment(activeConversation,btn.dataset.attachmentId));
+      box.scrollTop=atBottom?box.scrollHeight:previousScroll;
+      if(messages.length){
+        const last=messages[messages.length-1];
+        const c=chatConversations.find(v=>String(v.id)===id);
+        if(c){
+          c.last_message=last.text||c.last_message;
+          c.last_message_at=last.created_at||c.last_message_at;
+          c.last_sender_role=last.sender_role;
+          c.waiting_since=null;
+          c.has_unread_buyer=false;
+        }
+        renderChatConversations();
+      }
+    }catch(error){
+      // Falhas temporárias não apagam a conversa nem o texto em digitação.
+      console.warn('Atualização automática do chat:',error.message);
+    }finally{activeChatPollBusy=false}
+  }
+  setInterval(refreshOpenChatMessages,8000);
   setInterval(()=>{if(currentPage==='chat'&&document.querySelector('#chatConversationList'))renderChatConversations()},60000);
 })();
