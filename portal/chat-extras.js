@@ -123,7 +123,7 @@
     baseline.set(license+':'+String(c.id),new Date(c.last_message_at||0).getTime());
     renderChatConversations();
     loadChatConversations(false).catch(()=>{});
-    const details=document.createElement('details');details.className='chat-extra-details';
+    const details=document.createElement('details');details.className='chat-extra-details';details.open=false;details.removeAttribute('open');
     details.innerHTML='<summary>Informações do atendimento e notas internas</summary><div class="chat-extra-grid"><section><h4>Etiquetas</h4><div id="chatTagChecks">'+labels.map(l=>'<label><input type="checkbox" value="'+safe(l)+'" '+((c.labels||[]).includes(l)?'checked':'')+'> '+safe(l)+'</label>').join('')+'</div><button class="mini-btn" id="chatSaveLabels">Salvar etiquetas</button><h4>Pedido</h4><div id="chatOrderSummary" class="small muted">Consultando pedido…</div></section><section><h4>Notas internas <span class="muted small">(não enviadas ao comprador)</span></h4><div id="chatInternalNotes" class="chat-notes-list small">Carregando notas…</div><textarea id="chatInternalNoteText" maxlength="3000" rows="2" placeholder="Escreva uma observação só para a equipe…"></textarea><button class="mini-btn" id="chatAddInternalNote">Adicionar nota interna</button></section></div>';
     head.after(details);
     const valid=()=>String(activeConversation?.id)===String(c.id)&&details.isConnected;

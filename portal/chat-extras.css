@@ -8,6 +8,7 @@
 .chat-label-chip{display:inline-block;font-size:10px;border:1px solid var(--line);background:var(--panel-2);color:var(--ink);border-radius:10px;padding:2px 6px}
 .chat-extra-details{border-bottom:1px solid var(--line);background:var(--panel);font-size:12px}
 .chat-extra-details>summary{cursor:pointer;list-style:revert;padding:10px 14px;font-weight:700;color:var(--ink)}
+.chat-extra-details:not([open])>.chat-extra-grid{display:none!important}
 .chat-extra-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;padding:10px 14px;max-height:300px;overflow-y:auto}
 .chat-extra-grid section{min-width:0}
 .chat-extra-grid h4{margin:7px 0;font-size:12px}
