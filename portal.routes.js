@@ -100,12 +100,12 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
       const senha_hash = await bcrypt.hash(senha, 12);
       const { data: user, error } = await supabase.from('portal_users')
         .insert({ nome, email, senha_hash, status: 'active' })
-        .select('id,nome,email,status,created_at').single();
+        .select('id,nome,email,status,created_at,session_version').single();
       if (error) {
         if (error.code === '23505') return res.status(409).json({ ok: false, error: 'email_exists', message: 'Já existe uma conta com este e-mail.' });
         throw error;
       }
-      const token = jwt.sign({ type: 'portal', portal_user_id: user.id, email: user.email }, process.env.JWT_SECRET, { expiresIn: '7d' });
+      const token = jwt.sign({ type: 'portal', portal_user_id: user.id, email: user.email, session_version: Number(user.session_version ?? 0) }, process.env.JWT_SECRET, { expiresIn: '7d' });
       return res.status(201).json({ ok: true, token, user });
     } catch (error) {
       console.error('Portal register error:', error.message);
@@ -126,7 +126,7 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
         if (user.status !== 'active' || !(await bcrypt.compare(senha, user.senha_hash))) {
           return res.status(401).json({ ok: false, error: 'invalid_credentials', message: 'E-mail ou senha incorretos.' });
         }
-        const token = jwt.sign({ type: 'portal', portal_user_id: user.id, email: user.email }, process.env.JWT_SECRET, { expiresIn: '7d' });
+        const token = jwt.sign({ type: 'portal', portal_user_id: user.id, email: user.email, session_version: Number(user.session_version ?? 0) }, process.env.JWT_SECRET, { expiresIn: '7d' });
         return res.json({ ok: true, token, user: { id: user.id, nome: user.nome, email: user.email, status: user.status, created_at: user.created_at, role: 'portal_user' } });
       }
 
