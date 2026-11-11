@@ -662,6 +662,28 @@ module.exports = function registerAtendimentoRoutes(app, { supabase, jwt, bcrypt
       return res.json({ ok: true, assigned_agent_id: agentId });
     } catch (e) { console.error('Chat assign:', e.code || e.message); return res.status(500).json({ ok: false, message: 'Não foi possível atribuir o atendimento.' }); }
   });
+  // O responsável pode devolver a própria conversa à fila sem permissão de atribuir terceiros.
+  app.patch('/api/portal/atendimento/chat/conversations/:id/unassign-self', authChat, async (req, res) => {
+    try {
+      if (req.actor.type !== 'agent') return res.status(403).json({ ok: false, message: 'Somente o atendente atribuído pode usar esta ação.' });
+      const scope = await getConversationScoped(req, res, req.params.id, 'conversations.view'); if (!scope) return;
+      const { conversation, actor } = scope;
+      if (String(conversation.assigned_agent_id || '') !== String(actor.agent.id)) {
+        return res.status(403).json({ ok: false, message: 'Este atendimento não está atribuído a você.' });
+      }
+      const { data, error } = await supabase.from('support_conversations')
+        .update({ assigned_agent_id: null, updated_at: new Date().toISOString() })
+        .eq('id', conversation.id).eq('license_id', conversation.license_id)
+        .eq('assigned_agent_id', actor.agent.id).select('id').maybeSingle();
+      if (error) throw error;
+      if (!data) return res.status(409).json({ ok: false, message: 'A atribuição mudou. Atualize as conversas.' });
+      await writeAudit(conversation.license_id, null, 'conversation.unassigned_self', { conversation_id: conversation.id, agent_id: actor.agent.id });
+      return res.json({ ok: true, assigned_agent_id: null });
+    } catch (error) {
+      console.error('Chat unassign self:', error.code || error.message);
+      return res.status(500).json({ ok: false, message: 'Não foi possível remover sua atribuição.' });
+    }
+  });
   app.get('/api/portal/atendimento/chat/attachments/:attachmentId', authChat, async (req, res) => {
     try {
       const licenseId = String(req.query.license_id || req.actor.licenseId || '');
