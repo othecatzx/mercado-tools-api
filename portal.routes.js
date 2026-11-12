@@ -612,6 +612,111 @@ const codes = [...companies.entries()].map(([companyId, company]) => {
     }
   });
 
+
+  // Ferramenta complementar: frete grátis por conta do vendedor.
+  const shippingFreeNormalize = value => {
+    const input = String(value || '').trim();
+    if (!input || input.length > 100) return null;
+    const compact = input.replace(/\s+/g, '');
+    if (/^(?:MLB)?\d+$/i.test(compact)) return { input, type: 'id', id: 'MLB' + compact.replace(/^MLB/i, '') };
+    return { input, type: 'sku', sku: input };
+  };
+  async function shippingFreeFetchItem(id, token) {
+    const r = await fetch('https://api.mercadolibre.com/items/' + encodeURIComponent(id), { headers: { Authorization: 'Bearer ' + token, Accept: 'application/json' } });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(data.message || 'HTTP ' + r.status);
+    return data;
+  }
+  async function shippingFreeMatches(inputs, accounts) {
+    const items = [], failed = [], tokenMap = new Map();
+    for (const account of accounts) {
+      try { tokenMap.set(String(account.ml_user_id), await ensureMlToken(account)); }
+      catch (e) { failed.push({ input: account.company_name, error: 'Erro na autenticação da loja: ' + e.message }); }
+    }
+    for (const raw of inputs) {
+      const entry = shippingFreeNormalize(raw);
+      if (!entry) { failed.push({ input: String(raw).slice(0,100), error: 'Código inválido.' }); continue; }
+      let found = 0;
+      const errors = [];
+      for (const account of accounts) {
+        const token = tokenMap.get(String(account.ml_user_id)); if (!token) continue;
+        try {
+          let ids = [];
+          if (entry.type === 'id') ids = [entry.id];
+          else {
+            const u = new URL('https://api.mercadolibre.com/users/' + encodeURIComponent(account.ml_user_id) + '/items/search');
+            u.searchParams.set('seller_sku', entry.sku);
+            u.searchParams.set('limit', '100');
+            const r = await fetch(u, { headers: { Authorization: 'Bearer ' + token, Accept: 'application/json' } });
+            const data = await r.json().catch(() => ({}));
+            if (!r.ok) throw new Error(data.message || 'HTTP ' + r.status);
+            ids = (data.results || []).slice(0,100);
+          }
+          for (const id of ids) {
+            let item;
+            try { item = await shippingFreeFetchItem(id,token); }
+            catch (e) { if (entry.type === 'id' && e.message.includes('404')) continue; throw e; }
+            if (String(item.seller_id) !== String(account.ml_user_id)) continue;
+            if (entry.type === 'sku') {
+              const skuMatch = [item.seller_custom_field, ...(item.attributes || []).filter(a => a.id === 'SELLER_SKU').map(a => a.value_name), ...(item.variations || []).flatMap(v => [v.seller_custom_field, ...(v.attributes || []).filter(a => a.id === 'SELLER_SKU').map(a => a.value_name)])].some(s => String(s || '').trim().toLowerCase() === entry.sku.toLowerCase());
+              if (!skuMatch) continue;
+            }
+            found++;
+            if (!items.some(x => x.id === item.id && String(x.company_id) === String(account.company_id))) items.push({ input: entry.input, id: item.id, company_id: account.company_id, company_name: account.company_name, title: item.title, status: item.status, price: item.price, free_shipping: item.shipping?.free_shipping === true });
+          }
+        } catch (e) { errors.push(account.company_name + ': ' + e.message); }
+      }
+      if (!found) failed.push({ input: entry.input, error: errors.length ? errors.join(' | ').slice(0,500) : 'Nenhum anúncio correspondente encontrado nas lojas autorizadas.' });
+    }
+    return { items, failed };
+  }
+  app.post('/api/portal/shipping-free/preview', authPortalOrAgent, async (req,res) => {
+    try {
+      if (!scopedMenuAllowed(req,'shipping')) return res.status(403).json({ok:false,message:'Acesso não autorizado.'});
+      if (!Array.isArray(req.body?.inputs) || req.body.inputs.length < 1 || req.body.inputs.length > 100) return res.status(400).json({ok:false,message:'Informe entre 1 e 100 códigos.'});
+      const accounts = await getShippingAccounts(req);
+      const result = await shippingFreeMatches([...new Set(req.body.inputs.map(x=>String(x)))],accounts);
+      return res.json({ok:true,...result});
+    } catch(e) { return res.status(500).json({ok:false,message:e.message}); }
+  });
+  app.post('/api/portal/shipping-free/apply', authPortalOrAgent, async (req,res) => {
+    try {
+      if (!scopedMenuAllowed(req,'shipping')) return res.status(403).json({ok:false,message:'Acesso não autorizado.'});
+      const requested = req.body?.items;
+      if (!Array.isArray(requested) || !requested.length || requested.length > 100) return res.status(400).json({ok:false,message:'Seleção inválida (máximo de 100 anúncios).'});
+      const accounts = await getShippingAccounts(req);
+      const success=[],failed=[],skipped=[], processed=new Set();
+      for (const value of requested) {
+        const id=String(value?.id||'').trim().toUpperCase(),companyId=String(value?.company_id||'');
+        const key=id+'|'+companyId;if(processed.has(key))continue;processed.add(key);
+        const row={id,input:String(value?.input||id).slice(0,100)};
+        if(!/^MLB\d+$/.test(id)){failed.push({...row,error:'MLB inválido.'});continue}
+        const matchingAccounts=accounts.filter(a=>String(a.company_id)===companyId);
+        if(!matchingAccounts.length){failed.push({...row,error:'Loja não autorizada.'});continue}
+        try {
+          let account=null, token=null, item=null;
+          for(const candidate of matchingAccounts){
+            const candidateToken=await ensureMlToken(candidate);
+            const candidateItem=await shippingFreeFetchItem(id,candidateToken);
+            if(String(candidateItem.seller_id)===String(candidate.ml_user_id)){
+              account=candidate;token=candidateToken;item=candidateItem;break;
+            }
+          }
+          if(!account){failed.push({...row,error:'O anúncio não pertence a nenhuma conta autorizada desta empresa.'});continue}
+          if(item.shipping?.free_shipping===true){skipped.push({...row,reason:'Frete grátis já configurado.'});continue}
+          if(!['active','paused'].includes(item.status)){failed.push({...row,error:'Status não permitido: '+item.status});continue}
+          const r=await fetch('https://api.mercadolibre.com/items/'+encodeURIComponent(id),{method:'PUT',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify({shipping:{free_shipping:true}})});
+          const data=await r.json().catch(()=>({}));
+          if(!r.ok){failed.push({...row,error:data.message||data.error||'HTTP '+r.status});continue}
+          const verified=await shippingFreeFetchItem(id,token);
+          if(verified.shipping?.free_shipping!==true){failed.push({...row,error:'O Mercado Livre aceitou a requisição, mas o frete grátis não foi confirmado na leitura posterior.'});continue}
+          success.push({...row,company_name:account.company_name,title:item.title});
+        } catch(e){failed.push({...row,error:e.message})}
+      }
+      return res.json({ok:true,success,failed,skipped});
+    } catch(e){return res.status(500).json({ok:false,message:e.message})}
+  });
+
   // Vendas reais das contas do Mercado Livre conectadas às empresas licenciadas.
   const portalSalesHandler = async (req, res) => {
     try {
