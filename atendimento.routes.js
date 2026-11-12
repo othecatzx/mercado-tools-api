@@ -757,7 +757,7 @@ module.exports = function registerAtendimentoRoutes(app, { supabase, jwt, bcrypt
         if (!verifiedBuyerId || verifiedBuyerId === toUserId) throw error;
         body.to.user_id = verifiedBuyerId;
         sent = await send();
-        toUserId = alternate;
+        toUserId = verifiedBuyerId;
       }
       await writeAudit(conversation.license_id, actor.owner ? actor.agent?.id || req.actor.id : null, 'conversation.message_sent', { conversation_id: conversation.id, agent_id: actor.agent?.id || null, message_id: sent.id || sent.message_id || null });
       try { await refreshConversationFromMl(actor.license, conversation, false); } catch (_) {}

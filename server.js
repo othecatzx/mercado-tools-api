@@ -14,22 +14,50 @@ const app = express();
 // O Render encaminha o IP original em X-Forwarded-For.
 // Confia apenas no proxy imediato para o express-rate-limit identificar o cliente.
 app.set('trust proxy', 1);
+app.disable('x-powered-by');
+
+// Segurança aplicada ANTES das rotas (inclusive APIs do portal e administração).
+// Desativa CSP por compatibilidade com HTML/JS inline existente; revisar CSP em etapa separada.
+app.use(helmet({ contentSecurityPolicy: false, crossOriginEmbedderPolicy: false }));
+// Se CORS_ALLOWED_ORIGINS estiver configurada, libera só origens da lista.
+// Sem variável, preserva comportamento atual para não quebrar a extensão Chrome.
+const corsAllowedOrigins = String(process.env.CORS_ALLOWED_ORIGINS || '')
+    .split(',').map(s => s.trim()).filter(Boolean);
+app.use(cors(corsAllowedOrigins.length ? {
+    origin(origin, cb) {
+        if (!origin || corsAllowedOrigins.includes(origin)) return cb(null, true);
+        return cb(null, false);
+    }
+} : {}));
+
+// Limite global suficiente para consultas frequentes do portal; webhooks de terceiros
+// são tratados separadamente para não perder notificações por limite de IP.
+app.use('/api', rateLimit({
+    windowMs: 60 * 1000,
+    limit: 600,
+    standardHeaders: 'draft-7',
+    legacyHeaders: false,
+    skip: req => req.path.startsWith('/webhooks/') || req.path === '/mercadolivre/notificacoes',
+    message: { error: 'Muitas solicitações. Aguarde um minuto.' }
+}));
+// Autenticação precisa de proteção mais restritiva contra tentativas repetidas.
+const authLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 30,
+    standardHeaders: 'draft-7',
+    legacyHeaders: false,
+    message: { error: 'Muitas tentativas. Aguarde alguns minutos.' }
+});
+app.use(['/api/portal/login', '/api/portal/register', '/api/admin/login'], authLimiter);
 
 const path = require("path");
 
 console.log("ASAAS URL:", process.env.ASAAS_API_URL);
-console.log(
-    "ASAAS KEY PREFIX:",
-    process.env.ASAAS_API_KEY
-        ? process.env.ASAAS_API_KEY.substring(0, 10)
-        : "NÃO DEFINIDA"
-);
+// Nunca registrar partes de tokens ou chaves de integração nos logs.
 app.use(express.json({
     type: ["application/json", "application/*+json", "text/plain"],
     verify: (req, res, buf) => { if (req.originalUrl?.startsWith("/api/webhooks/bling/")) req.rawBody = Buffer.from(buf); }
 }));
-app.use(cors());
-
 // Uma única entrada para o portal: a página raiz antiga estava defasada.
 app.get("/", (req, res) => {
     res.set('Cache-Control', 'no-store');
@@ -38,8 +66,6 @@ app.get("/", (req, res) => {
 
 app.use("/admin", express.static(path.join(__dirname, "admin")));
 
-app.use(cors());
-app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 const supabase = createClient(
@@ -11339,101 +11365,15 @@ app.post("/api/mercadolivre/notificacoes", async (req, res) => {
 
 
 // O servidor HTTP é iniciado após registrar todas as rotas.
+// Helmet, CORS e rate limit agora são registrados no início, antes das rotas.
 
-
-app.disable("x-powered-by");
-app.use(helmet());
-app.use(cors());
-app.use(express.json({ limit: "10kb" }));
-
-app.use(
-    "/api/",
-    rateLimit({
-        windowMs: 60 * 1000,
-        limit: 30,
-        standardHeaders: "draft-7",
-        legacyHeaders: false,
-        message: {
-            error: "Muitas solicitações. Aguarde um minuto."
-        }
-    })
-);
-
-// Calcula o dígito verificador padrão EAN-8.
-function calcularEAN8(base) {
-    const digitos = String(base).padStart(7, "0");
-
-    if (!/^\d{7}$/.test(digitos)) {
-        throw new Error("Base EAN inválida.");
-    }
-
-    let soma = 0;
-
-    for (let i = 0; i < 7; i++) {
-        soma += Number(digitos[i]) * (i % 2 === 0 ? 3 : 1);
-    }
-
-    const verificador = (10 - (soma % 10)) % 10;
-
-    return digitos + verificador;
-}
-
-// Gera uma base aleatória de 7 dígitos.
-function gerarBase() {
-    return String(
-        Math.floor(Math.random() * 10000000)
-    ).padStart(7, "0");
-}
-
+// A geração de EAN é registrada uma única vez, acima, com validação de licença e dispositivo.
+// Não registrar fallback público sem autenticação.
 app.get("/health", (req, res) => {
     res.json({
         status: "ok",
         service: "bling-ean-api"
     });
-});
-
-app.post("/api/ean/generate", async (req, res) => {
-    try {
-        // A unicidade é garantida pelo banco, não pelo navegador.
-        for (let tentativa = 0; tentativa < 20; tentativa++) {
-            const ean = calcularEAN8(gerarBase());
-
-            const { error } = await supabase
-                .from("ean_codes")
-                .insert({ ean });
-
-            if (!error) {
-                return res.status(201).json({
-                    success: true,
-                    ean
-                });
-            }
-
-            // Código 23505: violação de restrição UNIQUE.
-            if (error.code === "23505") {
-                continue;
-            }
-
-            console.error("Erro ao salvar EAN:", error.message);
-
-            return res.status(500).json({
-                success: false,
-                error: "Não foi possível registrar o EAN."
-            });
-        }
-
-        return res.status(503).json({
-            success: false,
-            error: "Não foi possível reservar um EAN exclusivo. Tente novamente."
-        });
-    } catch (error) {
-        console.error("Erro interno:", error.message);
-
-        return res.status(500).json({
-            success: false,
-            error: "Erro interno ao gerar o EAN."
-        });
-    }
 });
 
 
