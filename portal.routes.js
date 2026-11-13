@@ -740,9 +740,9 @@ const codes = [...companies.entries()].map(([companyId, company]) => {
         }
       } else {
         const { data: links, error: linkError } = await supabase.from('portal_user_licenses')
-          .select('licenses(company_id,companies(id,nome,status))').eq('user_id', req.portalUserId);
+          .select('licenses(company_id,status,vencimento,companies(id,nome,status))').eq('user_id', req.portalUserId);
         if (linkError) throw linkError;
-        for (const row of links || []) { const c = row.licenses?.companies; if (c?.id) companies.set(c.id, c); }
+        for (const row of links || []) { const l=row.licenses,c=l?.companies; if (req.internalReportRange && (!l || l.status!=='active' || (l.vencimento && new Date(l.vencimento).getTime()<=Date.now()) || c?.status!=='active')) continue; if (c?.id) companies.set(c.id, c); }
       }
       const companyIds = [...companies.keys()];
       if (!companyIds.length) return res.json({ ok: true, days, connected: 0, totals: { orders: 0, revenue: 0 }, stores: [] });
@@ -786,6 +786,9 @@ const codes = [...companies.entries()].map(([companyId, company]) => {
         from = new Date(now - (offsetDays + days) * 86400000).toISOString();
       }
 
+      if(req.internalReportRange){from=req.internalReportRange.from;to=req.internalReportRange.to;}
+      const fetchSales=(url,options={})=>fetch(url,{...options,...(req.internalReportRange?{signal:AbortSignal.timeout(20000)}:{})});
+
       for (const account of accounts || []) {
         const company = companies.get(account.company_id);
         let accessToken = account.access_token;
@@ -794,7 +797,7 @@ const codes = [...companies.entries()].map(([companyId, company]) => {
           const expiresAt = account.token_expires_at ? new Date(account.token_expires_at).getTime() : 0;
           if (expiresAt && expiresAt <= now + 120000) {
             if (!account.refresh_token || !process.env.ML_CLIENT_ID || !process.env.ML_CLIENT_SECRET) throw new Error('Token expirado; reconecte a conta Mercado Livre');
-            const refreshResponse = await fetch('https://api.mercadolibre.com/oauth/token', {
+            const refreshResponse = await fetchSales('https://api.mercadolibre.com/oauth/token', {
               method: 'POST',
               headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json' },
               body: new URLSearchParams({ grant_type: 'refresh_token', client_id: process.env.ML_CLIENT_ID, client_secret: process.env.ML_CLIENT_SECRET, refresh_token: account.refresh_token })
@@ -825,7 +828,7 @@ const codes = [...companies.entries()].map(([companyId, company]) => {
                 offset: String(offset),
                 sort: 'date_desc'
               });
-              const response = await fetch('https://api.mercadolibre.com/orders/search?' + params.toString(), {
+              const response = await fetchSales('https://api.mercadolibre.com/orders/search?' + params.toString(), {
                 headers: { Authorization: 'Bearer ' + accessToken, Accept: 'application/json' }
               });
               const result = await response.json();
@@ -897,7 +900,7 @@ const codes = [...companies.entries()].map(([companyId, company]) => {
               while (shipmentIndex < shipmentIds.length) {
                 const shipmentId = shipmentIds[shipmentIndex++];
                 try {
-                  const shipmentResponse = await fetch('https://api.mercadolibre.com/shipments/' + encodeURIComponent(shipmentId), {
+                  const shipmentResponse = await fetchSales('https://api.mercadolibre.com/shipments/' + encodeURIComponent(shipmentId), {
                     headers: { Authorization: 'Bearer ' + accessToken, Accept: 'application/json' }
                   });
                   if (shipmentResponse.ok) shipmentDetails.set(shipmentId, await shipmentResponse.json());
@@ -927,7 +930,7 @@ const codes = [...companies.entries()].map(([companyId, company]) => {
                 while (slaIndex < shipmentIds.length) {
                   const shipmentId = shipmentIds[slaIndex++];
                   try {
-                    const slaResponse = await fetch('https://api.mercadolibre.com/shipments/' + encodeURIComponent(shipmentId) + '/sla', {
+                    const slaResponse = await fetchSales('https://api.mercadolibre.com/shipments/' + encodeURIComponent(shipmentId) + '/sla', {
                       headers: { Authorization: 'Bearer ' + accessToken, Accept: 'application/json' }
                     });
                     if (slaResponse.ok) {
@@ -951,7 +954,7 @@ const codes = [...companies.entries()].map(([companyId, company]) => {
               while (itemIndex < queueItemIds.length) {
                 const itemId = queueItemIds[itemIndex++];
                 try {
-                  const itemResponse = await fetch('https://api.mercadolibre.com/items/' + encodeURIComponent(itemId), {
+                  const itemResponse = await fetchSales('https://api.mercadolibre.com/items/' + encodeURIComponent(itemId), {
                     headers: { Authorization: 'Bearer ' + accessToken, Accept: 'application/json' }
                   });
                   if (itemResponse.ok) itemDetails.set(itemId, await itemResponse.json());
@@ -1149,7 +1152,7 @@ const codes = [...companies.entries()].map(([companyId, company]) => {
             while (enrichIndex < enrichmentTargets.length) {
               const product = enrichmentTargets[enrichIndex++];
               try {
-                const itemResponse = await fetch('https://api.mercadolibre.com/items/' + encodeURIComponent(product.item_id), {
+                const itemResponse = await fetchSales('https://api.mercadolibre.com/items/' + encodeURIComponent(product.item_id), {
                   headers: { Authorization: 'Bearer ' + accessToken, Accept: 'application/json' }
                 });
                 if (!itemResponse.ok) continue;
@@ -1216,6 +1219,12 @@ const codes = [...companies.entries()].map(([companyId, company]) => {
     }
   };
   app.get('/api/portal/sales', authPortalOrAgent, portalSalesHandler);
+  require('./automations.routes')(app,{supabase,authPortal,readSales:async(owner,range)=>{
+    let payload,code=200;
+    await portalSalesHandler({portalRole:'portal_user',portalUserId:owner,query:{days:'1',aiMetrics:'1'},internalReportRange:range},{status(c){code=c;return this;},json(data){payload=data;return this;}});
+    if(code!==200||!payload?.ok)throw new Error('Falha ao consultar vendas.');
+    return payload;
+  }});
 
   // Equipe: subusuários podem visualizar somente os atendentes ativos/inativos das lojas que lhes foram autorizadas; não podem administrar contas.
   // Assistente Cloudflare Workers AI: somente leitura, sem expor tokens de marketplaces.
