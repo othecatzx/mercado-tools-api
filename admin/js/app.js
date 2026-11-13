@@ -386,6 +386,7 @@ if (expiringTable) {
 // =========================
 
 const pageTitles = {
+    billing: {title:"Pagamentos",description:"Plano único, períodos e pagamentos em lote"},
 
     dashboard: {
         title: "Dashboard",
@@ -652,6 +653,8 @@ function navegar(page) {
         return;
     }
 
+
+    if (page === "billing") {adminBillingPage.render();return;}
 
     if (page === "companies") {
 

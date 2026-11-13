@@ -1,46 +1,41 @@
-# Planos e pagamentos
+# Plano único e renovação em lote
 
-Implementação da confirmação de pagamentos e da tela do titular. Novas compras começam pausadas e não são aceitas em Sandbox. Nenhuma cobrança real foi criada durante a implementação.
+## Administração
 
-## Fluxo
+`/admin` → Pagamentos concentra os preços do plano único ML SH Support, nos períodos Mensal (1 mês), Semestral (6 meses) e Anual (12 meses). Todos oferecem as mesmas funções. Os três valores começam sem definição; nenhum preço dos antigos planos foi reaproveitado. As antigas categorias foram desativadas como oferta, preservando seus registros históricos.
 
-- A conta do portal deve estar autenticada. Subusuários não iniciam compras.
-- O preço e o plano são consultados no banco, e o checkout é reservado com uma chave única da solicitação antes de chamar o Asaas.
-- A página hospedada pelo Asaas coleta dados de pagamento; o portal não recebe cartão, CVV ou senha bancária.
-- Os retornos de sucesso/cancelamento/expiração levam ao próprio portal e não liberam acesso.
-- O webhook valida `asaas-access-token`, registra um evento mínimo e recupera o estado atual da cobrança na API do Asaas.
-- A função `mlsh_apply_verified_payment` cria a empresa/licença/vínculo com o titular ou renova uma licença existente. O pagamento e a alteração de acesso são salvos na mesma transação.
-- IDs de eventos e de cobranças impedem renovação duplicada entre PAYMENT_CONFIRMED/PAYMENT_RECEIVED e reenvios. O checkout é travado durante a transação.
-- Valor, cliente do provedor, assinatura, ambiente e vínculo da licença são conferidos. Valores divergentes, bloqueios administrativos, estornos e contestações geram revisão, sem concessão automática adicional de acesso.
-- Uma renovação recorrente acrescenta um mês ao período restante; cobranças avulsas, quando conciliadas, usam a duração registrada no checkout.
-- Trocas de plano e cancelamentos de assinatura são feitos pelo suporte nesta versão. Estornos/chargebacks são sinalizados para revisão administrativa; não há política automática de revogação nesta entrega.
+O administrador também acompanha lotes, distribuição dos valores por empresa e eventos para revisão. A ativação de pagamentos exige ambiente de produção configurado; Sandbox continua bloqueado para compras reais.
 
-## Configuração
+## Portal do titular
 
-Variáveis de servidor já existentes: `ASAAS_API_URL`, `ASAAS_API_KEY`, `JWT_SECRET` e credenciais Supabase. A URL só aceita os hosts oficiais definidos em `billing.routes.js`.
+O cliente acompanha os vencimentos das licenças que registrou, seleciona empresas, escolhe o período e confere uma cotação antes de gerar o pagamento único. Não administra planos, preços, ambiente do gateway ou dados financeiros de outros clientes. Subusuários continuam sem permissão de renovação financeira.
 
-O token do webhook é independente da API Key do Asaas. Pode ser configurado por `ASAAS_WEBHOOK_TOKEN` ou por seu SHA-256 em `billing_runtime.webhook_token_hash`, na linha do ambiente correspondente. A validação usa comparação em tempo constante. Nunca colocar token ou API Key no frontend ou neste documento.
+Não existe mais contratação de empresa/plano avulso pelo portal. A inclusão de licenças continua pelo fluxo de registro existente.
 
-Endpoint de recebimento: `https://app.caickrigato.com.br/api/webhooks/asaas`.
+## Data única e proporcionalidade
 
-Eventos necessários: PAYMENT_CONFIRMED, PAYMENT_RECEIVED, PAYMENT_REFUNDED, PAYMENT_PARTIALLY_REFUNDED, PAYMENT_CHARGEBACK_REQUESTED, PAYMENT_CHARGEBACK_DISPUTE, PAYMENT_REFUND_IN_PROGRESS, CHECKOUT_PAID, CHECKOUT_CANCELED, CHECKOUT_EXPIRED.
+1. A referência é o maior vencimento selecionado, ou hoje caso todas as licenças estejam expiradas.
+2. Acrescentam-se 1, 6 ou 12 meses a essa referência, respeitando o calendário.
+3. Cada licença paga os dias entre seu vencimento atual (ou hoje, se expirou) e a data única.
+4. O valor é o preço do período multiplicado pelos dias adicionais, dividido pelos dias do período de referência. Cada item é arredondado em centavos; o total é a soma dos itens.
+5. Após o pagamento confirmado, todas as licenças selecionadas recebem o mesmo vencimento, ao final daquela data em São Paulo.
 
-Para produção: configurar a API Key/URL de produção no servidor, cadastrar o webhook autenticado da conta de produção, validar uma compra piloto autorizada e somente então habilitar a linha `production` em `billing_runtime`. Não ativar compras reais usando credenciais de Sandbox.
+Isso preserva o tempo já pago. A licença com maior vencimento paga um período completo; as anteriores incluem também os dias de alinhamento. A cotação mostra a data, os dias e o valor de cada empresa.
 
-## Proteções de dados
+## Pagamento e proteção
 
-Tabelas novas têm RLS e acesso exclusivo do backend/service_role. A função transacional não pode ser executada por anon/authenticated. Planos ativos permanecem consultáveis, mas usuários anônimos/autenticados não podem alterar preços. A rota `/api/asaas-status` exige autenticação administrativa.
+Um checkout Asaas avulso, com Pix ou cartão, contém um item por empresa. Não cria uma assinatura recorrente para cada licença. A cotação é assinada, limitada ao titular e válida por dez minutos. Preços ou vencimentos alterados exigem nova cotação antes da criação do checkout.
+
+Uma licença não participa de dois lotes pendentes. A confirmação consulta a API do Asaas, verifica o total e aplica todas as renovações em uma única transação. Eventos repetidos não alteram novamente os vencimentos. Se uma licença mudar durante o pagamento, o lote inteiro exige revisão administrativa; nenhuma é renovada parcialmente.
+
+Estornos, contestações, cobrança adicional de um lote já pago e divergências exigem revisão. Não há estorno automático nesta entrega. Licenças com assinatura recorrente anterior precisam ser tratadas pelo administrador antes de entrar no lote.
+
+Novas tabelas e funções são exclusivas de `service_role`, com RLS e sem execução por anon/authenticated. O token do webhook permanece separado da API Key. Não há dados de cartão no portal.
 
 ## Validação
 
-- Nove testes Node de formato de evento, autenticação, consulta ao provedor, repetição, falha de persistência, titular, preço, compra pausada e bloqueio de Sandbox.
-- Teste SQL com service_role e rollback: primeira liberação, vínculo ao titular, repetição da cobrança, renovação recorrente, valor divergente, estorno e pagamento sem vínculo. Não deixa registros de teste.
-- Navegador isolado com dados simulados: seleção de plano/empresa, histórico, retorno do checkout, encaminhamento simulado, modo de testes, celular e tema escuro.
-- Testes anteriores de operações e atendimento devem continuar passando.
+`test/billing-batch.test.cjs` verifica cotação do titular, pagamento único, soma dos itens, preço controlado pelo servidor, recálculo, isolamento de usuários, administração protegida e bloqueio de Sandbox. Os testes do webhook, atendimento e automações permanecem no projeto.
 
-## Referências oficiais
+`sql/batch_transaction_test.sql` usa service_role em uma transação com rollback para verificar proporcionalidade, data comum, reserva única, um único registro de pagamento, repetição, titular incorreto e ausência de renovação parcial. Não altera clientes reais nem deixa registros de teste.
 
-- https://docs.asaas.com/docs/sobre-os-webhooks
-- https://docs.asaas.com/reference/recuperar-uma-unica-cobranca
-- https://docs.asaas.com/reference/criar-novo-checkout
-- https://docs.asaas.com/docs/create-new-webhook-via-api
+Preços reais devem ser definidos no `/admin`. A configuração de produção e uma compra piloto autorizada continuam necessárias antes de liberar cobranças reais.

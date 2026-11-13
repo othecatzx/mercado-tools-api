@@ -52,55 +52,12 @@ module.exports=function registerBilling(app,{supabase,jwt,verificarAdmin,env=pro
   if(payment.id!==paymentId)throw Error('provider_identity_mismatch');
   // Apenas os campos necessários atravessam a transação; dados de cartão e cliente não são persistidos no evento.
   const verified=Object.fromEntries(['id','status','value','customer','subscription','checkoutSession','externalReference','billingType'].map(k=>[k,payment[k]??null]));
-  const {error}=await supabase.rpc('mlsh_apply_verified_payment',{p_event_id:id,p_environment:mode,p_payment:verified});if(error)throw error;
+  let isBatch=String(payment.externalReference||'').startsWith('mlsh_batch_');
+  if(!isBatch&&payment.checkoutSession){const {data:batch,error}=await supabase.from('billing_batches').select('id').eq('asaas_checkout_id',payment.checkoutSession).eq('environment',mode).maybeSingle();if(error)throw error;isBatch=!!batch;}
+  const {error}=await supabase.rpc(isBatch?'mlsh_apply_batch_payment':'mlsh_apply_verified_payment',{p_event_id:id,p_environment:mode,p_payment:verified});if(error)throw error;
  }
- const checkout=safe(async(req,res)=>{
-  const config=await runtime();
-  if(!config?.enabled||!authHash(config)||!env.ASAAS_API_KEY)fail('Novas compras estão temporariamente indisponíveis. Entre em contato com o suporte.',503);
-  // Não vender uma licença real com pagamento fictício de Sandbox.
-  if(mode!=='production')fail('O pagamento está em ambiente de testes. Compras de clientes ainda não foram liberadas.',503);
-  const b=req.body||{},user=req.billingUser;
-  if(!UUID.test(b.plan_id||'')||!UUID.test(b.request_key||''))fail('Escolha um plano e tente novamente.');
-  const text=(value,max=150)=>String(value||'').trim().slice(0,max);
-  const {data:plan,error:planError}=await supabase.from('plans').select('id,nome,descricao,preco,duracao_dias,status').eq('id',b.plan_id).eq('status','active').maybeSingle();if(planError)throw planError;
-  if(!plan||!Number.isFinite(Number(plan.preco))||Number(plan.preco)<=0)fail('Plano indisponível.');
-  let license=null,companyName=text(b.company_name);
-  if(b.license_id){
-   if(!UUID.test(b.license_id))fail('Licença inválida.');
-   const {data:link,error}=await supabase.from('portal_user_licenses').select('licenses(id,company_id,plan_id,status,vencimento,asaas_subscription_id,companies(nome,status))').eq('user_id',user.id).eq('license_id',b.license_id).maybeSingle();if(error)throw error;
-   license=link?.licenses;
-   if(!license||license.status==='blocked'||license.companies?.status!=='active'||!license.vencimento)fail('Essa licença não está disponível para renovação.');
-   if(license.asaas_subscription_id)fail('Esta licença já possui assinatura. Consulte o suporte para alterar a cobrança.');
-   if(license.plan_id&&license.plan_id!==plan.id)fail('A troca de plano deve ser feita pelo suporte.');
-   companyName=license.companies.nome;
-  }else if(companyName.length<2)fail('Informe o nome da empresa.');
-  const id=crypto.randomUUID();
-  const {error:insertError}=await supabase.from('checkout_sessions').upsert({id,checkout_id:'pending_'+id,portal_user_id:user.id,request_key:b.request_key,plan_id:plan.id,company_name:companyName,company_id:license?.company_id||null,license_id:license?.id||null,expected_value:Number(plan.preco),duration_days:plan.duracao_dias,environment:mode,nome:user.nome||companyName,email:user.email,cpf_cnpj:'',telefone:null,status:'pending'},{onConflict:'portal_user_id,request_key',ignoreDuplicates:true});if(insertError)throw insertError;
-  const {data:session,error:sessionError}=await supabase.from('checkout_sessions').select('id,checkout_id,checkout_url,status,creation_error').eq('portal_user_id',user.id).eq('request_key',b.request_key).single();if(sessionError)throw sessionError;
-  if(session.id!==id){if(session.checkout_url&&session.status==='pending')return res.json({ok:true,checkout_url:session.checkout_url,session_id:session.id});fail('Esta solicitação já foi recebida. Confira o histórico antes de tentar novamente.',409);}
-  const today=new Intl.DateTimeFormat('en-CA',{timeZone:'America/Sao_Paulo',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
-  let result;
-  try{
-   result=await provider('/checkouts',{method:'POST',body:JSON.stringify({billingTypes:['CREDIT_CARD'],chargeTypes:['RECURRENT'],minutesToExpire:60,externalReference:'mlsh_'+id,callback:{successUrl:'https://app.caickrigato.com.br/portal/?billing_return=success',cancelUrl:'https://app.caickrigato.com.br/portal/?billing_return=cancelled',expiredUrl:'https://app.caickrigato.com.br/portal/?billing_return=expired'},items:[{name:plan.nome,description:plan.descricao||'Assinatura ML SH Support',quantity:1,value:Number(plan.preco)}],subscription:{cycle:'MONTHLY',nextDueDate:today}})});
-   if(!ID.test(result.id||''))throw Error('invalid_checkout_response');
-  }catch(e){await supabase.from('checkout_sessions').update({creation_error:'Não foi possível confirmar a criação. Consulte o suporte antes de repetir a compra.',...([400,401,403,404,422,429].includes(e.providerStatus)?{status:'cancelled'}:{})}).eq('id',id);throw e;}
-  const url='https://asaas.com/checkoutSession/show?id='+encodeURIComponent(result.id);
-  const {error:saveError}=await supabase.from('checkout_sessions').update({checkout_id:result.id,checkout_url:url,updated_at:new Date().toISOString()}).eq('id',id);if(saveError)throw saveError;
-  return res.json({ok:true,checkout_url:url,session_id:id});
- });
  const checkoutLimiter=(rateLimiter||require('express-rate-limit'))({windowMs:15*60000,limit:10,standardHeaders:'draft-7',legacyHeaders:false});
- app.post('/api/portal/billing/checkout',authOwner,checkoutLimiter,checkout);
- app.post('/api/checkout',authOwner,checkoutLimiter,checkout);
- app.get('/api/portal/billing',authOwner,safe(async(req,res)=>{
-  const {data:plans,error}=await supabase.from('plans').select('id,nome,descricao,preco,duracao_dias').eq('status','active').order('preco');if(error)throw error;
-  const {data:checkouts,error:historyError}=await supabase.from('checkout_sessions').select('id,plan_id,company_name,license_id,status,expected_value,environment,checkout_url,creation_error,created_at').eq('portal_user_id',req.billingUser.id).order('created_at',{ascending:false}).limit(50);if(historyError)throw historyError;
-  const ids=(checkouts||[]).map(c=>c.id);
-  const {data:events,error:eventError}=ids.length?await supabase.from('billing_webhook_events').select('id,event,status,reason,checkout_session_id,created_at').in('checkout_session_id',ids).eq('status','review').order('created_at',{ascending:false}).limit(30):{data:[]};if(eventError)throw eventError;
-  const {data:links,error:linksError}=await supabase.from('portal_user_licenses').select('licenses(id,plan_id,status,vencimento,asaas_subscription_id,companies(nome,status))').eq('user_id',req.billingUser.id);if(linksError)throw linksError;
-  const licenses=(links||[]).map(r=>r.licenses).filter(l=>l&&l.status!=='blocked'&&l.vencimento&&l.companies?.status==='active').map(l=>({id:l.id,plan_id:l.plan_id,company_name:l.companies.nome,expires_at:l.vencimento,has_subscription:Boolean(l.asaas_subscription_id)}));
-  const config=await runtime();
-  res.json({ok:true,licenses,plans:plans||[],checkouts:checkouts||[],reviews:events||[],environment:mode,purchases_enabled:mode==='production'&&Boolean(config?.enabled&&authHash(config)&&env.ASAAS_API_KEY)});
- }));
+ require('./billing-batch.routes')(app,{supabase,jwt,env,mode,authOwner,verificarAdmin,safe,fail,provider,runtime,authHash,checkoutLimiter});
  app.get('/api/billing/status',safe(async(req,res)=>{const config=await runtime();res.json({ok:true,environment:mode,purchases_enabled:mode==='production'&&Boolean(config?.enabled&&authHash(config)&&env.ASAAS_API_KEY)});}));
  app.get('/api/asaas-status',verificarAdmin,safe(async(req,res)=>res.json({ok:true,status:await provider('/myAccount/status/')})));
  app.get('/api/admin/billing/events',verificarAdmin,safe(async(req,res)=>{const {data,error}=await supabase.from('billing_webhook_events').select('id,environment,event,status,reason,checkout_session_id,created_at,processed_at').order('created_at',{ascending:false}).limit(100);if(error)throw error;res.json({ok:true,events:data});}));
@@ -117,6 +74,7 @@ module.exports=function registerBilling(app,{supabase,jwt,verificarAdmin,env=pro
    for(const payment of payments.data)await applyPayment(event,payment.id,':'+payment.id);
   }else if(['CHECKOUT_CANCELED','CHECKOUT_EXPIRED'].includes(event.event)&&ID.test(event.checkout?.id||'')){
    const {error}=await supabase.from('checkout_sessions').update({status:event.event==='CHECKOUT_CANCELED'?'cancelled':'expired',updated_at:new Date().toISOString()}).eq('checkout_id',event.checkout.id).eq('environment',mode).eq('status','pending');if(error)throw error;
+   const {data:batch,error:batchError}=await supabase.from('billing_batches').select('id').eq('asaas_checkout_id',event.checkout.id).eq('environment',mode).maybeSingle();if(batchError)throw batchError;if(batch){const {error:closeError}=await supabase.rpc('mlsh_close_unpaid_batch',{p_batch:batch.id,p_status:event.event==='CHECKOUT_CANCELED'?'cancelled':'expired'});if(closeError)throw closeError;}
   }
   const {error}=await supabase.from('billing_webhook_events').update({status:event.event.startsWith('CHECKOUT_')?'processed':'ignored',processed_at:new Date().toISOString()}).eq('id',id);if(error)throw error;
   return res.json({ok:true});

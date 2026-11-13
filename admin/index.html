@@ -9,6 +9,7 @@
 
     <script>document.documentElement.classList.add('admin-booting');</script>
     <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/billing.css?v=1">
     <style>
       /* Não exibir conteúdo protegido antes de validar a sessão. */
       html.admin-booting .app { visibility: hidden; }
@@ -93,6 +94,8 @@
                     <span>▤</span>
                     Dispositivos
                 </button>
+
+                <button class="menu-item" data-page="billing"><span>＄</span>Pagamentos</button>
 
                 <button class="menu-item" data-page="logs">
                     <span>☷</span>
@@ -367,7 +370,8 @@
 <script src="js/licenses.js"></script>
 <script src="js/users.js?v=admin-boot-fix-3"></script>
 <script src="js/logs.js"></script>
-<script src="js/app.js?v=admin-boot-fix-3"></script>
+<script src="js/billing.js?v=1"></script>
+<script src="js/app.js?v=billing-batch-1"></script>
 
 </body>
 </html>
