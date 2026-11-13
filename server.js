@@ -61,8 +61,10 @@ app.use(express.json({
 // Uma única entrada para o portal: a página raiz antiga estava defasada.
 app.get("/", (req, res) => {
     res.set('Cache-Control', 'no-store');
-    return res.redirect(302, '/portal/');
+    return res.sendFile(path.join(__dirname, 'marketing', 'index.html'));
 });
+
+app.use("/marketing-assets", express.static(path.join(__dirname, "marketing"), { index: false, maxAge: "1h" }));
 
 app.use("/admin", express.static(path.join(__dirname, "admin")));
 
