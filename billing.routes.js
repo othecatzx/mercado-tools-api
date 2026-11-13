@@ -52,12 +52,15 @@ module.exports=function registerBilling(app,{supabase,jwt,verificarAdmin,env=pro
   if(payment.id!==paymentId)throw Error('provider_identity_mismatch');
   // Apenas os campos necessários atravessam a transação; dados de cartão e cliente não são persistidos no evento.
   const verified=Object.fromEntries(['id','status','value','customer','subscription','checkoutSession','externalReference','billingType'].map(k=>[k,payment[k]??null]));
+  let isSignup=String(payment.externalReference||'').startsWith('mlsh_signup_');
+  if(!isSignup&&payment.checkoutSession){const {data:order,error}=await supabase.from('billing_signups').select('id').eq('asaas_checkout_id',payment.checkoutSession).eq('environment',mode).maybeSingle();if(error)throw error;isSignup=!!order;}
   let isBatch=String(payment.externalReference||'').startsWith('mlsh_batch_');
   if(!isBatch&&payment.checkoutSession){const {data:batch,error}=await supabase.from('billing_batches').select('id').eq('asaas_checkout_id',payment.checkoutSession).eq('environment',mode).maybeSingle();if(error)throw error;isBatch=!!batch;}
-  const {error}=await supabase.rpc(isBatch?'mlsh_apply_batch_payment':'mlsh_apply_verified_payment',{p_event_id:id,p_environment:mode,p_payment:verified});if(error)throw error;
+  const {error}=await supabase.rpc(isSignup?'mlsh_apply_signup_payment':isBatch?'mlsh_apply_batch_payment':'mlsh_apply_verified_payment',{p_event_id:id,p_environment:mode,p_payment:verified});if(error)throw error;
  }
  const checkoutLimiter=(rateLimiter||require('express-rate-limit'))({windowMs:15*60000,limit:10,standardHeaders:'draft-7',legacyHeaders:false});
  require('./billing-batch.routes')(app,{supabase,jwt,env,mode,authOwner,verificarAdmin,safe,fail,provider,runtime,authHash,checkoutLimiter});
+ require('./billing-purchase.routes')(app,{supabase,jwt,env,mode,authOwner,verificarAdmin,safe,fail,provider,runtime,authHash,checkoutLimiter,applyPayment,rateLimiter});
  app.get('/api/billing/status',safe(async(req,res)=>{const config=await runtime();res.json({ok:true,environment:mode,purchases_enabled:mode==='production'&&Boolean(config?.enabled&&authHash(config)&&env.ASAAS_API_KEY)});}));
  app.get('/api/asaas-status',verificarAdmin,safe(async(req,res)=>res.json({ok:true,status:await provider('/myAccount/status/')})));
  app.get('/api/admin/billing/events',verificarAdmin,safe(async(req,res)=>{const {data,error}=await supabase.from('billing_webhook_events').select('id,environment,event,status,reason,checkout_session_id,created_at,processed_at').order('created_at',{ascending:false}).limit(100);if(error)throw error;res.json({ok:true,events:data});}));
@@ -74,6 +77,7 @@ module.exports=function registerBilling(app,{supabase,jwt,verificarAdmin,env=pro
    for(const payment of payments.data)await applyPayment(event,payment.id,':'+payment.id);
   }else if(['CHECKOUT_CANCELED','CHECKOUT_EXPIRED'].includes(event.event)&&ID.test(event.checkout?.id||'')){
    const {error}=await supabase.from('checkout_sessions').update({status:event.event==='CHECKOUT_CANCELED'?'cancelled':'expired',updated_at:new Date().toISOString()}).eq('checkout_id',event.checkout.id).eq('environment',mode).eq('status','pending');if(error)throw error;
+   const {error:signupCloseError}=await supabase.from('billing_signups').update({status:event.event==='CHECKOUT_CANCELED'?'cancelled':'expired'}).eq('asaas_checkout_id',event.checkout.id).eq('environment',mode).eq('status','pending');if(signupCloseError)throw signupCloseError;
    const {data:batch,error:batchError}=await supabase.from('billing_batches').select('id').eq('asaas_checkout_id',event.checkout.id).eq('environment',mode).maybeSingle();if(batchError)throw batchError;if(batch){const {error:closeError}=await supabase.rpc('mlsh_close_unpaid_batch',{p_batch:batch.id,p_status:event.event==='CHECKOUT_CANCELED'?'cancelled':'expired'});if(closeError)throw closeError;}
   }
   const {error}=await supabase.from('billing_webhook_events').update({status:event.event.startsWith('CHECKOUT_')?'processed':'ignored',processed_at:new Date().toISOString()}).eq('id',id);if(error)throw error;

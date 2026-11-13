@@ -1,0 +1,22 @@
+(()=>{
+ try{document.documentElement.dataset.theme=localStorage.getItem('mlsh_portal_theme')||'light';}catch(e){}
+ const $=id=>document.getElementById(id),esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+ const params=new URLSearchParams(location.search),kind=params.get('kind'),id=params.get('id');let busy=false,timer=null,polls=0,lastReconcile=0,done=false;
+ const valid=['signup','renewal'].includes(kind)&&/^[a-f\d]{8}(-[a-f\d]{4}){3}-[a-f\d]{12}$/i.test(id||'');
+ const token=localStorage.getItem('mlsh_portal_token')||'',endpoint='/api/portal/billing/result/'+kind+'/'+id;
+ function login(){sessionStorage.setItem('mlsh_payment_return',location.pathname+location.search);$('resultIcon').textContent='↪';$('resultTitle').textContent='Entre para ver sua licença';$('resultMessage').textContent='Por segurança, a confirmação e a chave aparecem somente na conta que fez a contratação.';$('resultDetails').innerHTML='<a href="./">Entrar na minha conta →</a>';$('resultRefresh').hidden=true;done=true;}
+ async function request(path,options={}){const r=await fetch(path,{...options,cache:'no-store',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'}});const d=await r.json();if(r.status===401||r.status===403){login();throw Error('Entre na sua conta para continuar.');}if(!r.ok)throw Error(d.message||'Não foi possível consultar este pagamento.');return d;}
+ async function load(){if(localStorage.getItem('mlsh_portal_token')!==token){login();return;}if(busy||done)return;busy=true;$('resultRefresh').disabled=true;clearTimeout(timer);try{
+  if(Date.now()-lastReconcile>20000){lastReconcile=Date.now();await request(endpoint+'/reconcile',{method:'POST',body:'{}'}).catch(e=>{if(done)throw e;});}
+  const r=await request(endpoint);document.querySelector('.result-card').dataset.state=r.status;
+  const states={pending:['…','Confirmando pagamento','Estamos aguardando a confirmação do Asaas. Sua licença aparecerá automaticamente aqui quando o pagamento for confirmado.'],paid:['✓',kind==='signup'?'Tudo certo! Sua licença está pronta.':'Tudo certo! Licenças renovadas.','O pagamento foi confirmado e a licença já está vinculada à sua conta.'],cancelled:['×','Pagamento não concluído','Esta solicitação foi cancelada. Você pode iniciar uma nova contratação ou renovação no portal.'],expired:['⌛','O prazo de pagamento terminou','Nenhuma licença foi liberada por este pagamento. Gere uma nova solicitação no portal.'],review:['!','Estamos verificando o pagamento','A confirmação precisa de uma verificação adicional. Entre em contato com o suporte informando o código '+id+'. Não faça outro pagamento.']};
+  const state=states[r.status]||states.pending;$('resultIcon').textContent=state[0];$('resultTitle').textContent=state[1];$('resultMessage').textContent=state[2];
+  $('resultDetails').innerHTML=r.status==='paid'?(r.licenses||[]).map(l=>'<article class="result-license"><h2>'+esc(l.company_name)+'</h2><div>Válida até <b>'+esc(new Date(l.expires_at).toLocaleDateString('pt-BR',{timeZone:'America/Sao_Paulo'}))+'</b></div><div class="result-key"><code>'+esc(l.key)+'</code><button type="button" data-key="'+esc(l.key)+'">Copiar chave</button></div></article>').join(''):r.company_name?'<p><b>'+esc(r.company_name)+'</b></p>':'';
+  document.querySelectorAll('[data-key]').forEach(b=>b.onclick=async()=>{try{await navigator.clipboard.writeText(b.dataset.key);b.textContent='Copiado';}catch(e){b.textContent='Selecione e copie a chave';}});
+  if(r.status==='paid'){done=true;$('resultRefresh').hidden=true;}else if(['cancelled','expired'].includes(r.status)){done=true;$('resultRefresh').hidden=true;}
+  if(!done&&++polls<45)timer=setTimeout(load,4000);
+ }catch(e){if(!done){$('resultMessage').textContent=e.message+' Use Atualizar confirmação para tentar novamente.';}}finally{busy=false;$('resultRefresh').disabled=false;}}
+ window.addEventListener('storage',e=>{if(e.key==='mlsh_portal_token'&&e.newValue!==token){clearTimeout(timer);$('resultDetails').innerHTML='';login();}});
+ $('resultRefresh').onclick=()=>{polls=0;load();};window.addEventListener('pagehide',()=>clearTimeout(timer));
+ if(!valid){done=true;$('resultTitle').textContent='Pagamento não encontrado';$('resultMessage').textContent='Abra o andamento do pagamento pelo portal.';$('resultRefresh').hidden=true;}else if(!token)login();else load();
+})();

@@ -35,9 +35,10 @@ module.exports=function registerBatchBilling(app,{supabase,jwt,env,mode,authOwne
   const batch=reserved.batch;
   if(!reserved.created){if(batch.checkout_url&&batch.status==='pending')return res.json({ok:true,batch_id:batch.id,checkout_url:batch.checkout_url});fail('O pagamento já está sendo preparado.',409);}
   if(quoteHash(batch.quote)!==signed.hash){await rpc('mlsh_close_unpaid_batch',{p_batch:batch.id,p_status:'cancelled'});fail('Preços ou vencimentos mudaram. Calcule novamente antes de pagar.',409);}
+  const callbackTarget='https://app.caickrigato.com.br/portal/pagamento.html?kind=renewal&id='+batch.id;
   let result;
   try{
-   result=await provider('/checkouts',{method:'POST',body:JSON.stringify({billingTypes,chargeTypes:['DETACHED'],minutesToExpire:60,externalReference:'mlsh_batch_'+batch.id,callback:{successUrl:'https://app.caickrigato.com.br/portal/?billing_return=success',cancelUrl:'https://app.caickrigato.com.br/portal/?billing_return=cancelled',expiredUrl:'https://app.caickrigato.com.br/portal/?billing_return=expired'},items:batch.quote.items.map(i=>({name:String(i.company_name).slice(0,30),description:'ML SH Support — renovação até '+batch.target_date,quantity:1,value:Number(i.amount)}))})});
+   result=await provider('/checkouts',{method:'POST',body:JSON.stringify({billingTypes,chargeTypes:['DETACHED'],minutesToExpire:60,externalReference:'mlsh_batch_'+batch.id,callback:{successUrl:callbackTarget+'&result=success',cancelUrl:callbackTarget+'&result=cancelled',expiredUrl:callbackTarget+'&result=expired'},items:batch.quote.items.map(i=>({name:String(i.company_name).slice(0,30),description:'ML SH Support — renovação até '+batch.target_date,quantity:1,value:Number(i.amount)}))})});
    if(!/^[a-zA-Z0-9_-]{1,160}$/.test(result.id||''))throw Error('invalid_provider_id');
   }catch(e){if([400,401,403,404,422,429].includes(e.providerStatus))await rpc('mlsh_close_unpaid_batch',{p_batch:batch.id,p_status:'cancelled'});await supabase.from('billing_batches').update({creation_error:'Criação não confirmada. Consulte o administrador antes de repetir.'}).eq('id',batch.id);throw e;}
   const url='https://asaas.com/checkoutSession/show?id='+encodeURIComponent(result.id);

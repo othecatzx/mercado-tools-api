@@ -43,3 +43,9 @@ Preços reais devem ser definidos no `/admin`. A configuração de produção e 
 ## Janela de renovação
 A renovação abre 15 dias antes do vencimento, considerando a data em São Paulo. Licenças expiradas podem renovar. API e RPC bloqueiam cotação e reserva fora da janela, preservando no máximo 15 dias futuros por licença. Após renovar, é preciso aguardar a próxima janela.
 Os nomes enviados ao checkout são limitados a 30 caracteres. O sistema consulta as chaves Pix ativas antes de criar o checkout; sem chave ativa, oferece somente cartão. Assim que houver chave ativa, inclui Pix automaticamente.
+
+## Contrata??o de nova licen?a pelo portal
+O cliente usa Contratar licen?a para cadastrar nome da empresa, CPF/CNPJ e c?digo ML opcional, escolher mensal/semestral/anual e conferir o pre?o configurado pelo administrador. Antes do pagamento existe somente uma inten??o privada de contrata??o; empresa, licen?a e v?nculo ao titular s?o criados atomicamente depois da confirma??o oficial do Asaas.
+O retorno ? /portal/pagamento.html?kind=signup&id=UUID (ou kind=renewal). O par?metro result n?o libera acesso. A p?gina exige a conta titular, consulta o status e tenta reconciliar cobran?as confirmadas pelo pr?prio Asaas. Exibe confirma??o, chave e vencimento somente ap?s conclus?o, com estados pendente, expirado, cancelado e revis?o.
+O webhook e a reconcilia??o compartilham a verifica??o do provedor. Eventos e pagamentos duplicados n?o criam outras empresas/licen?as; valor, refer?ncia e v?nculo divergentes s?o bloqueados para revis?o. Cadastro de documento existente exige usar a licen?a existente ou suporte. Tabelas/RPCs de contrata??o permanecem privadas ao backend.
+Testes: node --test test/*.test.cjs e sql/company_signup_test.sql (transa??o com rollback). As telas foram verificadas com APIs simuladas, sem cobran?as reais.

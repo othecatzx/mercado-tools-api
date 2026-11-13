@@ -4,10 +4,10 @@ const token='test-only-token-that-is-longer-than-32-characters';
 const env={ASAAS_API_URL:'https://api.asaas.com/v3',ASAAS_API_KEY:'test-key',JWT_SECRET:'test-secret'};
 const sha=s=>crypto.createHash('sha256').update(s).digest('hex');
 function response(){return {code:200,headersSent:false,set(){return this},status(n){this.code=n;return this},json(body){this.body=body;this.headersSent=true;return this}};}
-function fixture({status='received',rpcError=null,environment='production',enabled=false}={}){
+function fixture({status='received',rpcError=null,environment='production',enabled=false,externalReference=null}={}){
  const routes=new Map(),calls=[],writes=[],rpcs=[];
  const db={from(table){let value;const q={select(){return q},eq(){return q},upsert(v){value=v;writes.push({table,value});return q},update(v){value=v;writes.push({table,value});return q},single(){if(table==='billing_webhook_events')return Promise.resolve({data:{status},error:null});return Promise.resolve({data:null,error:null})},maybeSingle(){return Promise.resolve({data:table==='billing_runtime'?{enabled,webhook_token_hash:sha(token)}:null,error:null})},then(resolve){return Promise.resolve({error:null}).then(resolve)}};return q;},rpc:async(name,args)=>{rpcs.push({name,args});return {data:{status:'processed'},error:rpcError}}};
- billing({post(p,...h){routes.set(p,h)},get(p,...h){routes.set(p,h)},put(p,...h){routes.set(p,h)}},{supabase:db,jwt:{verify(){throw Object.assign(Error(),{name:'JsonWebTokenError'})}},verificarAdmin(){},env:{...env,ASAAS_API_URL:environment==='sandbox'?'https://api-sandbox.asaas.com/v3':env.ASAAS_API_URL},rateLimiter:()=>()=>{},fetchImpl:async(url,options)=>{calls.push({url,options});return {ok:true,json:async()=>({id:'pay_test',status:'RECEIVED',value:100,customer:'verified_customer',checkoutSession:'verified_checkout'})}}});
+ billing({post(p,...h){routes.set(p,h)},get(p,...h){routes.set(p,h)},put(p,...h){routes.set(p,h)}},{supabase:db,jwt:{verify(){throw Object.assign(Error(),{name:'JsonWebTokenError'})}},verificarAdmin(){},env:{...env,ASAAS_API_URL:environment==='sandbox'?'https://api-sandbox.asaas.com/v3':env.ASAAS_API_URL},rateLimiter:()=>()=>{},fetchImpl:async(url,options)=>{calls.push({url,options});return {ok:true,json:async()=>({id:'pay_test',status:'RECEIVED',value:100,customer:'verified_customer',externalReference,checkoutSession:'verified_checkout'})}}});
  return {routes,calls,writes,rpcs};
 }
 test('Aceita o JSON nativo e o formato legado, rejeitando eventos inválidos',()=>{
@@ -32,4 +32,8 @@ test('Evento já processado não consulta novamente o provedor',async()=>{
 test('Compra exige autenticação; compras em Sandbox ou pausadas não geram checkout',async()=>{
  const f=fixture(),res=response();let next=false;await f.routes.get('/api/checkout')[0]({headers:{}},res,()=>next=true);assert.equal(res.code,401);assert.equal(next,false);
  for(const options of [{environment:'sandbox',enabled:true},{environment:'production',enabled:false}]){const g=fixture(options),r=response();await g.routes.get('/api/portal/billing/checkout').at(-1)({body:{},billingUser:{id:'owner'}},r);assert.equal(r.code,503);assert.equal(g.calls.length,0);assert.equal(g.writes.length,0);}
+});
+
+test('Primeira contratação é enviada à transação que cria empresa e licença após validação oficial',async()=>{
+ const f=fixture({externalReference:'mlsh_signup_11111111-1111-4111-8111-111111111111'}),res=response();await f.routes.get('/api/webhooks/asaas').at(-1)({headers:{'asaas-access-token':token},body:{id:'evt_signup',event:'PAYMENT_CONFIRMED',payment:{id:'pay_test',value:0.01}}},res);assert.equal(res.code,200);assert.equal(f.rpcs[0].name,'mlsh_apply_signup_payment');assert.equal(f.rpcs[0].args.p_payment.value,100);
 });
