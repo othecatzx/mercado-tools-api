@@ -25,7 +25,7 @@ begin
  select license_id,company_id into lid,cid from public.billing_signups where id=ord.id;
  if lid is null or cid is null or not exists(select 1 from public.portal_user_licenses where user_id=owner and license_id=lid) then raise exception 'Ownership not linked';end if;
  select chave,vencimento into actual,expiry from public.licenses where id=lid;
- if actual !~ '^MLSH-[A-F0-9]{32}$' then raise exception 'Invalid license key';end if;
+ if actual !~ '^MLSH-[0-9]{13}$' then raise exception 'Invalid license key';end if;
  if (expiry at time zone 'America/Sao_Paulo')::date<>((now() at time zone 'America/Sao_Paulo')::date+interval '1 month')::date then raise exception 'Wrong first license validity';end if;
  insert into public.billing_webhook_events(id,environment,event,payment_id) values(e||'_duplicate','sandbox','PAYMENT_RECEIVED',pid);
  r:=public.mlsh_apply_signup_payment(e||'_duplicate','sandbox',pay);

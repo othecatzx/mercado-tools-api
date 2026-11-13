@@ -69,6 +69,8 @@ app.use("/marketing-assets", express.static(path.join(__dirname, "marketing"), {
 app.use("/admin", express.static(path.join(__dirname, "admin")));
 
 app.use(express.urlencoded({ extended: true }));
+const licenseAttemptLimiter=rateLimit({windowMs:15*60*1000,limit:30,standardHeaders:'draft-7',legacyHeaders:false,skipSuccessfulRequests:true,requestWasSuccessful:(req,res)=>res.locals.invalidLicenseAttempt!==true,skip:req=>req.method!=='POST',message:{ok:false,error:'too_many_license_attempts',message:'Muitas tentativas de chave. Aguarde e tente novamente.'}});
+app.use(['/api/portal/licenses','/api/license/activate','/api/license/check','/api/license/status'],(req,res,next)=>{const json=res.json;res.json=function(body){res.locals.invalidLicenseAttempt=['invalid_license','license_not_found','missing_data'].includes(body?.reason||body?.error);return json.call(this,body);};next();},licenseAttemptLimiter);
 
 const supabase = createClient(
     process.env.SUPABASE_URL,
@@ -105,6 +107,7 @@ app.use('/api/portal', async (req, res, next) => {
         if (Number(user.session_version || 0) !== Number(decoded.session_version || 0)) {
             return res.status(401).json({ok:false,error:'session_revoked',message:'Esta sessão foi encerrada. Faça login novamente para continuar.'});
         }
+        req.portalPrincipal=decoded;
         return next();
     } catch (e) {
         console.error('Falha ao validar acesso do portal:', e.code || e.message);
@@ -113,6 +116,7 @@ app.use('/api/portal', async (req, res, next) => {
 });
 
 // Portal SaaS do cliente: cadastro, login, vinculação de licenças e painel.
+require("./portal-license-access")(app,{supabase});
 require("./portal.routes")(app, { supabase, jwt, bcrypt });
 require("./atendimento.routes")(app, { supabase, jwt, bcrypt });
 require("./bling-multi.routes")(app, { supabase, jwt });
@@ -585,6 +589,8 @@ app.get("/api/admin/licenses", verificarAdmin, async (req, res) => {
 // ==========================================
 // CRIAR LICENÇA
 // ==========================================
+
+app.get('/api/admin/license-key', verificarAdmin, async(req,res)=>{res.set('Cache-Control','no-store');try{for(let i=0;i<5;i++){const {data:key,error}=await supabase.rpc('mlsh_license_key');if(error)throw error;const {data:existing,error:lookupError}=await supabase.from('licenses').select('id').eq('chave',key).maybeSingle();if(lookupError)throw lookupError;if(!existing)return res.json({ok:true,key});}throw Error('key_generation_unavailable');}catch(e){res.status(503).json({ok:false,message:'Nao foi possivel gerar a chave agora.'});}});
 
 app.post("/api/admin/licenses", verificarAdmin, async (req, res) => {
     try {

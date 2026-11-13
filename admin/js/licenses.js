@@ -965,47 +965,7 @@ async updateLicense(id, modal) {
         document.body.appendChild(modal);
 
         
-document
-    .getElementById("generateLicenseKey")
-    .addEventListener("click", () => {
-        const companySelect =
-            document.getElementById("licenseCompany");
-
-        const companyName =
-            companySelect.options[
-                companySelect.selectedIndex
-            ]?.text;
-
-        if (!companySelect.value || !companyName) {
-            alert("Selecione uma empresa primeiro.");
-            return;
-        }
-
-        // Normaliza o nome da empresa
-const prefix = companyName
-    .trim()
-    .split(/\s+/)[0]
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^A-Z0-9]/gi, "")
-    .toUpperCase();
-
-
-        // Gera um código aleatório
-        const randomBytes = new Uint8Array(4);
-        crypto.getRandomValues(randomBytes);
-
-        const randomCode = Array.from(randomBytes)
-            .map(byte => byte.toString(16).padStart(2, "0"))
-            .join("")
-            .toUpperCase()
-            .slice(0, 6);
-
-        const year = new Date().getFullYear();
-
-        document.getElementById("licenseKey").value =
-            `${prefix}-${year}-${randomCode}`;
-    });
+document.getElementById("generateLicenseKey").addEventListener("click",async()=>{const button=document.getElementById("generateLicenseKey");button.disabled=true;try{const response=await apiFetch('/api/admin/license-key');if(!response)return;const data=await response.json();if(!response.ok||!data.ok)throw Error(data.message||'Nao foi possivel gerar a chave.');document.getElementById("licenseKey").value=data.key;}catch(error){alert(error.message);}finally{button.disabled=false;}});
 
 
         document

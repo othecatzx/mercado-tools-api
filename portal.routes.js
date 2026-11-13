@@ -2,6 +2,7 @@
 // Portal do Cliente ML SH Support — rotas isoladas do painel administrativo.
 // Requer tabelas portal_users e portal_user_licenses (migration.sql).
 const path = require('path');
+const {activeLicense,enforceCompanyMap}=require('./portal-license-access');
 
 module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
   // Sempre revalidar o HTML do portal para que subusuários não recebam versões antigas da interface.
@@ -77,14 +78,14 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
     const ids = Array.isArray(agent.allowed_license_ids) && agent.allowed_license_ids.length
       ? [...new Set(agent.allowed_license_ids.map(String))] : [String(agent.license_id)];
     const { data, error } = await supabase.from('licenses')
-      .select('id,status,company_id,companies(nome,status)')
+      .select('id,status,vencimento,company_id,companies(nome,status)')
       .in('id', ids);
     if (error) throw error;
     const byId = new Map((data || []).map(l => [String(l.id), l]));
     const allowed = [];
     for (const id of ids) {
       const l = byId.get(id);
-      if (!l || l.status !== 'active') continue;
+      if (!activeLicense(l)) continue;
       const { data: ownership, error: ownershipError } = await supabase.from('portal_user_licenses')
         .select('license_id').eq('user_id', agent.created_by_portal_user_id).eq('license_id', id).maybeSingle();
       if (ownershipError) throw ownershipError;
@@ -262,12 +263,12 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
       let companies = new Map();
       if (decoded.type === 'portal' && decoded.portal_user_id) {
         const { data: links, error: linkError } = await supabase.from('portal_user_licenses')
-          .select('licenses(company_id,companies(id,nome,codigo_ml,status))')
+          .select('licenses(id,status,vencimento,company_id,companies(id,nome,codigo_ml,status))')
           .eq('user_id', decoded.portal_user_id);
         if (linkError) throw linkError;
         for (const row of links || []) {
           const company = row.licenses?.companies;
-          if (company?.id && !companies.has(String(company.id))) companies.set(String(company.id), company);
+          if (activeLicense(row.licenses) && company?.id && !companies.has(String(company.id))) companies.set(String(company.id), company);
         }
       } else if (decoded.type === 'support_agent' && decoded.support_agent_id) {
         const { data: agent, error: agentError } = await supabase.from('support_agents')
@@ -283,16 +284,17 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
         const ownedIds = [...new Set((ownedLinks || []).map(x => String(x.license_id)))];
         if (!ownedIds.length) return res.json({ ok: true, codes: [] });
         const { data: licenses, error: licensesError } = await supabase.from('licenses')
-          .select('id,status,company_id,companies(id,nome,codigo_ml,status)')
+          .select('id,status,vencimento,company_id,companies(id,nome,codigo_ml,status)')
           .in('id', ownedIds).eq('status', 'active');
         if (licensesError) throw licensesError;
         for (const license of licenses || []) {
           const company = license.companies;
-          if (company?.id && !companies.has(String(company.id))) companies.set(String(company.id), company);
+          if (activeLicense(license) && company?.id && !companies.has(String(company.id))) companies.set(String(company.id), company);
         }
       } else {
         return res.status(401).json({ ok: false, error: 'invalid_session' });
       }
+      enforceCompanyMap(req,companies);
       const companyIds = [...companies.keys()];
       if (!companyIds.length) return res.json({ ok: true, codes: [] });
 
@@ -344,16 +346,17 @@ const codes = [...companies.entries()].map(([companyId, company]) => {
       const ids = req.agentAllowedLicenses.map(l => String(l.id));
       if (ids.length) {
         const { data, error } = await supabase.from('licenses')
-          .select('id,company_id,companies(id,nome,status)').in('id', ids).eq('status', 'active');
+          .select('id,status,vencimento,company_id,companies(id,nome,status)').in('id', ids).eq('status', 'active');
         if (error) throw error;
-        for (const l of data || []) if (l.companies?.id) companies.set(String(l.company_id), l.companies);
+        for (const l of data || []) if (activeLicense(l) && l.companies?.id) companies.set(String(l.company_id), l.companies);
       }
     } else {
       const { data, error } = await supabase.from('portal_user_licenses')
-        .select('licenses(company_id,companies(id,nome,status))').eq('user_id', req.portalUserId);
+        .select('licenses(id,status,vencimento,company_id,companies(id,nome,status))').eq('user_id', req.portalUserId);
       if (error) throw error;
-      for (const row of data || []) { const c = row.licenses?.companies; if (c?.id) companies.set(String(row.licenses.company_id), c); }
+      for (const row of data || []) { const c = row.licenses?.companies; if (activeLicense(row.licenses) && c?.id) companies.set(String(row.licenses.company_id), c); }
     }
+    enforceCompanyMap(req,companies);
     const ids = [...companies.keys()];
     if (!ids.length) return [];
     const { data: accounts, error } = await supabase.from('mercadolivre_accounts')
@@ -734,16 +737,17 @@ const codes = [...companies.entries()].map(([companyId, company]) => {
         const ids = req.agentAllowedLicenses.map(l => String(l.id));
         if (ids.length) {
           const { data: allowedLicenses, error: allowedError } = await supabase.from('licenses')
-            .select('id,company_id,companies(id,nome,status)').in('id', ids).eq('status', 'active');
+            .select('id,status,vencimento,company_id,companies(id,nome,status)').in('id', ids).eq('status', 'active');
           if (allowedError) throw allowedError;
-          for (const license of allowedLicenses || []) { const c = license.companies; if (c?.id) companies.set(c.id, c); }
+          for (const license of allowedLicenses || []) { const c = license.companies; if (activeLicense(license) && c?.id) companies.set(c.id, c); }
         }
       } else {
         const { data: links, error: linkError } = await supabase.from('portal_user_licenses')
           .select('licenses(company_id,status,vencimento,companies(id,nome,status))').eq('user_id', req.portalUserId);
         if (linkError) throw linkError;
-        for (const row of links || []) { const l=row.licenses,c=l?.companies; if (req.internalReportRange && (!l || l.status!=='active' || (l.vencimento && new Date(l.vencimento).getTime()<=Date.now()) || c?.status!=='active')) continue; if (c?.id) companies.set(c.id, c); }
+        for (const row of links || []) { const l=row.licenses,c=l?.companies; if (!activeLicense(l)) continue; if (c?.id) companies.set(c.id, c); }
       }
+      enforceCompanyMap(req,companies);
       const companyIds = [...companies.keys()];
       if (!companyIds.length) return res.json({ ok: true, days, connected: 0, totals: { orders: 0, revenue: 0 }, stores: [] });
 
@@ -1270,9 +1274,9 @@ const codes = [...companies.entries()].map(([companyId, company]) => {
         companyNames = (req.agentAllowedLicenses || []).map(l => l.company_name).filter(Boolean);
       } else {
         const { data, error } = await supabase.from('portal_user_licenses')
-          .select('licenses(companies(nome))').eq('user_id', req.portalUserId);
+          .select('licenses(id,status,vencimento,companies(nome,status))').eq('user_id', req.portalUserId);
         if (error) throw error;
-        companyNames = (data || []).map(r => r.licenses?.companies?.nome).filter(Boolean);
+        companyNames = (data || []).filter(r=>activeLicense(r.licenses)).map(r => r.licenses?.companies?.nome).filter(Boolean);
       }
       companyNames = [...new Set(companyNames)].slice(0, 15).map(n => String(n).slice(0, 75));
     } catch (error) {
@@ -1369,7 +1373,7 @@ const codes = [...companies.entries()].map(([companyId, company]) => {
         licenses = (links || []).map(x => x.licenses).filter(Boolean);
       }
       const companyMap = new Map();
-      licenses.forEach(l => { if (l.companies?.id) companyMap.set(l.companies.id, l.companies); });
+      licenses.forEach(l => { if (activeLicense(l) && l.companies?.id) companyMap.set(l.companies.id, l.companies); });
       const companyIds = [...companyMap.keys()];
       let devices = [];
       if (companyIds.length) {
@@ -1377,12 +1381,12 @@ const codes = [...companies.entries()].map(([companyId, company]) => {
         if (error) throw error;
         devices = (data || []).map(d => ({ ...d, company_name: companyMap.get(d.company_id)?.nome || 'Empresa' }));
       }
-      const activeLicenses = licenses.filter(l => l.status === 'active' && (!l.vencimento || new Date(l.vencimento).getTime() >= Date.now())).length;
+      const activeLicenses = licenses.filter(l => activeLicense(l)).length;
       const agentMenus = req.portalRole === 'support_agent' ? (req.supportAgent.menu_permissions || []) : null;
-      const visibleLicenses = req.portalRole !== 'support_agent' || agentMenus.includes('licenses') ? licenses.map(l => ({ id: l.id, chave: l.chave, status: l.status, vencimento: l.vencimento, company_id: l.company_id, company: l.companies?.nome || 'Empresa não identificada', codigo_ml: l.companies?.codigo_ml || null })) : [];
+      const visibleLicenses = req.portalRole !== 'support_agent' || agentMenus.includes('licenses') ? licenses.map(l => ({ id: l.id, chave: l.chave, status: l.status, vencimento: l.vencimento, company_id: l.company_id, company: l.companies?.nome || 'Empresa não identificada', codigo_ml: activeLicense(l)?(l.companies?.codigo_ml || null):null })) : [];
       const visibleDevices = req.portalRole !== 'support_agent' || agentMenus.includes('devices') ? devices : [];
       const summary = req.portalRole === 'support_agent' && !agentMenus.includes('overview') ? { licenses: agentMenus.includes('licenses') ? visibleLicenses.length : 0, active_licenses: 0, companies: 0, devices: agentMenus.includes('devices') ? visibleDevices.length : 0, active_devices: 0 } : { licenses: licenses.length, active_licenses: activeLicenses, companies: companyIds.length, devices: devices.length, active_devices: devices.filter(d => d.status === 'active').length };
-      return res.json({ ok: true, summary, licenses: visibleLicenses, devices: visibleDevices });
+      return res.json({ ok: true, summary, licenses: visibleLicenses, devices: visibleDevices,license_access:req.portalLicenseAccess });
     } catch (error) {
       console.error('Portal dashboard error:', error.message);
       return res.status(500).json({ ok: false, error: 'server_error', message: 'Não foi possível carregar o painel.' });

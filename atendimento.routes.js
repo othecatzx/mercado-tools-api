@@ -1,3 +1,4 @@
+const {activeLicense}=require('./portal-license-access');
 // Primeira etapa do módulo de atendimento: equipe, escopo por licença e permissões.
 // As conversas/mensagens serão adicionadas nas próximas etapas usando o mesmo escopo.
 module.exports = function registerAtendimentoRoutes(app, { supabase, jwt, bcrypt }) {
@@ -59,12 +60,12 @@ module.exports = function registerAtendimentoRoutes(app, { supabase, jwt, bcrypt
 
   async function getOwnedLicense(portalUserId, licenseId) {
     const { data, error } = await supabase.from('portal_user_licenses')
-      .select('license_id,licenses(id,chave,status,company_id,companies(id,nome,status))')
+      .select('license_id,licenses(id,chave,status,vencimento,company_id,companies(id,nome,status))')
       .eq('user_id', portalUserId).eq('license_id', licenseId).maybeSingle();
     if (error) throw error;
     if (!data?.licenses) return null;
     const license = data.licenses;
-    if (license.status !== 'active') return null;
+    if (!activeLicense(license)) return null;
     return license;
   }
 
@@ -129,10 +130,10 @@ module.exports = function registerAtendimentoRoutes(app, { supabase, jwt, bcrypt
   app.get('/api/portal/atendimento/licenses', authTeam, async (req, res) => {
     try {
       const { data, error } = await supabase.from('portal_user_licenses')
-        .select('licenses(id,status,company_id,companies(id,nome,status))')
+        .select('licenses(id,status,vencimento,company_id,companies(id,nome,status))')
         .eq('user_id', req.portalUserId);
       if (error) throw error;
-      const licenses = (data || []).map(row => row.licenses).filter(l => l && l.status === 'active')
+      const licenses = (data || []).map(row => row.licenses).filter(l => activeLicense(l))
         .map(l => ({ id: l.id, company_id: l.company_id, company_name: l.companies?.nome || 'Empresa', company_status: l.companies?.status || 'unknown' }));
       const scopedLicenses = req.teamActor?.type === 'agent' ? licenses.filter(l => req.teamActor.allowedLicenseIds.includes(String(l.id))) : licenses;
       return res.json({ ok: true, licenses: scopedLicenses });
