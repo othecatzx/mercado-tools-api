@@ -13,7 +13,7 @@ function reportRange(day) {
 function summarize(payload,day) {
  const rows=(payload.orders||[]).filter(o=>localDay(o.date_created)===day);
  const valid=rows.filter(o=>!['cancelled','canceled'].includes(String(o.status).toLowerCase()));
- const count=orders=>({orders:orders.length,revenue:orders.reduce((n,o)=>n+Number(o.total_amount||0),0),units:orders.reduce((n,o)=>n+Number(o.units||0),0)});
+ const count=orders=>({orders:orders.length,revenue:orders.reduce((n,o)=>n+Math.round(Number(o.total_amount||0)*100),0)/100,units:orders.reduce((n,o)=>n+Number(o.units||0),0)});
  const stores=(payload.stores||[]).map(s=>({company_id:s.company_id,name:s.company_name,nickname:s.nickname,connected:s.connected===true,error:s.connected===true?null:'Não foi possível consultar esta conta. Reconecte ou tente novamente.',...count(valid.filter(o=>String(o.company_id)===String(s.company_id)))}));
  return {day,timezone:'America/Sao_Paulo',generated_at:new Date().toISOString(),...count(valid),cancelled:rows.length-valid.length,partial:stores.some(s=>!s.connected),stores,definition:'Pedidos não cancelados criados na data, com status da consulta. Valores brutos, sem descontar taxas ou fretes.'};
 }

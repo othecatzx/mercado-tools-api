@@ -1,6 +1,6 @@
 # Resumo diário de vendas — revisão antes da ativação
 
-Implementação preparada na branch `feat/daily-sales-automation`. Atendimento foi publicado separadamente na main. A alteração de banco desta branch ainda não foi aplicada.
+Implementação publicada na main em 13/11/2026, após autorização explícita do token exclusivo, armazenamento no Vault e destino HTTPS do callback. O agendamento da conta permanece pausado.
 
 ## Comportamento
 
@@ -28,8 +28,12 @@ Nenhuma chave de serviço ou token do marketplace é enviada nessa chamada. Nenh
 - Oito testes de regras, escopo, permissões, limites de paginação, fuso, cancelamentos, worker e rejeição de callback sem autenticação.
 - Teste visual em navegador isolado, com dados simulados: salvar horário, gerar manualmente, histórico parcial, atalhos de atendimento, celular e tema escuro.
 - Consulta real de atendimento validada em modo somente leitura.
-- O SQL e o cron ainda precisam de aplicação e teste integrado em produção após aprovação; nenhuma execução automática real foi ativada.
+- SQL aplicado e cron validado em produção. As três tabelas novas têm RLS e não concedem SELECT a anon/authenticated.
+- Retirada da fila, exclusão mútua e recuperação de concessão vencida verificadas em transação com rollback.
+- Callback autenticado acionou o backend publicado e produziu um resumo real de 12/11/2026. O resultado identifica lojas indisponíveis como consulta parcial. Nenhum agendamento diário da conta foi ativado.
+- Valores são somados em centavos para preservar precisão.
+- Também foi fechado o acesso anônimo anterior a payments, checkout_sessions e mercadolivre_accounts (sql/private_billing_rls.sql), mantendo o acesso via backend/service_role.
 
 ## Reversão sem apagar histórico
 
-Pausar as regras e desagendar o job `mlsh-daily-reports`, preservando tabelas e resultados. O deploy anterior permanece na main. A revisão automática bloqueou a primeira tentativa de alteração do banco por criar schema, agendamento e callback autenticado em produção; não foi feito novo envio da alteração.
+Pausar as regras e desagendar o job `mlsh-daily-reports`, preservando tabelas e resultados. O deploy anterior permanece na main. As tentativas iniciais foram bloqueadas pela revisão automática. Após autorização explícita para o token e endereço, a migração foi aprovada e aplicada.

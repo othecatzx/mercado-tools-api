@@ -38,6 +38,8 @@ test('Resumo fecha o dia anterior em São Paulo, incluindo viradas de mês/ano',
 test('Resumo não conta cancelamentos, não mistura datas e identifica consulta parcial',()=>{
  const result=automations.summarize({stores:[{company_id:'a',connected:true},{company_id:'b',connected:false}],orders:[{company_id:'a',status:'paid',date_created:'2026-11-12T03:00:00Z',total_amount:100,units:2},{company_id:'a',status:'cancelled',date_created:'2026-11-13T02:00:00Z',total_amount:500,units:3},{company_id:'a',status:'paid',date_created:'2026-11-13T03:00:00Z',total_amount:1000,units:10}]},'2026-11-12');
  assert.equal(result.revenue,100);assert.equal(result.orders,1);assert.equal(result.units,2);assert.equal(result.cancelled,1);assert.equal(result.partial,true);
+ const cents=automations.summarize({stores:[],orders:[{status:'paid',date_created:'2026-11-12T12:00:00Z',total_amount:0.1},{status:'paid',date_created:'2026-11-12T12:00:00Z',total_amount:0.2}]},'2026-11-12');
+ assert.equal(cents.revenue,0.3);
 });
 test('Agendador rejeita chamada sem autenticação e horários inválidos',async()=>{
  const routes=new Map();automations({post(p,...h){routes.set(p,h.at(-1))},get(){},put(p,...h){routes.set(p,h.at(-1))}},{supabase:{},authPortal(){},readSales(){throw Error('Should not execute')}});
