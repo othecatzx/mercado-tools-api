@@ -1,12 +1,14 @@
 const crypto=require('node:crypto');
 const UUID=/^[a-f\d]{8}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{12}$/i;
+const dayKey=d=>new Intl.DateTimeFormat('en-CA',{timeZone:'America/Sao_Paulo',year:'numeric',month:'2-digit',day:'2-digit'}).format(d);
+function renewalWindow(expires,now=new Date()){if(!expires)return {renewal_opens_on:null,in_renewal_window:false};const expiry=new Date(expires);if(!Number.isFinite(expiry.getTime()))return {renewal_opens_on:null,in_renewal_window:false};const expiryDay=dayKey(expiry),today=dayKey(now),opens=new Date(expiryDay+'T12:00:00Z');opens.setUTCDate(opens.getUTCDate()-15);const renewal_opens_on=opens.toISOString().slice(0,10);return {renewal_opens_on,in_renewal_window:today>=renewal_opens_on};}
 const quoteHash=q=>crypto.createHash('sha256').update(JSON.stringify(q)).digest('hex');
 module.exports=function registerBatchBilling(app,{supabase,jwt,env,mode,authOwner,verificarAdmin,safe,fail,provider,runtime,authHash,checkoutLimiter}){
- const messages={price_not_configured:'O administrador ainda não definiu o preço deste período.',license_unavailable:'Uma licença está bloqueada, sem vencimento, com assinatura anterior ou não pertence à sua conta.',license_reserved:'Uma das licenças já está em um pagamento pendente. Confira com o suporte.',invalid_selection:'Selecione as empresas e um período válido.',duplicate_license:'Selecione cada licença apenas uma vez.'};
+ const messages={renewal_too_early:'A renovação fica disponível somente nos 15 dias anteriores ao vencimento.',price_not_configured:'O administrador ainda não definiu o preço deste período.',license_unavailable:'Uma licença está bloqueada, sem vencimento, com assinatura anterior ou não pertence à sua conta.',license_reserved:'Uma das licenças já está em um pagamento pendente. Confira com o suporte.',invalid_selection:'Selecione as empresas e um período válido.',duplicate_license:'Selecione cada licença apenas uma vez.'};
  async function rpc(name,args){const {data,error}=await supabase.rpc(name,args);if(error){const key=Object.keys(messages).find(k=>String(error.message).includes(k));if(key)fail(messages[key],409);throw error;}return data;}
  async function ownedLicenses(owner){
   const {data,error}=await supabase.from('portal_user_licenses').select('licenses(id,status,vencimento,asaas_subscription_id,companies(id,nome,status))').eq('user_id',owner);if(error)throw error;
-  return (data||[]).map(x=>x.licenses).filter(Boolean).map(l=>({id:l.id,company_id:l.companies?.id,company_name:l.companies?.nome||'Empresa',status:l.status,expires_at:l.vencimento,can_renew:l.status!=='blocked'&&l.companies?.status==='active'&&!!l.vencimento&&!l.asaas_subscription_id}));
+  return (data||[]).map(x=>x.licenses).filter(Boolean).map(l=>({id:l.id,company_id:l.companies?.id,company_name:l.companies?.nome||'Empresa',status:l.status,expires_at:l.vencimento,...renewalWindow(l.vencimento),can_renew:['active','expired'].includes(l.status)&&l.companies?.status==='active'&&!l.asaas_subscription_id&&renewalWindow(l.vencimento).in_renewal_window}));
  }
  async function available(){const config=await runtime();return mode==='production'&&!!config?.enabled&&!!authHash(config)&&!!env.ASAAS_API_KEY;}
  app.get('/api/portal/billing',authOwner,safe(async(req,res)=>{
@@ -27,13 +29,15 @@ module.exports=function registerBatchBilling(app,{supabase,jwt,env,mode,authOwne
   if(previous){if(previous.status==='pending'&&previous.checkout_url)return res.json({ok:true,batch_id:previous.id,checkout_url:previous.checkout_url});fail('Esta solicitação já foi recebida. Atualize a situação ou fale com o suporte.',409);}
   let signed;try{signed=jwt.verify(req.body?.quote_token||'',env.JWT_SECRET);}catch(e){fail('A cotação expirou. Calcule novamente.',409);}
   if(signed.type!=='billing_quote'||signed.owner!==req.billingUser.id)fail('Cotação inválida.',403);
+  const pix=await provider('/pix/addressKeys?status=ACTIVE&limit=1');
+  const billingTypes=pix.data?.some(k=>k.status==='ACTIVE')?['PIX','CREDIT_CARD']:['CREDIT_CARD'];
   const reserved=await rpc('mlsh_reserve_batch',{p_owner:req.billingUser.id,p_ids:signed.license_ids,p_period:signed.period,p_key:req.body.request_key,p_environment:mode});
   const batch=reserved.batch;
   if(!reserved.created){if(batch.checkout_url&&batch.status==='pending')return res.json({ok:true,batch_id:batch.id,checkout_url:batch.checkout_url});fail('O pagamento já está sendo preparado.',409);}
   if(quoteHash(batch.quote)!==signed.hash){await rpc('mlsh_close_unpaid_batch',{p_batch:batch.id,p_status:'cancelled'});fail('Preços ou vencimentos mudaram. Calcule novamente antes de pagar.',409);}
   let result;
   try{
-   result=await provider('/checkouts',{method:'POST',body:JSON.stringify({billingTypes:['PIX','CREDIT_CARD'],chargeTypes:['DETACHED'],minutesToExpire:60,externalReference:'mlsh_batch_'+batch.id,callback:{successUrl:'https://app.caickrigato.com.br/portal/?billing_return=success',cancelUrl:'https://app.caickrigato.com.br/portal/?billing_return=cancelled',expiredUrl:'https://app.caickrigato.com.br/portal/?billing_return=expired'},items:batch.quote.items.map(i=>({name:String(i.company_name).slice(0,100),description:'ML SH Support — renovação até '+batch.target_date,quantity:1,value:Number(i.amount)}))})});
+   result=await provider('/checkouts',{method:'POST',body:JSON.stringify({billingTypes,chargeTypes:['DETACHED'],minutesToExpire:60,externalReference:'mlsh_batch_'+batch.id,callback:{successUrl:'https://app.caickrigato.com.br/portal/?billing_return=success',cancelUrl:'https://app.caickrigato.com.br/portal/?billing_return=cancelled',expiredUrl:'https://app.caickrigato.com.br/portal/?billing_return=expired'},items:batch.quote.items.map(i=>({name:String(i.company_name).slice(0,30),description:'ML SH Support — renovação até '+batch.target_date,quantity:1,value:Number(i.amount)}))})});
    if(!/^[a-zA-Z0-9_-]{1,160}$/.test(result.id||''))throw Error('invalid_provider_id');
   }catch(e){if([400,401,403,404,422,429].includes(e.providerStatus))await rpc('mlsh_close_unpaid_batch',{p_batch:batch.id,p_status:'cancelled'});await supabase.from('billing_batches').update({creation_error:'Criação não confirmada. Consulte o administrador antes de repetir.'}).eq('id',batch.id);throw e;}
   const url='https://asaas.com/checkoutSession/show?id='+encodeURIComponent(result.id);
@@ -64,3 +68,5 @@ module.exports=function registerBatchBilling(app,{supabase,jwt,env,mode,authOwne
  }));
 };
 module.exports.quoteHash=quoteHash;
+
+module.exports.renewalWindow=renewalWindow;

@@ -39,3 +39,7 @@ Novas tabelas e funções são exclusivas de `service_role`, com RLS e sem execu
 `sql/batch_transaction_test.sql` usa service_role em uma transação com rollback para verificar proporcionalidade, data comum, reserva única, um único registro de pagamento, repetição, titular incorreto e ausência de renovação parcial. Não altera clientes reais nem deixa registros de teste.
 
 Preços reais devem ser definidos no `/admin`. A configuração de produção e uma compra piloto autorizada continuam necessárias antes de liberar cobranças reais.
+
+## Janela de renovação
+A renovação abre 15 dias antes do vencimento, considerando a data em São Paulo. Licenças expiradas podem renovar. API e RPC bloqueiam cotação e reserva fora da janela, preservando no máximo 15 dias futuros por licença. Após renovar, é preciso aguardar a próxima janela.
+Os nomes enviados ao checkout são limitados a 30 caracteres. O sistema consulta as chaves Pix ativas antes de criar o checkout; sem chave ativa, oferece somente cartão. Assim que houver chave ativa, inclui Pix automaticamente.
