@@ -39,7 +39,19 @@
   return {allStores,selected,pending,flex:pending.filter(flex),separated:rows.filter(o=>o.already_separated&&!cancelled(o)),failures:selected.flatMap(s=>s.failures.map(a=>({...a,store:s}))),expiring,
    priorities:pending.slice().sort((a,b)=>Number(flex(b))-Number(flex(a))||new Date(a.date_created||0)-new Date(b.date_created||0)).slice(0,8)};
  }
- function render({data,licenses,user,filter='all',loaded=false,loading=false,error='',updatedAt=null}){
+ function chatMarkup({user,filter,chatData,chatError,chatLoading}){
+  if(!can(user,'chat')||(user?.role==='support_agent'&&!(user.permissions||[]).includes('conversations.view')))return '';
+  const stores=(chatData?.stores||[]).filter(s=>filter==='all'||String(s.company_id)===String(filter));
+  const total=key=>stores.reduce((n,s)=>n+Number(s[key]||0),0);
+  const action=(s,kind,text)=>'<button type="button" class="btn btn-ghost" data-ops-chat="'+escape(s.license_id)+'" data-ops-chat-filter="'+kind+'">'+text+' →</button>';
+  const rows=stores.filter(s=>Number(s.waiting)||Number(s.unassigned)).map(s=>'<div class="ops-chat-row"><div><strong>'+escape(short(s.company_name))+'</strong><p class="small muted">'+number(s.waiting)+' aguardando resposta · '+number(s.unassigned)+' sem responsável</p></div><div class="ops-links">'+(Number(s.waiting)?action(s,'waiting','Responder'):'')+(Number(s.unassigned)?action(s,'unassigned','Distribuir'):'')+'</div></div>').join('');
+  return '<section class="panel ops-chat-panel"><div class="panel-head"><div><h3>Pendências de atendimento</h3><div class="small muted">Mensagens já sincronizadas com o portal</div></div><button type="button" class="btn btn-ghost" id="operationsChatRefresh" '+(chatLoading?'disabled':'')+'>'+(chatLoading?'Consultando…':'Atualizar atendimento')+'</button></div>'+
+   (chatError?'<div class="alert error" role="alert">'+escape(chatError)+(chatData?' Exibindo a última consulta disponível.':'')+'</div>':'')+
+   '<div class="ops-chat-counts"><div><b>'+(chatData?number(total('waiting')):'—')+'</b><span>Aguardando resposta</span></div><div><b>'+(chatData?number(total('unassigned')):'—')+'</b><span>Sem responsável</span></div><div><b>'+(chatData?number(total('open')):'—')+'</b><span>Conversas abertas</span></div></div>'+
+   (rows||'<p class="small muted">'+(chatData?'Nenhuma pendência encontrada nas conversas sincronizadas deste filtro.':chatLoading?'Consultando conversas autorizadas…':'As pendências aparecerão após a consulta.')+'</p>')+
+   '<p class="small muted ops-note">Aguardando resposta significa que a última mensagem é do comprador, mesmo que já tenha sido lida. Conversas encerradas ou bloqueadas não entram. As contagens podem se sobrepor.'+(total('unknown_sender')?' Há '+number(total('unknown_sender'))+' conversa(s) sem remetente identificado; elas não entram em aguardando resposta.':'')+'</p></section>';
+ }
+ function render({data,licenses,user,filter='all',loaded=false,loading=false,error='',updatedAt=null,chatData=null,chatError='',chatLoading=false}){
   const m=model(data,licenses,filter);
   const e=escape;
   const go=(label,page)=>can(user,page)?'<button type="button" class="btn btn-ghost" data-go="'+e(page)+'">'+e(label)+' →</button>':'';
@@ -58,6 +70,7 @@
    (error?'<div class="alert error" role="alert">'+e(error)+(loaded?' Os dados abaixo são da última consulta concluída.':' Tente atualizar novamente.')+'</div>':'')+
    (m.failures.length?'<div class="notice" role="status">Consulta parcial: '+number(m.failures.length)+' conta(s) indisponível(is). A fila e os totais podem estar incompletos.</div>':'')+
    '<div class="grid ops-stats">'+card('Aguardando separação',m.pending.length,'Pedidos da fila operacional','▤')+card('FLEX pendentes',m.flex.length,'Entre os pedidos para separar','↗')+card('Etiquetas impressas',m.separated.length,'Pedidos ainda presentes na fila','✓')+card('Contas consultadas',m.selected.reduce((n,s)=>n+s.accounts.filter(a=>a.connected===true&&!a.error).length,0),'Consulta concluída sem erro','⇄')+'</div>'+
+   chatMarkup({user,filter,chatData,chatError,chatLoading})+
    '<div class="section-row"><div><h2>Precisa da sua atenção</h2><p>Pendências encontradas nos dados disponíveis.</p></div><span class="badge">'+number(tasks.length)+' ações</span></div>'+
    '<section class="panel ops-tasks">'+(loading&&!loaded?'<div class="ops-empty" role="status">Consultando pedidos e contas autorizadas…</div>':tasks.join('')||'<div class="ops-empty">'+(loaded?'Nenhuma pendência identificada nos dados consultados.':'Atualize para consultar as pendências das lojas.')+'</div>')+'</section>'+
    '<div class="ops-columns"><section class="panel"><div class="panel-head"><div><h3>Fila prioritária</h3><div class="small muted">FLEX primeiro; depois, pedidos mais antigos.</div></div>'+queue('Ver todos',filter)+'</div><div class="table-wrap"><table class="ops-table"><thead><tr><th>Pedido / produto</th><th>Loja</th><th>Envio</th><th>Un.</th></tr></thead><tbody>'+

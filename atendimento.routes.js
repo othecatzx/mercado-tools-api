@@ -552,6 +552,8 @@ module.exports = function registerAtendimentoRoutes(app, { supabase, jwt, bcrypt
   }
   function csvCell(value) { const s = String(value ?? ''); return '"' + s.replace(/"/g, '""') + '"'; }
 
+  require('./chat-operations')(app,{supabase,authChat});
+
   app.get('/api/portal/atendimento/chat/conversations', authChat, async (req, res) => {
     try {
       const licenseId = String(req.query.license_id || req.actor.licenseId || '');
@@ -565,17 +567,8 @@ module.exports = function registerAtendimentoRoutes(app, { supabase, jwt, bcrypt
       let query = supabase.from('support_conversations').select('*,licenses(company_id,companies(nome))').eq('license_id', licenseId).order('last_message_at', { ascending: false, nullsFirst: false }).limit(200);
       const { data, error } = await query; if (error) throw error;
       const conversationIds = (data || []).map(c => c.id);
-      const latestByConversation = new Map();
-      if (conversationIds.length) {
-        const { data: recentMessages, error: recentError } = await supabase.from('support_messages')
-          .select('conversation_id,sender_role,created_at').eq('license_id', licenseId)
-          .in('conversation_id', conversationIds).order('created_at', { ascending: false }).limit(3000);
-        if (recentError) throw recentError;
-        for (const message of recentMessages || []) {
-          if (!latestByConversation.has(message.conversation_id)) latestByConversation.set(message.conversation_id, message);
-        }
-      }
-      const assignedIds = [...new Set((data || []).map(c => c.assigned_agent_id).filter(Boolean))]; let assigned = new Map(); if (assignedIds.length) { const { data: agents, error: agentsError } = await supabase.from('support_agents').select('id,nome,email').in('id', assignedIds); if (agentsError) throw agentsError; assigned = new Map((agents || []).map(a => [a.id, a])); } const conversations = (data || []).map(c => ({ ...c, company_name: c.licenses?.companies?.nome || actor.license?.companies?.nome || 'Empresa', assigned_agent_name: assigned.get(c.assigned_agent_id)?.nome || null, assigned_agent_email: assigned.get(c.assigned_agent_id)?.email || null, last_sender_role: latestByConversation.get(c.id)?.sender_role || null, waiting_since: latestByConversation.get(c.id)?.sender_role === 'buyer' && (!c.last_viewed_buyer_at || new Date(latestByConversation.get(c.id)?.created_at).getTime() > new Date(c.last_viewed_buyer_at).getTime()) ? latestByConversation.get(c.id)?.created_at : null, has_unread_buyer: latestByConversation.get(c.id)?.sender_role === 'buyer' && (!c.last_viewed_buyer_at || new Date(latestByConversation.get(c.id)?.created_at).getTime() > new Date(c.last_viewed_buyer_at).getTime()), licenses: undefined }));
+      const latestByConversation = await require('./chat-operations').latestMessages(supabase,conversationIds);
+      const assignedIds = [...new Set((data || []).map(c => c.assigned_agent_id).filter(Boolean))]; let assigned = new Map(); if (assignedIds.length) { const { data: agents, error: agentsError } = await supabase.from('support_agents').select('id,nome,email').in('id', assignedIds); if (agentsError) throw agentsError; assigned = new Map((agents || []).map(a => [a.id, a])); } const conversations = (data || []).map(c => ({ ...c, company_name: c.licenses?.companies?.nome || actor.license?.companies?.nome || 'Empresa', assigned_agent_name: assigned.get(c.assigned_agent_id)?.nome || null, assigned_agent_email: assigned.get(c.assigned_agent_id)?.email || null, last_sender_role: latestByConversation.get(c.id)?.sender_role || null, awaiting_reply_since: latestByConversation.get(c.id)?.sender_role === 'buyer' && !c.closed_at && c.ml_status !== 'blocked' ? latestByConversation.get(c.id)?.created_at : null, waiting_since: latestByConversation.get(c.id)?.sender_role === 'buyer' && (!c.last_viewed_buyer_at || new Date(latestByConversation.get(c.id)?.created_at).getTime() > new Date(c.last_viewed_buyer_at).getTime()) ? latestByConversation.get(c.id)?.created_at : null, has_unread_buyer: latestByConversation.get(c.id)?.sender_role === 'buyer' && (!c.last_viewed_buyer_at || new Date(latestByConversation.get(c.id)?.created_at).getTime() > new Date(c.last_viewed_buyer_at).getTime()), licenses: undefined }));
       return res.json({ ok: true, conversations, sync });
     } catch (e) { console.error('Chat conversation list:', e.code || e.message); return res.status(500).json({ ok: false, message: 'Não foi possível carregar as conversas.' }); }
   });
