@@ -34,9 +34,9 @@ module.exports=function(app,{supabase,jwt,env,mode,authOwner,verificarAdmin,safe
   const {error}=await supabase.from('billing_signups').update({asaas_checkout_id:checkout.id,checkout_url}).eq('id',order.id);if(error)throw error;
   res.json({ok:true,order_id:order.id,checkout_url});
  }));
- async function findOrder(req){if(!['signup','renewal'].includes(req.params.kind)||!UUID.test(req.params.id||''))fail('Pagamento não encontrado.',404);const table=req.params.kind==='signup'?'billing_signups':'billing_batches';const {data,error}=await supabase.from(table).select('*').eq('id',req.params.id).eq('owner_id',req.billingUser.id).eq('environment',mode).maybeSingle();if(error)throw error;if(!data)fail('Pagamento não encontrado.',404);return data;}
+ async function findOrder(req){if(!['signup','renewal'].includes(req.params.kind)||!UUID.test(req.params.id||''))fail('Pagamento não encontrado.',404);const table=req.params.kind==='signup'?'billing_signups':'billing_batches';const {data,error}=await supabase.from(table).select('*').eq('id',req.params.id).eq('owner_id',req.billingUser.id).in('environment',mode==='production'&&req.params.kind==='signup'?['production','sandbox']:[mode]).maybeSingle();if(error)throw error;if(!data)fail('Pagamento não encontrado.',404);return data;}
  app.post('/api/portal/billing/result/:kind/:id/reconcile',authOwner,resultLimiter,safe(async(req,res)=>{
-  const order=await findOrder(req);if(order.status==='pending'&&order.asaas_checkout_id){const list=await provider('/payments?checkoutSession='+encodeURIComponent(order.asaas_checkout_id)+'&limit=100');if(list.hasMore)fail('O pagamento ainda está sendo conferido.',503);for(const payment of list.data||[]){if(['CONFIRMED','RECEIVED'].includes(payment.status))await applyPayment({id:'return_'+crypto.createHash('sha256').update(mode+':'+order.id+':'+payment.id).digest('hex'),event:'PAYMENT_CONFIRMED'},payment.id);}}res.json({ok:true});
+  const order=await findOrder(req);if(order.environment===mode&&order.status==='pending'&&order.asaas_checkout_id){const list=await provider('/payments?checkoutSession='+encodeURIComponent(order.asaas_checkout_id)+'&limit=100');if(list.hasMore)fail('O pagamento ainda está sendo conferido.',503);for(const payment of list.data||[]){if(['CONFIRMED','RECEIVED'].includes(payment.status))await applyPayment({id:'return_'+crypto.createHash('sha256').update(mode+':'+order.id+':'+payment.id).digest('hex'),event:'PAYMENT_CONFIRMED'},payment.id);}}res.json({ok:true});
  }));
  app.get('/api/portal/billing/result/:kind/:id',authOwner,safe(async(req,res)=>{
   const order=await findOrder(req);let licenses=[];
@@ -47,7 +47,7 @@ module.exports=function(app,{supabase,jwt,env,mode,authOwner,verificarAdmin,safe
   }
   const {data:reviews,error}=await supabase.from('billing_webhook_events').select('id').eq(req.params.kind==='signup'?'signup_id':'batch_id',order.id).eq('status','review').limit(1);if(error)throw error;
   const needsReview=!!reviews?.length||order.status==='review';
-  res.json({ok:true,kind:req.params.kind,id:order.id,status:needsReview?'review':order.status,total:order.expected_total,company_name:order.quote.company?.nome||null,paid_at:order.paid_at,licenses:needsReview?[]:licenses});
+  res.json({ok:true,kind:req.params.kind,id:order.id,sandbox:order.environment==='sandbox',status:needsReview?'review':order.status,total:order.expected_total,company_name:order.quote.company?.nome||null,paid_at:order.paid_at,licenses:needsReview?[]:licenses});
  }));
  app.get('/api/admin/billing/signups',verificarAdmin,safe(async(req,res)=>{const {data,error}=await supabase.from('billing_signups').select('id,quote,period,expected_total,status,environment,created_at,paid_at,creation_error,license_id,portal_users(nome,email)').order('created_at',{ascending:false}).limit(100);if(error)throw error;res.json({ok:true,orders:data||[]});}));
 };
