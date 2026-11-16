@@ -1,6 +1,15 @@
 (() => {
  'use strict';
  let latestUrl=null;
+ const cacheKey=()=>currentUser?.id?'mlsh_avatar_'+String(currentUser.id):'';
+ function remember(url){
+  const key=cacheKey();if(!key)return;
+  try{if(url)localStorage.setItem(key,url);else localStorage.removeItem(key);}catch(_){}
+ }
+ function restore(){
+  const key=cacheKey();if(!key)return;
+  try{const cached=localStorage.getItem(key);if(cached)paint(cached);}catch(_){}
+ }
  function paint(url){
   latestUrl=url||null;
   const node=document.getElementById('sideAvatar');
@@ -16,9 +25,13 @@
  }
  async function refresh(){
   if(!token||!currentUser)return;
+  const userId=String(currentUser.id);
   try{
    const response=await api('/api/portal/profile-avatar');
-   if(currentUser)paint(response.avatar_url);
+   if(String(currentUser?.id)!==userId)return;
+   const url=response.avatar_url||null;
+   if(url!==latestUrl)paint(url);
+   remember(url);
   }catch(error){console.error('Não foi possível obter a foto do perfil:',error.message);}
  }
  async function selectPhoto(){
@@ -47,7 +60,7 @@
     const response=await fetch('/api/portal/profile-avatar',{method:'PUT',headers:{Authorization:'Bearer '+token,'Content-Type':'image/webp'},body:blob});
     const data=await response.json().catch(()=>({}));
     if(!response.ok)throw new Error(data.message||'Falha ao salvar foto.');
-    paint(data.avatar_url);
+    paint(data.avatar_url);remember(data.avatar_url);
     if(status)status.textContent='Foto salva! Ela aparecerá para todos os subusuários quando atualizarem o portal.';
     toast('Foto atualizada para toda a equipe!');
    }catch(e){if(status)status.textContent=e.message;toast(e.message);}
@@ -72,5 +85,5 @@
   avatar.style.cursor=currentUser?.role==='support_agent'?'default':'pointer';
   avatar.onclick=()=>{if(currentUser?.role!=='support_agent')navigate('settings');};
  }
- window.mlshProfileAvatar={refresh,mount,bindSidebar,paint};
+ window.mlshProfileAvatar={refresh,mount,bindSidebar,paint,restore};
 })();

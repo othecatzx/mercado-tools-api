@@ -15,7 +15,7 @@ module.exports=function registerProfileAvatar(app,{supabase,authPortal,authPorta
     return res.status(400).json({ok:false,error:'invalid_image',message:'Escolha uma imagem WebP válida de até 1 MB.'});
    }
    const objectPath=req.portalUserId+'/avatar.webp';
-   const {error:uploadError}=await supabase.storage.from('portal-avatars').upload(objectPath,image,{contentType:'image/webp',cacheControl:'60',upsert:true});
+   const {error:uploadError}=await supabase.storage.from('portal-avatars').upload(objectPath,image,{contentType:'image/webp',cacheControl:'3600',upsert:true});
    if(uploadError)throw uploadError;
    const {data:link}=supabase.storage.from('portal-avatars').getPublicUrl(objectPath);
    const avatar_url=link.publicUrl+'?v='+Date.now();

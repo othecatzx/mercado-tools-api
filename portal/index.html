@@ -625,7 +625,7 @@ function showAuth(which='login'){ delete document.documentElement.dataset.authCh
 function menuKeyForPage(page){return page==='shipping-free'?'shipping':page==='vendas'||page==='operational-report'?'orders':page}
  function agentHasMenu(menus,page){const key=menuKeyForPage(page);if(page==='team'&&!(currentUser?.user_management_permissions||[]).includes('users.view'))return false;return menus.has(key)||((page==='vendas'||page==='operational-report')&&menus.has('sales'))}
  function showApp(){ try{const paymentReturn=sessionStorage.getItem('mlsh_payment_return');if(paymentReturn&&/^\/portal\/pagamento\.html\?/.test(paymentReturn)){sessionStorage.removeItem('mlsh_payment_return');location.assign(paymentReturn);return;}}catch(e){} delete document.documentElement.dataset.authCheck; $('authView').classList.add('hidden');$('appView').classList.remove('hidden');updateUserUI();const isAgent=currentUser?.role==='support_agent';if(isAgent){const allowed=new Set(Array.isArray(currentUser.menu_permissions)?currentUser.menu_permissions:['chat']);document.querySelectorAll('.sidebar .nav').forEach(nav=>{const items=[...nav.querySelectorAll('.nav-item')];items.forEach(item=>item.classList.toggle('hidden',!agentHasMenu(allowed,item.dataset.page)||(item.dataset.page==='bling-dimensions'&&!(currentUser.bling_permissions||[]).some(p=>['bling.dimensions.view','bling.dimensions.manage'].includes(p)))));const label=nav.previousElementSibling;if(label?.classList.contains('nav-label'))label.classList.toggle('hidden',!items.some(item=>agentHasMenu(allowed,item.dataset.page)))});document.querySelectorAll('.side-help').forEach(el=>el.classList.add('hidden'));document.querySelectorAll('.nav-item').forEach(el=>el.classList.remove('active'));const firstAllowedPage=['overview','licenses','devices','vendas','operational-report','sales','shipping','codes','team','chat','bling-entries','bling-labels','bling-integrations','bling-dimensions'].find(page=>agentHasMenu(allowed,page));currentPage=agentHasMenu(allowed,currentPage)?currentPage:(firstAllowedPage||'chat');document.querySelector(`.nav-item[data-page="${currentPage}"]`)?.classList.add('active')}else{document.querySelectorAll('.nav-label,.nav-item,.side-help').forEach(el=>el.classList.remove('hidden'))}$('topAddLicense').classList.toggle('hidden',isAgent);navigate(currentPage);applyLicenseMenus(); }
-function updateUserUI(){if(!currentUser)return;const name=currentUser.nome||'Cliente';$('sideName').textContent=name;$('sideEmail').textContent=currentUser.email||'';$('sideAvatar').textContent=name.trim().charAt(0).toUpperCase();window.mlshProfileAvatar?.bindSidebar();window.mlshProfileAvatar?.refresh()}
+function updateUserUI(){if(!currentUser)return;const name=currentUser.nome||'Cliente';$('sideName').textContent=name;$('sideEmail').textContent=currentUser.email||'';$('sideAvatar').textContent=name.trim().charAt(0).toUpperCase();window.mlshProfileAvatar?.bindSidebar();window.mlshProfileAvatar?.restore();window.mlshProfileAvatar?.refresh()}
 async function refreshDashboard(){
   const [d,c]=await Promise.all([
     api('/api/portal/dashboard'),
@@ -1399,7 +1399,7 @@ function dimEditor(item,rename){if(!dimCanManage())return;const root=$('dimModal
 </script>
 <script src="/portal/chat-extras.js?v=4"></script>
 <script src="/portal/team-admin-ui.js?v=3"></script>
-<script src="/portal/profile-avatar-ui.js?v=1"></script>
+<script src="/portal/profile-avatar-ui.js?v=2"></script>
 </body></html>
 <style>
 /* Correção de superfícies da página Vendas no tema escuro */
