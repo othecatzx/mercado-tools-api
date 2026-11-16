@@ -15,17 +15,27 @@
     root.querySelector('#mlshGateAuthorize').onclick=async ()=>{
       if(!field.value)return field.focus();
       const button=root.querySelector('#mlshGateAuthorize');
-      button.disabled=true;root.querySelector('#mlshGateError').textContent='';
+      const feedback=root.querySelector('#mlshGateError');
+      const originalText=button.innerHTML;
+      button.disabled=true;
+      button.setAttribute('aria-busy','true');
+      button.innerHTML='<span class="mlsh-loader" aria-hidden="true"></span> Autorizando…';
+      feedback.innerHTML='<span class="small muted" role="status">Verificando senha administrativa…</span>';
       try {
         const result=await api('/api/portal/team-admin-authorize',{method:'POST',body:JSON.stringify({challenge,admin_password:field.value})});
-        field.value='';root.remove();
+        field.value='';
+        feedback.innerHTML='<span class="small muted" role="status">Autorizado! Carregando seu painel…</span>';
         token=result.token;localStorage.setItem('mlsh_portal_token',token);
         currentUser=result.user;
-        await refreshDashboard();showApp();
+        await refreshDashboard();root.remove();showApp();
       } catch (error) {
         root.querySelector('#mlshGateError').innerHTML='<div class="alert error">'+escapeText(error.message)+'</div>';
         field.value='';field.focus();
-      } finally {button.disabled=false;}
+      } finally {
+        button.disabled=false;
+        button.removeAttribute('aria-busy');
+        button.innerHTML=originalText;
+      }
     };
     field.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();root.querySelector('#mlshGateAuthorize').click();}});
   }
