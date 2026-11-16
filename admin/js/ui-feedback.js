@@ -24,7 +24,9 @@
   `;
   document.head.appendChild(style);
   function ensureStack(){let el=document.querySelector('.mlsh-toast-stack');if(!el){el=document.createElement('div');el.className='mlsh-toast-stack';document.body.appendChild(el)}return el}
+  let lastToastAt=0;
   window.showToast=function(message,kind='info'){
+    lastToastAt=Date.now();
     const msg=String(message?.message||message||'Operação concluída.');
     kind=['success','error','info','warning'].includes(kind)?kind:/erro|falha|não foi possível|inválid|negad/i.test(msg)?'error':/sucesso|removid|alterad|salv|atualizad|criad|gerad/i.test(msg)?'success':'info';
     const el=document.createElement('div');el.className='mlsh-toast';el.dataset.kind=kind;el.setAttribute('role',kind==='error'?'alert':'status');
@@ -35,6 +37,29 @@
     const dismiss=()=>{clearTimeout(timer);el.remove()};close.onclick=dismiss;el.append(ico,body,close);ensureStack().appendChild(el);
     const timer=setTimeout(dismiss,kind==='error'?7500:4500);return el;
   };
+  // Indicador compartilhado das alterações no admin. Usa somente respostas confirmadas da API.
+  window.adminSaveFeedback={
+    start(){
+      const focused=document.activeElement;
+      const button=focused?.closest?.('button[type=submit],button')||(focused?.form?.querySelector?.('button[type=submit]')||null);
+      if(!button||button.disabled||button.dataset.adminSaving==='1')return null;
+      const oldHtml=button.innerHTML;
+      button.dataset.adminSaving='1';
+      button.disabled=true;
+      button.setAttribute('aria-busy','true');
+      const spinner=document.createElement('span');spinner.className='mlsh-saving-spinner';spinner.setAttribute('aria-hidden','true');
+      button.replaceChildren(spinner,document.createTextNode(' Salvando…'));
+      return ()=>{if(!button.isConnected)return;button.innerHTML=oldHtml;button.disabled=false;button.removeAttribute('aria-busy');delete button.dataset.adminSaving};
+    },
+    result(ok,info=''){
+      const stamped=Date.now();
+      setTimeout(()=>{
+        if(lastToastAt>stamped)return;
+        window.showToast(ok?'Alterações salvas com sucesso.':info||'Não foi possível salvar. Tente novamente.',ok?'success':'error');
+      },650);
+    }
+  };
+  style.textContent+='.mlsh-saving-spinner{display:inline-block;width:13px;height:13px;vertical-align:-2px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:mlsh-save-spin .65s linear infinite}@keyframes mlsh-save-spin{to{transform:rotate(360deg)}}';
   window.showConfirmModal=function(message,options={}){
     return new Promise(resolve=>{
       const settings=typeof message==='object'&&message!==null?message:{...options,message};

@@ -46,35 +46,38 @@ if (adminUser.email) {
 // =========================
 
 async function apiFetch(url, options = {}) {
-
-    const response = await fetch(
-        `${API_URL}${url}`,
-        {
+    const method=String(options.method||'GET').toUpperCase();
+    const changing=['POST','PUT','PATCH','DELETE'].includes(method);
+    const feedback=changing&&url.startsWith('/api/admin/')?window.adminSaveFeedback:null;
+    const restore=feedback?.start()||null;
+    try {
+        const response = await fetch(`${API_URL}${url}`,{
             ...options,
-
-            headers: {
-                "Content-Type": "application/json",
-
-                "Authorization": `Bearer ${token}`,
-
-                ...(options.headers || {})
+            headers:{
+                "Content-Type":"application/json",
+                "Authorization":`Bearer ${token}`,
+                ...(options.headers||{})
             }
+        });
+        if(response.status===401){
+            localStorage.removeItem("admin_token");
+            localStorage.removeItem("admin_user");
+            window.location.href="login.html";
+            return null;
         }
-    );
-
-
-    if (response.status === 401) {
-
-        localStorage.removeItem("admin_token");
-        localStorage.removeItem("admin_user");
-
-        window.location.href = "login.html";
-
-        return null;
+        if(feedback){
+            // Ler uma cópia não consome o JSON que será lido pela página.
+            const result=await response.clone().json().catch(()=>({}));
+            const success=response.ok&&result.ok!==false&&result.success!==false;
+            feedback.result(success,success?'':result.message||result.reason||result.error||'Falha ao salvar.');
+        }
+        return response;
+    } catch(error){
+        if(feedback)feedback.result(false,'Falha na conexão. Nenhuma confirmação de salvamento foi recebida.');
+        throw error;
+    } finally {
+        if(restore)restore();
     }
-
-
-    return response;
 }
 
 
