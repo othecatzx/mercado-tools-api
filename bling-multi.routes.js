@@ -49,41 +49,69 @@ module.exports = function registerBlingMulti(app,{supabase,jwt}) {
   async function conn(owner,id){const c=await db(supabase.from('bling_connections').select('*').eq('portal_user_id',owner).eq('id',id).maybeSingle());if(!c)throw Error('Conexão não encontrada');return c;}
   // Uma fila por conexao evita bursts locais; 600ms deixa margem abaixo de 3 req/s.
   // O limite do Bling pode ser compartilhado com outras integracoes da mesma conta.
-  const blingQueues=new Map(), refreshFlights=new Map();
+  const blingQueues=new Map(), refreshFlights=new Map(), cooldowns=new Map(), enrichFlights=new Map();
   const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
-  function retryWait(error,attempt){
+  const limitedError=(remaining,key)=>{
+    const err=new Error('Bling temporariamente limitado. Aguarde '+Math.ceil(remaining/1000)+' segundos antes de tentar novamente.');
+    err.response={status:429,headers:{'retry-after':String(Math.ceil(remaining/1000))}};
+    err.blingCooldown=true;
+    return err;
+  };
+  function checkCooldown(key){
+    const until=cooldowns.get(key)||0;
+    if(Date.now()<until)throw limitedError(until-Date.now(),key);
+    if(until)cooldowns.delete(key);
+  }
+  function setCooldown(key,error,minMs){
     const header=error.response?.headers?.['retry-after'];
     const numeric=Number(header);
-    const date=header && !Number.isFinite(numeric)?Date.parse(header):NaN;
-    const headerMs=Number.isFinite(numeric)&&numeric>=0?numeric*1000:Number.isFinite(date)?Math.max(0,date-Date.now()):0;
-    return Math.min(15000,Math.max(1200*2**attempt,headerMs)+Math.round(Math.random()*250));
+    const date=header&&!Number.isFinite(numeric)?Date.parse(header):NaN;
+    const retryMs=Number.isFinite(numeric)&&numeric>=0?numeric*1000:Number.isFinite(date)?Math.max(0,date-Date.now()):0;
+    const duration=Math.min(3600000,Math.max(minMs,retryMs));
+    cooldowns.set(key,Math.max(cooldowns.get(key)||0,Date.now()+duration));
+    console.warn('Bling cooldown ativado',{scope:key,seconds:Math.ceil(duration/1000)});
   }
+  // Serializa e espaca chamadas de TODAS as contas neste processo; evita rajadas
+  // entre diferentes contas e operacoes de OAuth no mesmo IP do Render.
+  let nextBlingRequestAt=0, nextOauthRequestAt=0;
   function queueBling(key,operation){
-    const previous=blingQueues.get(key)||Promise.resolve();
+    const previous=blingQueues.get('global')||Promise.resolve();
     const running=previous.catch(()=>{}).then(async()=>{
-      await sleep(600);
+      checkCooldown(key);
+      const scheduledAt=Math.max(Date.now(),nextBlingRequestAt,key==='oauth'?nextOauthRequestAt:0);
+      const delay=Math.max(0,scheduledAt-Date.now());
+      nextBlingRequestAt=scheduledAt+750;
+      // OAuth possui limite proprio: manter no maximo ~10 chamadas/minuto.
+      if(key==='oauth')nextOauthRequestAt=scheduledAt+6000;
+      if(delay)await sleep(delay);
+      checkCooldown(key);
       return operation();
     });
     const tail=running.catch(()=>{});
-    blingQueues.set(key,tail);
-    void tail.then(()=>{if(blingQueues.get(key)===tail)blingQueues.delete(key);});
+    blingQueues.set('global',tail);
+    void tail.then(()=>{if(blingQueues.get('global')===tail)blingQueues.delete('global');});
     return running;
   }
-  async function blingRetry(operation,label,{attempts=3}={}){
+  async function blingRetry(operation,label,{attempts=2,cooldownKey='api'}={}){
+    checkCooldown(cooldownKey);
     for(let i=0;i<attempts;i++){
       try{return await operation();}
       catch(error){
-        if(error.response?.status!==429||i===attempts-1)throw error;
-        const delay=retryWait(error,i);
-        console.warn('Bling 429: aguardando antes de tentar novamente',{operation:label,attempt:i+1,delayMs:delay});
-        await sleep(delay);
+        if(error.blingCooldown)throw error;
+        if(error.response?.status!==429)throw error;
+        // Evita insistir no IP enquanto o provedor recusa as requisicoes.
+        setCooldown(cooldownKey,error,cooldownKey==='oauth'?60*60*1000:60*1000);
+        console.warn('Bling 429',{operation:label,attempt:i+1});
+        throw error;
       }
     }
   }
+  // Nunca repetir automaticamente o mesmo authorization_code: e de uso unico
+  // e expira rapidamente. A proxima tentativa exige uma nova autorizacao.
   const tokenRequest=async params=>blingRetry(()=>queueBling('oauth',async()=>{
     const r=await axios.post(BASE+'/oauth/token',new URLSearchParams(params).toString(),{headers:{Authorization:'Basic '+Buffer.from(clientId()+':'+secret()).toString('base64'), 'Content-Type':'application/x-www-form-urlencoded','Accept':'1.0'},timeout:10000});
     return r.data;
-  }), 'oauth/token',{attempts:3});
+  }), 'oauth/token',{attempts:1,cooldownKey:'oauth'});
   async function refresh(c){
     if(new Date(c.expires_at).getTime()>Date.now()+90000)return decrypt(c.access_token_enc);
     if(refreshFlights.has(c.id))return refreshFlights.get(c.id);
@@ -100,23 +128,26 @@ module.exports = function registerBlingMulti(app,{supabase,jwt}) {
     refreshFlights.set(c.id,work);
     try{return await work}finally{if(refreshFlights.get(c.id)===work)refreshFlights.delete(c.id);}
   }
-  const blingGet=async(c,path)=>blingRetry(()=>queueBling('connection:'+c.id,async()=>{
-    const token=await refresh(c);
-    return (await axios.get(BASE+path,{headers:{Authorization:'Bearer '+token},timeout:15000})).data?.data;
-  }), 'GET '+path,{attempts:3});
+  const blingGet=async(c,path)=>{
+    checkCooldown('api');
+    const token=await refresh(c); // renovação fora da fila: evita deadlock com oauth/token
+    return blingRetry(()=>queueBling('api',async()=>
+      (await axios.get(BASE+path,{headers:{Authorization:'Bearer '+token},timeout:15000})).data?.data
+    ), 'GET '+path,{attempts:1,cooldownKey:'api'});
+  };
   app.get('/api/portal/bling/connections',auth,safe(async(req,res)=>res.json({connections:(await list(req.owner)).filter(c=>req.blingIsOwner||req.blingAllowedIds.includes(String(c.id)))})));
-  app.post('/api/portal/bling/connect',auth,safe(async(req,res)=>{if(!clientId()||!secret())return res.status(503).json({message:'OAuth Bling não configurado no servidor'});const id=req.body?.id||null;if(id)await conn(req.owner,id);const state=crypto.randomBytes(24).toString('hex');await db(supabase.from('bling_oauth_states').insert({state_hash:crypto.createHash('sha256').update(state).digest('hex'),portal_user_id:req.owner,connection_id:id,expires_at:new Date(Date.now()+5*60*1000).toISOString()}));res.json({url:AUTHORIZE+'?'+new URLSearchParams({response_type:'code',client_id:clientId(),state})});}));
+  app.post('/api/portal/bling/connect',auth,safe(async(req,res)=>{try{checkCooldown('oauth')}catch(e){return res.status(429).json({message:e.message})}if(!clientId()||!secret())return res.status(503).json({message:'OAuth Bling não configurado no servidor'});const id=req.body?.id||null;if(id)await conn(req.owner,id);const state=crypto.randomBytes(24).toString('hex');await db(supabase.from('bling_oauth_states').insert({state_hash:crypto.createHash('sha256').update(state).digest('hex'),portal_user_id:req.owner,connection_id:id,expires_at:new Date(Date.now()+5*60*1000).toISOString()}));res.json({url:AUTHORIZE+'?'+new URLSearchParams({response_type:'code',client_id:clientId(),state})});}));
   app.get('/api/portal/bling/callback',safe(async(req,res)=>{
     const hash=crypto.createHash('sha256').update(String(req.query.state||'')).digest('hex');
     // Nao consumir o state antes de confirmar a troca do codigo e persistir os tokens.
     const st=await db(supabase.from('bling_oauth_states').select('*').eq('state_hash',hash).maybeSingle());
     if(!st||new Date(st.expires_at)<new Date()||!req.query.code)return res.status(400).send('Autorização inválida ou expirada. Inicie uma nova conexão pelo portal.');
     let t;
-    try{t=await tokenRequest({grant_type:'authorization_code',code:String(req.query.code)});}
+    try{checkCooldown('oauth');t=await tokenRequest({grant_type:'authorization_code',code:String(req.query.code)});}
     catch(e){
       if(e.response?.status===429){
         console.warn('Bling OAuth: limite de requisicoes ao trocar codigo de autorizacao');
-        return res.status(429).send('O Bling limitou temporariamente as solicitações (429). Aguarde alguns minutos e inicie uma nova reconexão no portal. A conexão anterior não foi removida.');
+        return res.status(429).send('O Bling limitou a autenticação (429). O sistema interrompeu as novas tentativas por até 60 minutos para proteger a integração. A conexão anterior foi preservada.');
       }
       if([400,401].includes(e.response?.status)){
         console.warn('Bling OAuth: codigo invalido ou expirado',{status:e.response.status});
@@ -194,6 +225,12 @@ module.exports = function registerBlingMulti(app,{supabase,jwt}) {
   // O webhook de estoque não envia SKU nem nome. Não inventamos esses campos.
   app.post('/api/portal/bling/entries/enrich',auth,safe(async(req,res)=>{
     const id=String(req.body?.connection_id||'');
+    if(!id)return res.status(400).json({message:'Informe a conexão Bling.'});
+    try{checkCooldown('api')}catch(e){return res.status(429).json({message:e.message})}
+    const flightKey=req.owner+':'+id;
+    if(enrichFlights.has(flightKey))return res.status(409).json({message:'A sincronização desta conta já está em andamento.'});
+    enrichFlights.set(flightKey,true);
+    try{
     const c=await conn(req.owner,id);
     if(c.status!=='connected')return res.status(409).json({message:'Conexão Bling desconectada'});
     const rows=await db(supabase.from('bling_stock_entries')
@@ -231,6 +268,7 @@ module.exports = function registerBlingMulti(app,{supabase,jwt}) {
     }
     await db(supabase.from('bling_connections').update({last_sync_at:new Date().toISOString()}).eq('id',id));
     res.json({enriched,missingSku,attempted:rows.length,uniqueProducts:groups.size,failures:failures.slice(0,5)});
+    }finally{enrichFlights.delete(flightKey);}
   }));
   app.use((err,req,res,next)=>{
     if(!req.path.includes('/bling/'))return next(err);
