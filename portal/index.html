@@ -599,7 +599,7 @@ function applyTheme(theme){const chosen=theme==='dark'?'dark':'light';document.d
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function toast(message){$('toastRoot').innerHTML=`<div class="toast">${esc(message)}</div>`;setTimeout(()=>$('toastRoot').innerHTML='',2800)}
 async function api(path,options={}){
- const isPublicAuth=path==='/api/portal/login'||path==='/api/portal/register';
+ const isPublicAuth=path==='/api/portal/login'||path==='/api/portal/register'||path==='/api/portal/team-admin-authorize';
  const requestToken=isPublicAuth?'':token;
  const headers={'Content-Type':'application/json',...(options.headers||{})};
  if(requestToken)headers.Authorization='Bearer '+requestToken;

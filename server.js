@@ -86,7 +86,7 @@ const supabaseEan = createClient(
 // ACCESS_CONTROL_V1 — valida contas e versão da sessão antes de todas as rotas privadas do portal.
 // A verificação central cobre também Bling, dimensões, atendimento e outras APIs /api/portal.
 app.use('/api/portal', async (req, res, next) => {
-    if (req.path === '/login' || req.path === '/register' || req.path === '/bling/callback') return next();
+    if (req.path === '/login' || req.path === '/register' || req.path === '/bling/callback' || req.path === '/team-admin-authorize') return next();
     const match = /^Bearer\s+(.+)$/i.exec(req.headers.authorization || '');
     // Deixa as rotas existentes decidirem sobre requisições sem autenticação.
     if (!match) return next();

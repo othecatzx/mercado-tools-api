@@ -15,7 +15,7 @@ async function entitlements(supabase,principal){
 }
 module.exports=function registerPortalLicenseAccess(app,{supabase}){
  app.use('/api/portal',async(req,res,next)=>{
-  if(['/login','/register','/bling/callback'].includes(req.path))return next();
+  if(['/login','/register','/bling/callback','/team-admin-authorize'].includes(req.path))return next();
   if(!req.portalPrincipal)return res.status(401).json({ok:false,error:'auth_required',message:'Entre na sua conta para continuar.'});
   try{
    const access=await entitlements(supabase,req.portalPrincipal);req.portalLicenseAccess=access;
