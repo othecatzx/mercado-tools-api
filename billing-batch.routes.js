@@ -12,12 +12,12 @@ module.exports=function registerBatchBilling(app,{supabase,jwt,env,mode,authOwne
  }
  async function available(){const config=await runtime();return mode==='production'&&!!config?.enabled&&!!authHash(config)&&!!env.ASAAS_API_KEY;}
  app.get('/api/portal/billing',authOwner,safe(async(req,res)=>{
-  const {data:product,error}=await supabase.from('billing_product').select('name,monthly_price,semiannual_price,annual_price').eq('id',true).single();if(error)throw error;
-  res.json({ok:true,product:product.name,periods:[{months:1,label:'Mensal',configured:product.monthly_price!==null},{months:6,label:'Semestral',configured:product.semiannual_price!==null},{months:12,label:'Anual',configured:product.annual_price!==null}],licenses:await ownedLicenses(req.billingUser.id),purchases_enabled:await available()});
+  const [{data:product,error},{data:periods,error:periodError}]=await Promise.all([supabase.from('billing_product').select('name').eq('id',true).single(),supabase.from('billing_periods').select('months,label,price').eq('enabled',true).order('months')]);if(error||periodError)throw error||periodError;
+  res.json({ok:true,product:product.name,periods:(periods||[]).map(p=>({months:p.months,label:p.label,configured:true})),licenses:await ownedLicenses(req.billingUser.id),purchases_enabled:await available()});
  }));
  app.post('/api/portal/billing/quote',authOwner,safe(async(req,res)=>{
   const ids=req.body?.license_ids,period=Number(req.body?.period);
-  if(!Array.isArray(ids)||ids.length<1||ids.length>100||ids.some(id=>!UUID.test(id))||![1,6,12].includes(period))fail('Selecione empresas e período válidos.');
+  if(!Array.isArray(ids)||ids.length<1||ids.length>100||ids.some(id=>!UUID.test(id))||!Number.isInteger(period)||period<1||period>36)fail('Selecione empresas e período válidos.');
   const quote=await rpc('mlsh_batch_quote',{p_owner:req.billingUser.id,p_ids:ids,p_period:period});
   const signed=jwt.sign({type:'billing_quote',owner:req.billingUser.id,license_ids:ids,period,hash:quoteHash(quote)},env.JWT_SECRET,{expiresIn:'10m'});
   res.json({ok:true,quote,quote_token:signed});
@@ -47,12 +47,12 @@ module.exports=function registerBatchBilling(app,{supabase,jwt,env,mode,authOwne
  }));
  app.post('/api/checkout',authOwner,safe(async(req,res)=>res.status(410).json({ok:false,message:'Use a renovação de licenças em lote no portal.'})));
  app.get('/api/admin/billing',verificarAdmin,safe(async(req,res)=>{
-  const [{data:product,error:a},{data:batches,error:b},{data:reviews,error:c}]=await Promise.all([
+  const [{data:product,error:a},{data:batches,error:b},{data:reviews,error:c},{data:periods,error:d}]=await Promise.all([
    supabase.from('billing_product').select('*').eq('id',true).single(),
    supabase.from('billing_batches').select('id,owner_id,quote,target_date,expected_total,status,environment,created_at,paid_at,creation_error,portal_users(nome,email)').order('created_at',{ascending:false}).limit(100),
-   supabase.from('billing_webhook_events').select('id,event,status,reason,batch_id,created_at').eq('status','review').order('created_at',{ascending:false}).limit(50)
-  ]);if(a||b||c)throw a||b||c;
-  const config=await runtime();res.json({ok:true,product,batches:batches||[],reviews:reviews||[],environment:mode,purchases_enabled:!!config?.enabled,production_ready:mode==='production'&&!!authHash(config)&&!!env.ASAAS_API_KEY});
+   supabase.from('billing_webhook_events').select('id,event,status,reason,batch_id,created_at').eq('status','review').order('created_at',{ascending:false}).limit(50),supabase.from('billing_periods').select('months,label,price,enabled').order('months')
+  ]);if(a||b||c||d)throw a||b||c||d;
+  const config=await runtime();res.json({ok:true,product,periods:periods||[],batches:batches||[],reviews:reviews||[],environment:mode,purchases_enabled:!!config?.enabled,production_ready:mode==='production'&&!!authHash(config)&&!!env.ASAAS_API_KEY});
  }));
  app.put('/api/admin/billing/product',verificarAdmin,safe(async(req,res)=>{
   const fields=['monthly_price','semiannual_price','annual_price'],updates={};
@@ -60,6 +60,23 @@ module.exports=function registerBatchBilling(app,{supabase,jwt,env,mode,authOwne
   const {data:current,error}=await supabase.from('billing_product').select('version').eq('id',true).single();if(error)throw error;
   const {data,error:saveError}=await supabase.from('billing_product').update({...updates,version:current.version+1,updated_at:new Date().toISOString()}).eq('id',true).eq('version',current.version).select('*').maybeSingle();if(saveError)throw saveError;if(!data)fail('A configuração mudou. Atualize a página e salve novamente.',409);
   res.json({ok:true,product:data});
+ }));
+ app.put('/api/admin/billing/periods',verificarAdmin,safe(async(req,res)=>{
+  const periods=req.body?.periods;
+  if(!Array.isArray(periods)||periods.length>36||!periods.some(p=>p.enabled))fail('Mantenha pelo menos um período ativo.');
+  const seen=new Set();
+  for(const p of periods){
+   if(!Number.isInteger(p.months)||p.months<1||p.months>36||seen.has(p.months)||typeof p.label!=='string'||p.label.trim().length<2||p.label.trim().length>40||typeof p.enabled!=='boolean'||!Number.isFinite(p.price)||p.price<=0||p.price>999999||Math.abs(p.price*100-Math.round(p.price*100))>.00001)fail('Confira os meses, nomes e preços dos períodos.');
+   seen.add(p.months);
+  }
+  const {data:current,error:readError}=await supabase.from('billing_periods').select('months');
+  if(readError)throw readError;
+  const rows=periods.map(p=>({months:p.months,label:p.label.trim(),price:p.price,enabled:p.enabled,updated_at:new Date().toISOString()}));
+  if(rows.length){const {error}=await supabase.from('billing_periods').upsert(rows,{onConflict:'months'});if(error)throw error;}
+  const removed=(current||[]).filter(p=>!seen.has(p.months)).map(p=>p.months);
+  if(removed.length){const {error}=await supabase.from('billing_periods').delete().in('months',removed);if(error)throw error;}
+  const {data:product,error:productError}=await supabase.from('billing_product').select('version').eq('id',true).single();if(productError)throw productError;const {data:updated,error:versionError}=await supabase.from('billing_product').update({version:product.version+1,updated_at:new Date().toISOString()}).eq('id',true).eq('version',product.version).select('version').maybeSingle();if(versionError)throw versionError;if(!updated)fail('A configuração foi alterada. Atualize e salve novamente.',409);
+  res.json({ok:true});
  }));
  app.put('/api/admin/billing/availability',verificarAdmin,safe(async(req,res)=>{
   if(typeof req.body?.enabled!=='boolean')fail('Configuração inválida.');
