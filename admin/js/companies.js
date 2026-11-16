@@ -667,7 +667,7 @@ const companiesPage = {
 
 
         const confirmed =
-            confirm(
+            await showConfirmModal(
                 `Deseja ${action} a empresa "${company?.nome || ""}"?`
             );
 
@@ -716,7 +716,7 @@ const companiesPage = {
 
             console.error(error);
 
-            alert(
+            showToast(
                 error.message ||
                 "Não foi possível alterar o status."
             );

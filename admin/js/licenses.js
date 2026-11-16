@@ -378,7 +378,7 @@ const licensesPage = {
 
 
         const confirmed =
-            confirm(
+            await showConfirmModal(
                 `Deseja ${action} esta licença?`
             );
 
@@ -426,7 +426,7 @@ const licensesPage = {
 
             console.error(error);
 
-            alert(
+            showToast(
                 "Não foi possível alterar o status da licença."
             );
         }
@@ -667,7 +667,7 @@ async updateLicense(id, modal) {
         !vencimento
     ) {
 
-        alert(
+        showToast(
             "Preencha todos os campos."
         );
 
@@ -680,7 +680,7 @@ async updateLicense(id, modal) {
         new Date(inicio)
     ) {
 
-        alert(
+        showToast(
             "O vencimento precisa ser posterior ao início."
         );
 
@@ -744,7 +744,7 @@ async updateLicense(id, modal) {
         await this.load();
 
 
-        alert(
+        showToast(
             "Licença atualizada com sucesso!"
         );
 
@@ -753,7 +753,7 @@ async updateLicense(id, modal) {
 
         console.error(error);
 
-        alert(
+        showToast(
             error.message ||
             "Não foi possível atualizar a licença."
         );
@@ -786,7 +786,7 @@ async updateLicense(id, modal) {
 
         if (!companies.length) {
 
-            alert(
+            showToast(
                 "Não existem empresas cadastradas."
             );
 
@@ -965,7 +965,7 @@ async updateLicense(id, modal) {
         document.body.appendChild(modal);
 
         
-document.getElementById("generateLicenseKey").addEventListener("click",async()=>{const button=document.getElementById("generateLicenseKey");button.disabled=true;try{const response=await apiFetch('/api/admin/license-key');if(!response)return;const data=await response.json();if(!response.ok||!data.ok)throw Error(data.message||'Nao foi possivel gerar a chave.');document.getElementById("licenseKey").value=data.key;}catch(error){alert(error.message);}finally{button.disabled=false;}});
+document.getElementById("generateLicenseKey").addEventListener("click",async()=>{const button=document.getElementById("generateLicenseKey");button.disabled=true;try{const response=await apiFetch('/api/admin/license-key');if(!response)return;const data=await response.json();if(!response.ok||!data.ok)throw Error(data.message||'Nao foi possivel gerar a chave.');document.getElementById("licenseKey").value=data.key;}catch(error){showToast(error.message);}finally{button.disabled=false;}});
 
 
         document
@@ -1030,7 +1030,7 @@ document.getElementById("generateLicenseKey").addEventListener("click",async()=>
 
         console.error(error);
 
-        alert(
+        showToast(
             "Não foi possível carregar as empresas."
         );
     }
@@ -1067,7 +1067,7 @@ async createLicense(modal) {
         !vencimento
     ) {
 
-        alert(
+        showToast(
             "Preencha todos os campos."
         );
 
@@ -1080,7 +1080,7 @@ async createLicense(modal) {
         new Date(inicio)
     ) {
 
-        alert(
+        showToast(
             "O vencimento precisa ser posterior ao início."
         );
 
@@ -1144,7 +1144,7 @@ async createLicense(modal) {
         await this.load();
 
 
-        alert(
+        showToast(
             "Licença criada com sucesso!"
         );
 
@@ -1153,7 +1153,7 @@ async createLicense(modal) {
 
         console.error(error);
 
-        alert(
+        showToast(
             error.message ||
             "Não foi possível criar a licença."
         );

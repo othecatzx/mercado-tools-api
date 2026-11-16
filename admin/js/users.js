@@ -29,7 +29,7 @@ const usersPage = {
         const account=this.portalAccounts.find(u=>u.type===type&&u.id===id);
         if(!account)return;
         const action=revoked?'REVOGAR':'RESTAURAR';
-        if(!confirm(`${action} acesso ao portal de ${account.nome} (${account.email})?${revoked?'\nTodas as sessões abertas serão invalidadas.':''}`))return;
+        if(!await showConfirmModal(`${action} acesso ao portal de ${account.nome} (${account.email})?${revoked?'\nTodas as sessões abertas serão invalidadas.':''}`))return;
         try{
             const response=await apiFetch(`/api/admin/portal-access/${encodeURIComponent(type)}/${encodeURIComponent(id)}`,{
                 method:'PATCH',body:JSON.stringify({revoked})
@@ -38,8 +38,8 @@ const usersPage = {
             const result=await response.json();
             if(!response.ok||!result.ok)throw Error(result.message||'Não foi possível alterar o acesso.');
             await this.loadPortalAccess();
-            alert(result.message||(revoked?'Acesso revogado. As sessões antigas não são mais válidas.':'Acesso restaurado. A pessoa precisará fazer login novamente.'));
-        }catch(e){alert(e.message);}
+            showToast(result.message||(revoked?'Acesso revogado. As sessões antigas não são mais válidas.':'Acesso restaurado. A pessoa precisará fazer login novamente.'));
+        }catch(e){showToast(e.message);}
     },
 
     async render() {
@@ -370,7 +370,7 @@ const usersPage = {
 
 
         if (
-            !confirm(
+            !await showConfirmModal(
                 `Deseja ${action} este usuário?`
             )
         ) {
@@ -418,7 +418,7 @@ const usersPage = {
 
             console.error(error);
 
-            alert(
+            showToast(
                 "Não foi possível alterar o status do usuário."
             );
         }
@@ -464,7 +464,7 @@ const usersPage = {
 
             if (!activeCompanies.length) {
 
-                alert(
+                showToast(
                     "Não existem empresas ativas cadastradas."
                 );
 
@@ -641,7 +641,7 @@ const usersPage = {
 
             console.error(error);
 
-            alert(
+            showToast(
                 "Não foi possível carregar as empresas."
             );
         }
@@ -677,7 +677,7 @@ const usersPage = {
             !email
         ) {
 
-            alert(
+            showToast(
                 "Preencha todos os campos."
             );
 
@@ -729,7 +729,7 @@ const usersPage = {
             await this.load();
 
 
-            alert(
+            showToast(
                 "Usuário criado com sucesso!"
             );
 
@@ -738,7 +738,7 @@ const usersPage = {
 
             console.error(error);
 
-            alert(
+            showToast(
                 error.message ||
                 "Não foi possível criar o usuário."
             );
@@ -931,7 +931,7 @@ const usersPage = {
 
         if (!nome || !email) {
 
-            alert(
+            showToast(
                 "Preencha todos os campos."
             );
 
@@ -982,7 +982,7 @@ const usersPage = {
             await this.load();
 
 
-            alert(
+            showToast(
                 "Usuário atualizado com sucesso!"
             );
 
@@ -991,7 +991,7 @@ const usersPage = {
 
             console.error(error);
 
-            alert(
+            showToast(
                 error.message ||
                 "Não foi possível atualizar o usuário."
             );

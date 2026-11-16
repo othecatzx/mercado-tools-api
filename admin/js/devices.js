@@ -17,7 +17,7 @@ async saveName(deviceId) {
     const nome = input.value.trim();
 
     if (!nome) {
-        alert("Digite um nome para o dispositivo.");
+        showToast("Digite um nome para o dispositivo.");
         input.focus();
         return;
     }
@@ -52,11 +52,11 @@ async saveName(deviceId) {
 
         await this.load();
 
-        alert("Nome do dispositivo alterado com sucesso.");
+        showToast("Nome do dispositivo alterado com sucesso.");
 
     } catch (error) {
         console.error(error);
-        alert(
+        showToast(
             error.message ||
             "Não foi possível alterar o nome do dispositivo."
         );
@@ -528,7 +528,7 @@ async saveName(deviceId) {
 
             console.error(error);
 
-            alert(
+            showToast(
                 error.message ||
                 "Não foi possível carregar os usuários."
             );
@@ -966,7 +966,7 @@ async saveName(deviceId) {
         input.value.trim();
 
     if (!nome) {
-        alert(
+        showToast(
             "Digite um nome para o dispositivo."
         );
         return;
@@ -1010,7 +1010,7 @@ async saveName(deviceId) {
 
         console.error(error);
 
-        alert(
+        showToast(
             error.message ||
             "Não foi possível alterar o nome do dispositivo."
         );
@@ -1030,7 +1030,7 @@ async saveName(deviceId) {
         input.value.trim();
 
     if (!nome) {
-        alert(
+        showToast(
             "Digite um nome para o dispositivo."
         );
         return;
@@ -1073,7 +1073,7 @@ async saveName(deviceId) {
 
         console.error(error);
 
-        alert(
+        showToast(
             error.message ||
             "Não foi possível alterar o nome do dispositivo."
         );
@@ -1138,7 +1138,7 @@ async saveName(deviceId) {
 
             console.error(error);
 
-            alert(
+            showToast(
                 error.message ||
                 "Não foi possível alterar o usuário."
             );
@@ -1228,7 +1228,7 @@ async saveName(deviceId) {
         device.device_id ||
         "este dispositivo";
 
-    const confirmed = confirm(
+    const confirmed = await showConfirmModal(
         `Tem certeza que deseja remover "${nome}"?\n\n` +
         `O dispositivo será excluído permanentemente do banco de dados.\n\n` +
         `Essa ação não poderá ser desfeita.`
@@ -1259,13 +1259,13 @@ async saveName(deviceId) {
 
         await this.load();
 
-        alert("Dispositivo removido com sucesso.");
+        showToast("Dispositivo removido com sucesso.");
 
     } catch (error) {
 
         console.error(error);
 
-        alert(
+        showToast(
             error.message ||
             "Não foi possível remover o dispositivo."
         );
@@ -1285,7 +1285,7 @@ async removeDevice(id) {
         device.device_id ||
         "este dispositivo";
 
-    const confirmed = confirm(
+    const confirmed = await showConfirmModal(
         `Tem certeza que deseja remover "${nome}"?\n\n` +
         `O dispositivo será excluído permanentemente do banco de dados.\n\n` +
         `Essa ação não poderá ser desfeita.`
@@ -1317,7 +1317,7 @@ async removeDevice(id) {
 
         await this.load();
 
-        alert("Dispositivo removido com sucesso.");
+        showToast("Dispositivo removido com sucesso.");
 
     } catch (error) {
 
@@ -1326,7 +1326,7 @@ async removeDevice(id) {
             error
         );
 
-        alert(
+        showToast(
             error.message ||
             "Não foi possível remover o dispositivo."
         );
@@ -1347,7 +1347,7 @@ const nome =
     "este dispositivo";
 
 const confirmed =
-    confirm(
+    await showConfirmModal(
         `Deseja atualizar a página de "${nome}"?`
     );
 
@@ -1383,7 +1383,7 @@ try {
         );
     }
 
-    alert(
+    showToast(
         `Comando de atualização enviado para "${nome}".`
     );
 
@@ -1394,7 +1394,7 @@ try {
         error
     );
 
-    alert(
+    showToast(
         error.message ||
         "Não foi possível atualizar o dispositivo."
     );
@@ -1425,7 +1425,7 @@ async toggleMercadoLivreAdmin(id) {
             : "tornar este dispositivo o ADM do Mercado Livre";
 
     const confirmed =
-        confirm(
+        await showConfirmModal(
             `Deseja ${action}?\n\n` +
             `Dispositivo: ${nome}`
         );
@@ -1470,7 +1470,7 @@ async toggleMercadoLivreAdmin(id) {
 
         await this.load();
 
-        alert(
+        showToast(
             !isAdmin
                 ? `"${nome}" agora é o ADM do Mercado Livre.`
                 : `O dispositivo "${nome}" não é mais ADM do Mercado Livre.`
@@ -1483,7 +1483,7 @@ async toggleMercadoLivreAdmin(id) {
             error
         );
 
-        alert(
+        showToast(
             error.message ||
             "Não foi possível alterar o ADM do Mercado Livre."
         );
@@ -1526,7 +1526,7 @@ async toggleMercadoLivreAdmin(id) {
 
 
         const confirmed =
-            confirm(
+            await showConfirmModal(
                 `Deseja ${action} este dispositivo?`
             );
 
@@ -1576,7 +1576,7 @@ async toggleMercadoLivreAdmin(id) {
 
             console.error(error);
 
-            alert(
+            showToast(
                 error.message ||
                 "Não foi possível alterar o status do dispositivo."
             );
