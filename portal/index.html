@@ -1047,8 +1047,8 @@ async function loadShippingItems(preserveResult=false){
  finally{shippingLoading=false;if(shippingLoadTimer){clearInterval(shippingLoadTimer);shippingLoadTimer=null;}shippingLoadProgress=100;if(currentPage==='shipping')renderPage();}
 }
 async function applyShippingChanges(){
- const items=(shippingData?.items||[]).filter(i=>shippingSelected.has(i.id)&&!i.mandatory_free_shipping);if(!items.length)return;
- const mandatory=shippingSelected.size-items.length;const confirmText=`Alterar ${items.length} anúncio(s) ativos para frete por conta do comprador?${mandatory?`\n${mandatory} anúncio(s) com frete obrigatório serão ignorados.`:''}\n\nEssa ação será aplicada diretamente no Mercado Livre.`;if(!await showConfirmModal(confirmText))return;
+ const items=(shippingData?.items||[]).filter(i=>shippingSelected.has(i.id)&&!i.mandatory_free_shipping);if(!items.length){toast('Selecione ao menos um anúncio elegível para alterar o frete.');return;}
+ const mandatory=shippingSelected.size-items.length;const confirmText=`Alterar ${items.length} anúncio(s) ativos para frete por conta do comprador?${mandatory?`\n${mandatory} anúncio(s) com frete obrigatório serão ignorados.`:''}\n\nEssa ação será aplicada diretamente no Mercado Livre.`;let confirmed=false;try{if(typeof window.showConfirmModal!=='function')throw new Error('A janela de confirmação não carregou. Atualize a página com Ctrl+Shift+R.');confirmed=await window.showConfirmModal(confirmText,{title:'Confirmar alteração de frete',confirmText:'Alterar frete',cancelText:'Cancelar'});}catch(err){console.error('Falha ao confirmar alteração do frete:',err);toast(err?.message||'Não foi possível abrir a confirmação.');return;}if(!confirmed)return;
  const aggregate={success:[],failed:[],skipped:[]};const batchSize=10;const totalBatches=Math.ceil(items.length/batchSize);
  shippingProgress={current:0,total:totalBatches,success:0,failed:0,skipped:0,message:'Preparando alteração do frete…'};renderPage();
  for(let offset=0;offset<items.length;offset+=batchSize){
