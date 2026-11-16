@@ -123,7 +123,7 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
 
   const teamAdminGate = require('./team-admin-gate')(app, {supabase,jwt,bcrypt,getAgentAllowedLicenses});
 
-  require('./company-branding.routes')(app,{supabase,authPortal});
+  require('./profile-avatar.routes')(app,{supabase,authPortal,authPortalOrAgent});
 
   app.post('/api/portal/login', async (req, res) => {
     try {
