@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<link rel="icon" href="icon/icon.png" type="image/png">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>ML Support — Admin</title>
+
+    <script>document.documentElement.classList.add('admin-booting');</script>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/billing.css?v=1">
+    <style>
+      /* Não exibir conteúdo protegido antes de validar a sessão. */
+      html.admin-booting .app { visibility: hidden; }
+      #adminBootScreen { display: none; position: fixed; inset: 0; z-index: 10000;
+        align-items: center; justify-content: center; background: #0b111d; color: #e2e8f0;
+        font: 500 14px system-ui, sans-serif; text-align:center; padding:24px; }
+      html.admin-booting #adminBootScreen { display: flex; }
+      #adminBootScreen .boot-card { max-width:420px; }
+      #adminBootScreen .boot-spinner { display:block; width:30px; height:30px;
+        border:3px solid #343c54; border-top-color:#8a7bff; border-radius:50%;
+        animation: admin-spin .7s linear infinite; margin:0 auto 16px; }
+      #adminBootScreen .boot-actions { margin-top:16px; display:none; }
+      #adminBootScreen button { background:#6655e8; border:0; color:#fff;
+        padding:10px 14px; border-radius:9px; cursor:pointer; }
+      @keyframes admin-spin { to { transform:rotate(360deg); } }
+      @media (prefers-reduced-motion:reduce) { #adminBootScreen .boot-spinner{animation:none} }
+    </style>
+</head>
+
+<body>
+    <script>
+      // Segurança contra carregamento incompleto / JS em cache:
+      // nunca deixe a tela de verificação presa indefinidamente.
+      window.__adminBootWatchdog = setTimeout(() => {
+        if (!document.documentElement.classList.contains('admin-booting')) return;
+        const message = document.getElementById('adminBootMessage');
+        const actions = document.getElementById('adminBootActions');
+        const retry = document.getElementById('adminBootRetry');
+        if (message) message.textContent = 'Não foi possível iniciar o painel. Recarregue ou entre novamente.';
+        if (actions) actions.style.display = 'block';
+        if (retry) {
+          retry.textContent = 'Voltar ao login';
+          retry.onclick = () => { window.location.replace('login.html'); };
+        }
+      }, 10000);
+    </script>
+    <div id="adminBootScreen" role="status" aria-live="polite">
+      <div class="boot-card"><span class="boot-spinner" aria-hidden="true"></span>
+        <span id="adminBootMessage">Verificando acesso ao painel…</span>
+        <div class="boot-actions" id="adminBootActions"><button id="adminBootRetry" type="button">Tentar novamente</button></div>
+      </div>
+    </div>
+
+    <div class="app">
+
+        <!-- SIDEBAR -->
+        <aside class="sidebar">
+
+            <div class="brand">
+                <div class="brand-icon">ML</div>
+
+                <div>
+                    <strong>ML Support</strong>
+                    <span>Admin</span>
+                </div>
+            </div>
+
+            <nav class="menu">
+
+                <button class="menu-item active" data-page="dashboard">
+                    <span>▦</span>
+                    Dashboard
+                </button>
+
+                <button class="menu-item" data-page="companies">
+                    <span>▣</span>
+                    Empresas
+                </button>
+
+                <button class="menu-item" data-page="licenses">
+                    <span>🔑</span>
+                    Licenças
+                </button>
+
+                <button class="menu-item" data-page="users">
+                    <span>♙</span>
+                    Usuários
+                </button>
+                
+
+                <button class="menu-item" data-page="devices">
+                    <span>▤</span>
+                    Dispositivos
+                </button>
+
+                <button class="menu-item" data-page="billing"><span>＄</span>Pagamentos</button>
+
+                <button class="menu-item" data-page="logs">
+                    <span>☷</span>
+                    Logs
+                </button>
+
+            </nav>
+
+            <div class="sidebar-bottom">
+
+                <div class="admin-info">
+                    <div class="avatar" id="adminAvatar">A</div>
+
+                    <div>
+                        <strong id="adminName">Administrador</strong>
+                        <span id="adminEmail">admin</span>
+                    </div>
+                </div>
+
+                <button id="logoutButton" class="logout">
+                    ↪ Sair
+                </button>
+
+            </div>
+
+        </aside>
+
+
+        <!-- CONTEÚDO -->
+        <main class="main">
+
+            <header class="topbar">
+
+                <div>
+                    <h1 id="pageTitle">Dashboard</h1>
+                    <p id="pageDescription">
+                        Visão geral do sistema
+                    </p>
+                </div>
+
+                <div class="topbar-right">
+                    <div class="connection">
+                        <span></span>
+                        API online
+                    </div>
+                </div>
+
+            </header>
+
+
+            <section class="content" id="content">
+
+                <!-- DASHBOARD -->
+
+                <div id="dashboardPage">
+
+                    <div class="cards">
+
+                        <div class="card">
+                            <div class="card-icon">▣</div>
+
+                            <div>
+                                <span>Empresas</span>
+                                <strong id="companiesCount">—</strong>
+                            </div>
+                        </div>
+
+
+                        <div class="card">
+                            <div class="card-icon">🔑</div>
+
+                            <div>
+                                <span>Licenças</span>
+                                <strong id="licensesCount">—</strong>
+                            </div>
+                        </div>
+
+
+                        <div class="card">
+                            <div class="card-icon">♙</div>
+
+                            <div>
+                                <span>Usuários</span>
+                                <strong id="usersCount">—</strong>
+                            </div>
+                        </div>
+
+
+                        <div class="card">
+    <div class="card-icon">✓</div>
+    <div>
+        <span>Navegadores ativos</span>
+        <strong id="activeDevicesCount">—</strong>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-icon">!</div>
+    <div>
+        <span>Navegadores bloqueados</span>
+        <strong id="blockedDevicesCount">—</strong>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-icon">⏳</div>
+    <div>
+        <span>Licenças vencendo</span>
+        <strong id="expiringLicensesCount">—</strong>
+    </div>
+</div>
+
+                    </div>
+
+                    <div class="panel expiring-panel">
+    <div class="panel-header">
+        <div>
+            <h2>Licenças próximas do vencimento</h2>
+            <p>Licenças que vencem nos próximos 30 dias</p>
+        </div>
+    </div>
+
+    <div class="table-container">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Empresa</th>
+                    <th>Licença</th>
+                    <th>Vencimento</th>
+                    <th>Dias restantes</th>
+                </tr>
+            </thead>
+
+            <tbody id="expiringLicensesTable">
+                <tr>
+                    <td colspan="4" style="text-align: center;">
+                        Carregando...
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="panel recent-activity-panel">
+    <div class="panel-header">
+        <div>
+            <h2>Atividade recente</h2>
+            <p>Últimos eventos registrados no sistema</p>
+        </div>
+    </div>
+
+    <div class="table-container">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Data</th>
+                    <th>Ação</th>
+                    <th>Empresa</th>
+                    <th>Dispositivo</th>
+                </tr>
+            </thead>
+
+            <tbody id="recentActivityTable">
+                <tr>
+                    <td colspan="4" style="text-align: center;">
+                        Carregando...
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+                    <div class="dashboard-grid">
+
+                        <div class="panel">
+
+                            <div class="panel-header">
+                                <div>
+                                    <h2>Bem-vindo ao painel</h2>
+                                    <p>
+                                        Gerencie empresas, licenças,
+                                        usuários e dispositivos.
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div class="quick-actions">
+
+                                <button
+                                    class="quick-action"
+                                    data-page="companies"
+                                >
+                                    <span>▣</span>
+                                    <div>
+                                        <strong>Empresas</strong>
+                                        <small>
+                                            Gerenciar clientes
+                                        </small>
+                                    </div>
+                                </button>
+
+
+                                <button
+                                    class="quick-action"
+                                    data-page="licenses"
+                                >
+                                    <span>🔑</span>
+                                    <div>
+                                        <strong>Licenças</strong>
+                                        <small>
+                                            Gerenciar acessos
+                                        </small>
+                                    </div>
+                                </button>
+
+
+                                <button
+                                    class="quick-action"
+                                    data-page="devices"
+                                >
+                                    <span>▤</span>
+                                    <div>
+                                        <strong>Dispositivos</strong>
+                                        <small>
+                                            Controlar dispositivos
+                                        </small>
+                                    </div>
+                                </button>
+
+                            </div>
+
+                        </div>
+
+
+                        <div class="panel">
+
+                            <div class="panel-header">
+                                <div>
+                                    <h2>Status da API</h2>
+                                    <p>Conexão com o backend</p>
+                                </div>
+                            </div>
+
+                            <div class="api-status">
+
+                                <div class="status-dot"></div>
+
+                                <div>
+                                    <strong>API conectada</strong>
+                                    <span>
+                                        Servidor funcionando normalmente
+                                    </span>
+                                </div>
+
+                            </div>
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+            </section>
+
+        </main>
+
+    </div>
+    <script src="js/companies.js"></script>
+    <script src="js/devices.js"></script>
+<script src="js/licenses.js?v=20261113-short-key-1"></script>
+<script src="js/users.js?v=admin-boot-fix-3"></script>
+<script src="js/logs.js"></script>
+<script src="js/billing.js?v=20261113-signup-1"></script>
+<script src="js/app.js?v=billing-batch-1"></script>
+
+</body>
+</html>
