@@ -47,20 +47,93 @@ module.exports = function registerBlingMulti(app,{supabase,jwt}) {
   async function db(q){const {data,error}=await q;if(error)throw error;return data;}
   const list=owner=>db(supabase.from('bling_connections').select('id,name,company_id,webhook_company_id,status,last_sync_at,created_at,expires_at').eq('portal_user_id',owner).order('created_at',{ascending:true}));
   async function conn(owner,id){const c=await db(supabase.from('bling_connections').select('*').eq('portal_user_id',owner).eq('id',id).maybeSingle());if(!c)throw Error('Conexão não encontrada');return c;}
-  const tokenRequest=async params=>{const r=await axios.post(BASE+'/oauth/token',new URLSearchParams(params).toString(),{headers:{Authorization:'Basic '+Buffer.from(clientId()+':'+secret()).toString('base64'), 'Content-Type':'application/x-www-form-urlencoded','Accept':'1.0'},timeout:10000});return r.data;};
-  async function refresh(c){if(new Date(c.expires_at).getTime()>Date.now()+90000)return decrypt(c.access_token_enc);const t=await tokenRequest({grant_type:'refresh_token',refresh_token:decrypt(c.refresh_token_enc)});const update={access_token_enc:encrypt(t.access_token),refresh_token_enc:encrypt(t.refresh_token),expires_at:new Date(Date.now()+(t.expires_in||21600)*1000).toISOString(),status:'connected'};await db(supabase.from('bling_connections').update(update).eq('id',c.id).eq('refresh_token_enc',c.refresh_token_enc));const latest=await db(supabase.from('bling_connections').select('*').eq('id',c.id).single());return decrypt(latest.access_token_enc);}
-  const blingGet=async(c,path)=>{const token=await refresh(c);return (await axios.get(BASE+path,{headers:{Authorization:'Bearer '+token},timeout:15000})).data?.data;};
+  // Uma fila por conexao evita bursts locais; 600ms deixa margem abaixo de 3 req/s.
+  // O limite do Bling pode ser compartilhado com outras integracoes da mesma conta.
+  const blingQueues=new Map(), refreshFlights=new Map();
+  const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+  function retryWait(error,attempt){
+    const header=error.response?.headers?.['retry-after'];
+    const numeric=Number(header);
+    const date=header && !Number.isFinite(numeric)?Date.parse(header):NaN;
+    const headerMs=Number.isFinite(numeric)&&numeric>=0?numeric*1000:Number.isFinite(date)?Math.max(0,date-Date.now()):0;
+    return Math.min(15000,Math.max(1200*2**attempt,headerMs)+Math.round(Math.random()*250));
+  }
+  function queueBling(key,operation){
+    const previous=blingQueues.get(key)||Promise.resolve();
+    const running=previous.catch(()=>{}).then(async()=>{
+      await sleep(600);
+      return operation();
+    });
+    const tail=running.catch(()=>{});
+    blingQueues.set(key,tail);
+    void tail.then(()=>{if(blingQueues.get(key)===tail)blingQueues.delete(key);});
+    return running;
+  }
+  async function blingRetry(operation,label,{attempts=3}={}){
+    for(let i=0;i<attempts;i++){
+      try{return await operation();}
+      catch(error){
+        if(error.response?.status!==429||i===attempts-1)throw error;
+        const delay=retryWait(error,i);
+        console.warn('Bling 429: aguardando antes de tentar novamente',{operation:label,attempt:i+1,delayMs:delay});
+        await sleep(delay);
+      }
+    }
+  }
+  const tokenRequest=async params=>blingRetry(()=>queueBling('oauth',async()=>{
+    const r=await axios.post(BASE+'/oauth/token',new URLSearchParams(params).toString(),{headers:{Authorization:'Basic '+Buffer.from(clientId()+':'+secret()).toString('base64'), 'Content-Type':'application/x-www-form-urlencoded','Accept':'1.0'},timeout:10000});
+    return r.data;
+  }), 'oauth/token',{attempts:3});
+  async function refresh(c){
+    if(new Date(c.expires_at).getTime()>Date.now()+90000)return decrypt(c.access_token_enc);
+    if(refreshFlights.has(c.id))return refreshFlights.get(c.id);
+    const work=(async()=>{
+      // Outro processo pode ja ter renovado o token desde que o registro foi carregado.
+      const latestBefore=await db(supabase.from('bling_connections').select('*').eq('id',c.id).single());
+      if(new Date(latestBefore.expires_at).getTime()>Date.now()+90000)return decrypt(latestBefore.access_token_enc);
+      const t=await tokenRequest({grant_type:'refresh_token',refresh_token:decrypt(latestBefore.refresh_token_enc)});
+      const update={access_token_enc:encrypt(t.access_token),refresh_token_enc:encrypt(t.refresh_token),expires_at:new Date(Date.now()+(t.expires_in||21600)*1000).toISOString(),status:'connected'};
+      await db(supabase.from('bling_connections').update(update).eq('id',c.id).eq('refresh_token_enc',latestBefore.refresh_token_enc));
+      const latest=await db(supabase.from('bling_connections').select('*').eq('id',c.id).single());
+      return decrypt(latest.access_token_enc);
+    })();
+    refreshFlights.set(c.id,work);
+    try{return await work}finally{if(refreshFlights.get(c.id)===work)refreshFlights.delete(c.id);}
+  }
+  const blingGet=async(c,path)=>blingRetry(()=>queueBling('connection:'+c.id,async()=>{
+    const token=await refresh(c);
+    return (await axios.get(BASE+path,{headers:{Authorization:'Bearer '+token},timeout:15000})).data?.data;
+  }), 'GET '+path,{attempts:3});
   app.get('/api/portal/bling/connections',auth,safe(async(req,res)=>res.json({connections:(await list(req.owner)).filter(c=>req.blingIsOwner||req.blingAllowedIds.includes(String(c.id)))})));
   app.post('/api/portal/bling/connect',auth,safe(async(req,res)=>{if(!clientId()||!secret())return res.status(503).json({message:'OAuth Bling não configurado no servidor'});const id=req.body?.id||null;if(id)await conn(req.owner,id);const state=crypto.randomBytes(24).toString('hex');await db(supabase.from('bling_oauth_states').insert({state_hash:crypto.createHash('sha256').update(state).digest('hex'),portal_user_id:req.owner,connection_id:id,expires_at:new Date(Date.now()+5*60*1000).toISOString()}));res.json({url:AUTHORIZE+'?'+new URLSearchParams({response_type:'code',client_id:clientId(),state})});}));
-  app.get('/api/portal/bling/callback',safe(async(req,res)=>{const hash=crypto.createHash('sha256').update(String(req.query.state||'')).digest('hex');const st=await db(supabase.from('bling_oauth_states').delete().eq('state_hash',hash).select('*').maybeSingle());if(!st||new Date(st.expires_at)<new Date()||!req.query.code)return res.status(400).send('Autorização inválida ou expirada.');const t=await tokenRequest({grant_type:'authorization_code',code:String(req.query.code)});// A conexão é identificada por UUID local, sem consultar dados cadastrais da empresa.
-    // O vínculo companyId para webhooks pode ser definido posteriormente pelo administrador.
+  app.get('/api/portal/bling/callback',safe(async(req,res)=>{
+    const hash=crypto.createHash('sha256').update(String(req.query.state||'')).digest('hex');
+    // Nao consumir o state antes de confirmar a troca do codigo e persistir os tokens.
+    const st=await db(supabase.from('bling_oauth_states').select('*').eq('state_hash',hash).maybeSingle());
+    if(!st||new Date(st.expires_at)<new Date()||!req.query.code)return res.status(400).send('Autorização inválida ou expirada. Inicie uma nova conexão pelo portal.');
+    let t;
+    try{t=await tokenRequest({grant_type:'authorization_code',code:String(req.query.code)});}
+    catch(e){
+      if(e.response?.status===429){
+        console.warn('Bling OAuth: limite de requisicoes ao trocar codigo de autorizacao');
+        return res.status(429).send('O Bling limitou temporariamente as solicitações (429). Aguarde alguns minutos e inicie uma nova reconexão no portal. A conexão anterior não foi removida.');
+      }
+      if([400,401].includes(e.response?.status)){
+        console.warn('Bling OAuth: codigo invalido ou expirado',{status:e.response.status});
+        return res.status(400).send('O Bling recusou a autorização. Inicie uma nova reconexão pelo portal.');
+      }
+      throw e;
+    }
     const payload={portal_user_id:st.portal_user_id,access_token_enc:encrypt(t.access_token),refresh_token_enc:encrypt(t.refresh_token),expires_at:new Date(Date.now()+(t.expires_in||21600)*1000).toISOString(),status:'connected'};
     if(st.connection_id){
-      const old=await conn(st.portal_user_id,st.connection_id);
-      await db(supabase.from('bling_connections').update(payload).eq('id',old.id));
+      await conn(st.portal_user_id,st.connection_id);
+      await db(supabase.from('bling_connections').update(payload).eq('id',st.connection_id).eq('portal_user_id',st.portal_user_id));
     }else{
       await db(supabase.from('bling_connections').insert({...payload,company_id:null,name:'Nova conexão Bling'}));
-    }res.redirect('/portal/?bling=connected');}));
+    }
+    await db(supabase.from('bling_oauth_states').delete().eq('state_hash',hash));
+    res.redirect('/portal/?bling=connected');
+  }));
   app.patch('/api/portal/bling/connections/:id',auth,safe(async(req,res)=>{await conn(req.owner,req.params.id);const name=String(req.body.name||'').trim();if(!name||name.length>100)return res.status(400).json({message:'Nome inválido'});const webhook_company_id=req.body.webhook_company_id===undefined?undefined:String(req.body.webhook_company_id||'').trim()||null;if(webhook_company_id&& !/^[a-z0-9-]{1,128}$/i.test(webhook_company_id))return res.status(400).json({message:'ID de webhook inválido'});await db(supabase.from('bling_connections').update({name,...(webhook_company_id!==undefined?{webhook_company_id}:{})}).eq('id',req.params.id));res.json({ok:true});}));
   app.delete('/api/portal/bling/connections/:id',auth,safe(async(req,res)=>{await conn(req.owner,req.params.id);await db(supabase.from('bling_connections').update({status:'disconnected',access_token_enc:null,refresh_token_enc:null}).eq('id',req.params.id));res.json({ok:true});}));
   app.get('/api/portal/bling/entries',auth,safe(async(req,res)=>{let q=supabase.from('bling_stock_entries').select('id,bling_connection_id,sku,product_name,image_url,quantity,occurred_at,bling_connections!inner(name,portal_user_id)').eq('bling_connections.portal_user_id',req.owner).order('occurred_at',{ascending:false}).limit(60);q=enforceConnectionScope(req,q);if(req.query.connection_id){await conn(req.owner,req.query.connection_id);q=q.eq('bling_connection_id',req.query.connection_id);}if(req.query.search){const s=String(req.query.search).slice(0,100).replace(/[%_,()]/g,'');q=q.or('sku.ilike.%'+s+'%,product_name.ilike.%'+s+'%');}res.json({entries:await db(q)});}));
@@ -126,38 +199,44 @@ module.exports = function registerBlingMulti(app,{supabase,jwt}) {
     const rows=await db(supabase.from('bling_stock_entries')
       .select('id,product_id').eq('bling_connection_id',id).is('sku',null)
       .order('occurred_at',{ascending:false}).limit(40));
+    // A mesma mercadoria pode gerar varias entradas: consultar o Bling somente uma vez por produto.
+    const groups=new Map();
+    for(const row of rows){const k=String(row.product_id);if(!groups.has(k))groups.set(k,[]);groups.get(k).push(row.id);}
     let enriched=0,missingSku=0;
     const failures=[];
-    for(const row of rows){
+    for(const [productId,rowIds] of groups){
       try{
-        const p=await blingGet(c,'/produtos/'+encodeURIComponent(row.product_id));
-        if(!p){failures.push({product_id:row.product_id,reason:'Produto não encontrado na resposta'});continue;}
+        const p=await blingGet(c,'/produtos/'+encodeURIComponent(productId));
+        if(!p){failures.push({product_id:productId,reason:'Produto não encontrado na resposta'});continue;}
         const sku=String(p.codigo||'').trim();
         const imageUrl=typeof p.imagemURL==='string'?p.imagemURL:null;
-        // Retornar a linha alterada: UPDATE sem .select() pode retornar sucesso
-        // mesmo quando nenhuma linha foi modificada (por exemplo, por RLS).
         const updated=await db(supabase.from('bling_stock_entries').update({
-          sku:sku||null,
-          product_name:p.nome||null,
-          image_url:imageUrl
-        }).eq('id',row.id).eq('bling_connection_id',id)
-          .select('id,sku,product_name,image_url').maybeSingle());
-        if(!updated){
-          failures.push({product_id:row.product_id,reason:'UPDATE no Supabase não retornou registro; verifique RLS, permissões e filtros'});
+          sku:sku||null,product_name:p.nome||null,image_url:imageUrl
+        }).in('id',rowIds).eq('bling_connection_id',id).select('id,sku,product_name'));
+        if(!updated || updated.length!==rowIds.length){
+          failures.push({product_id:productId,reason:'Alguns registros não foram atualizados no Supabase; verifique RLS e permissões'});
           continue;
         }
-        if(sku && updated.sku===sku) enriched++;
-        else if(!sku) missingSku++;
-        else failures.push({product_id:row.product_id,reason:'SKU retornado pelo Bling não foi persistido no Supabase'});
+        if(sku && updated.every(item=>item.sku===sku))enriched+=updated.length;
+        else if(!sku)missingSku+=updated.length;
+        else failures.push({product_id:productId,reason:'SKU não persistido no Supabase'});
       }catch(e){
         const status=e.response?.status||null;
         const reason=e.response?.data?.error?.description||e.response?.data?.error?.message||e.message;
-        failures.push({product_id:row.product_id,status,reason:String(reason).slice(0,180)});
-        console.error('Bling produto:',{status,productId:row.product_id,reason:String(reason).slice(0,180)});
+        failures.push({product_id:productId,status,reason:String(reason).slice(0,180)});
+        console.warn('Bling produto:',{status,productId,reason:String(reason).slice(0,180)});
+        // Se a conta segue limitada, parar o lote e deixar os demais pendentes.
+        if(status===429)break;
       }
     }
     await db(supabase.from('bling_connections').update({last_sync_at:new Date().toISOString()}).eq('id',id));
-    res.json({enriched,missingSku,attempted:rows.length,failures:failures.slice(0,5)});
+    res.json({enriched,missingSku,attempted:rows.length,uniqueProducts:groups.size,failures:failures.slice(0,5)});
   }));
-  app.use((err,req,res,next)=>{if(!req.path.includes('/bling/'))return next(err);console.error('Bling multi:',err.response?.status||err.message);if(!res.headersSent)res.status(500).json({message:'Falha na operação Bling. Verifique configuração e logs do servidor.'});else res.end();});
+  app.use((err,req,res,next)=>{
+    if(!req.path.includes('/bling/'))return next(err);
+    const status=err.response?.status;
+    console.error('Bling multi:',{operation:req.method+' '+req.path,status:status||null,message:status===429?'Limite de requisicoes no Bling':err.message});
+    if(!res.headersSent)res.status(status===429?429:500).json({message:status===429?'O Bling limitou as consultas temporariamente (429). Aguarde alguns minutos e tente novamente.':'Falha na operação Bling. Verifique configuração e logs do servidor.'});
+    else res.end();
+  });
 };
