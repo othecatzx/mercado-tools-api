@@ -51,3 +51,40 @@
 .mlsh-guide-teaser p{font-size:12px;color:#d6ddec;line-height:1.6;margin:4px 0 0}
 .mlsh-guide-teaser button{background:#fca311;color:#14213d;border:0;border-radius:10px;padding:12px 17px;font-size:12px;font-weight:900;cursor:pointer;white-space:nowrap}
 @media(max-width:650px){.mlsh-guide-teaser{flex-direction:column;align-items:flex-start}.mlsh-guide-teaser button{width:100%}}
+
+/* Destaque reforçado — guia de primeiros passos */
+.sidebar .mlsh-guide-menu{
+  background:linear-gradient(135deg,#fca311 0%,#ffc451 100%)!important;
+  color:#14213d!important;border:1px solid #ffd17e!important;
+  box-shadow:0 7px 19px rgba(252,163,17,.31)!important;
+  margin:4px 0 10px;min-height:52px;
+  transition:filter .18s ease,transform .18s ease!important
+}
+.sidebar .mlsh-guide-menu:hover,.sidebar .mlsh-guide-menu.active{
+  background:linear-gradient(135deg,#ffae21,#ffce63)!important;
+  color:#14213d!important;filter:brightness(1.05);transform:translateY(-1px)
+}
+.sidebar .mlsh-guide-menu .ico,
+.sidebar .mlsh-guide-menu .nav-text{color:#14213d!important;opacity:1!important}
+.sidebar .mlsh-guide-menu .nav-text{font-weight:900!important;line-height:1.35;font-size:12px}
+.sidebar .mlsh-guide-menu .ico{font-size:20px!important}
+.sidebar .mlsh-guide-menu .mlsh-guide-new{
+  color:#fff!important;background:#14213d!important;border:1px solid #14213d;
+  font-weight:900;font-size:9px;padding:5px 7px
+}
+.mlsh-guide-teaser{
+  background:linear-gradient(110deg,#14213d 0%,#1b3261 100%);
+  border:1px solid #fca31166;box-shadow:0 11px 28px rgba(20,33,61,.17);
+  padding:23px 26px;min-height:124px
+}
+.mlsh-guide-teaser-label{font-size:11px;font-weight:900;color:#ffb833;letter-spacing:1.4px}
+.mlsh-guide-teaser strong{font-size:clamp(16px,1.45vw,19px)!important;font-weight:900!important;line-height:1.35;color:#fff!important}
+.mlsh-guide-teaser p{font-size:13px!important;color:#edf2ff!important;margin-top:7px}
+.mlsh-guide-teaser button{
+  background:linear-gradient(135deg,#fca311,#ffc34f)!important;
+  color:#14213d!important;border:1px solid #ffd07b!important;
+  padding:14px 20px!important;border-radius:12px!important;font-weight:900!important;
+  box-shadow:0 7px 18px rgba(252,163,17,.25);transition:transform .18s,filter .18s
+}
+.mlsh-guide-teaser button:hover{transform:translateY(-2px);filter:brightness(1.06)}
+@media(max-width:650px){.mlsh-guide-teaser{padding:19px}.mlsh-guide-teaser button{width:100%}}

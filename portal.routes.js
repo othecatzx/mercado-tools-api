@@ -1387,12 +1387,19 @@ const codes = [...companies.entries()].map(([companyId, company]) => {
         if (error) throw error;
         devices = (data || []).map(d => ({ ...d, company_name: companyMap.get(d.company_id)?.nome || 'Empresa' }));
       }
+      let mlConnected = false;
+      if (companyIds.length) {
+        const { data: linkedMl, error: mlError } = await supabase.from('mercadolivre_accounts')
+          .select('id').in('company_id', companyIds).limit(1);
+        if (mlError) throw mlError;
+        mlConnected = Boolean(linkedMl?.length);
+      }
       const activeLicenses = licenses.filter(l => activeLicense(l)).length;
       const agentMenus = req.portalRole === 'support_agent' ? (req.supportAgent.menu_permissions || []) : null;
       const visibleLicenses = req.portalRole !== 'support_agent' || agentMenus.includes('licenses') ? licenses.map(l => ({ id: l.id, chave: l.chave, status: l.status, vencimento: l.vencimento, company_id: l.company_id, company: l.companies?.nome || 'Empresa não identificada', codigo_ml: activeLicense(l)?(l.companies?.codigo_ml || null):null, logo_url:l.companies?.logo_url || null })) : [];
       const visibleDevices = req.portalRole !== 'support_agent' || agentMenus.includes('devices') ? devices : [];
       const summary = req.portalRole === 'support_agent' && !agentMenus.includes('overview') ? { licenses: agentMenus.includes('licenses') ? visibleLicenses.length : 0, active_licenses: 0, companies: 0, devices: agentMenus.includes('devices') ? visibleDevices.length : 0, active_devices: 0 } : { licenses: licenses.length, active_licenses: activeLicenses, companies: companyIds.length, devices: devices.length, active_devices: devices.filter(d => d.status === 'active').length };
-      return res.json({ ok: true, summary, licenses: visibleLicenses, devices: visibleDevices,license_access:req.portalLicenseAccess });
+      return res.json({ ok: true, summary, licenses: visibleLicenses, devices: visibleDevices, ml_connected: mlConnected, license_access:req.portalLicenseAccess });
     } catch (error) {
       console.error('Portal dashboard error:', error.message);
       return res.status(500).json({ ok: false, error: 'server_error', message: 'Não foi possível carregar o painel.' });
