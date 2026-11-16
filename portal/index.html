@@ -694,7 +694,7 @@ function firstCompanyName(name){return String(name||'Empresa').trim().split(/\s+
 function initials(name){return String(name||'?').trim().split(/\s+/).slice(0,2).map(x=>x[0]).join('').toUpperCase()}
 function pageHead(eyebrow,title,desc,action=''){return `<div class="page-head"><div><div class="eyebrow">${eyebrow}</div><h1>${title}</h1><p>${desc}</p></div>${action?`<div class="actions">${action}</div>`:''}</div>`}
 function stat(label,value,icon,foot){return `<div class="stat-card"><div class="stat-top"><span>${label}</span><span class="stat-icon">${icon}</span></div><div class="stat-number">${value}</div><div class="stat-foot">${foot}</div></div>`}
-function licenseCard(l){const company=firstCompanyName(l.company?.nome||l.company||'Empresa');return `<article class="license-card"><div class="license-top"><div class="company-logo">${esc(initials(company))}</div><div class="license-title"><h3>${esc(company)}</h3><p>Licença ML SH Support</p></div>${statusBadge(l.status,l.vencimento)}</div><div class="license-key"><code>${esc(l.chave||'Chave não disponível')}</code><button class="mini-btn" data-copy="${esc(l.chave||'')}">▢ Copiar</button></div><div class="license-meta"><div><div class="meta-label">Vencimento</div><div class="meta-value">${fmtDate(l.vencimento)}</div></div><div><div class="meta-label">Adicionada ao portal</div><div class="meta-value">${fmtDate(l.added_at||l.created_at)}</div></div></div></article>`}
+function licenseCard(l){const company=firstCompanyName(l.company?.nome||l.company||'Empresa');const logo=l.company?.logo_url||l.logo_url;return `<article class="license-card"><div class="license-top"><div class="company-logo">${logo&&/^https:\/\//i.test(logo)?`<img src="${esc(logo)}" alt="Logo ${esc(company)}" style="width:100%;height:100%;object-fit:cover;border-radius:inherit">`:esc(initials(company))}</div><div class="license-title"><h3>${esc(company)}</h3><p>Licença ML SH Support</p>${currentUser?.role!=='support_agent'?`<button type="button" class="mini-btn" data-company-logo="${esc(l.company_id)}">📷 ${logo?'Alterar foto':'Adicionar foto'}</button>`:''}</div>${statusBadge(l.status,l.vencimento)}</div><div class="license-key"><code>${esc(l.chave||'Chave não disponível')}</code><button class="mini-btn" data-copy="${esc(l.chave||'')}">▢ Copiar</button></div><div class="license-meta"><div><div class="meta-label">Vencimento</div><div class="meta-value">${fmtDate(l.vencimento)}</div></div><div><div class="meta-label">Adicionada ao portal</div><div class="meta-value">${fmtDate(l.added_at||l.created_at)}</div></div></div></article>`}
 function emptyState(icon,title,desc,button=''){return `<div class="empty"><div class="empty-icon">${icon}</div><h3>${title}</h3><p>${desc}</p>${button}</div>`}
 
 
@@ -1399,6 +1399,7 @@ function dimEditor(item,rename){if(!dimCanManage())return;const root=$('dimModal
 </script>
 <script src="/portal/chat-extras.js?v=4"></script>
 <script src="/portal/team-admin-ui.js?v=3"></script>
+<script src="/portal/company-logo-ui.js?v=1"></script>
 </body></html>
 <style>
 /* Correção de superfícies da página Vendas no tema escuro */

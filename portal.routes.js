@@ -123,6 +123,8 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
 
   const teamAdminGate = require('./team-admin-gate')(app, {supabase,jwt,bcrypt,getAgentAllowedLicenses});
 
+  require('./company-branding.routes')(app,{supabase,authPortal});
+
   app.post('/api/portal/login', async (req, res) => {
     try {
       const email = String(req.body?.email || '').trim().toLowerCase();
@@ -201,13 +203,13 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
         const ids = req.agentAllowedLicenses.map(l => String(l.id));
         if (!ids.length) return res.json({ ok: true, licenses: [] });
         const { data, error } = await supabase.from('licenses')
-          .select('id,chave,status,inicio,vencimento,company_id,created_at,companies(id,nome,documento,status,codigo_ml)')
+          .select('id,chave,status,inicio,vencimento,company_id,created_at,companies(id,nome,documento,status,codigo_ml,logo_url)')
           .in('id', ids).order('created_at', { ascending: false });
         if (error) throw error;
-        return res.json({ ok: true, licenses: (data || []).map(l => ({ id:l.id, chave:l.chave, status:l.status, inicio:l.inicio, vencimento:l.vencimento, company_id:l.company_id, added_at:l.created_at, company:{ id:l.companies?.id, nome:l.companies?.nome || 'Empresa', documento:l.companies?.documento || null, status:l.companies?.status || 'unknown', codigo_ml:l.companies?.codigo_ml || null } })) });
+        return res.json({ ok: true, licenses: (data || []).map(l => ({ id:l.id, chave:l.chave, status:l.status, inicio:l.inicio, vencimento:l.vencimento, company_id:l.company_id, added_at:l.created_at, company:{ id:l.companies?.id, nome:l.companies?.nome || 'Empresa', documento:l.companies?.documento || null, status:l.companies?.status || 'unknown', codigo_ml:l.companies?.codigo_ml || null, logo_url:l.companies?.logo_url || null } })) });
       }
       const { data, error } = await supabase.from('portal_user_licenses')
-        .select('id,created_at,licenses(id,chave,status,inicio,vencimento,company_id,companies(id,nome,documento,status))')
+        .select('id,created_at,licenses(id,chave,status,inicio,vencimento,company_id,companies(id,nome,documento,status,logo_url))')
         .eq('user_id', req.portalUserId).order('created_at', { ascending: false });
       if (error) throw error;
       const licenses = (data || []).map(row => {
@@ -215,7 +217,7 @@ module.exports = function registerPortalRoutes(app, { supabase, jwt, bcrypt }) {
         const c = l.companies || {};
         return { link_id: row.id, added_at: row.created_at, id: l.id, chave: l.chave, status: l.status,
           inicio: l.inicio, vencimento: l.vencimento, company_id: l.company_id,
-          company: { id: c.id, nome: c.nome || 'Empresa não identificada', documento: c.documento || null, status: c.status || 'unknown', codigo_ml: c.codigo_ml || null } };
+          company: { id: c.id, nome: c.nome || 'Empresa não identificada', documento: c.documento || null, status: c.status || 'unknown', codigo_ml: c.codigo_ml || null, logo_url:c.logo_url || null } };
       });
       return res.json({ ok: true, licenses });
     } catch (error) {
@@ -1365,14 +1367,14 @@ const codes = [...companies.entries()].map(([companyId, company]) => {
         const ids = req.agentAllowedLicenses.map(l => String(l.id));
         if (ids.length) {
           const { data, error } = await supabase.from('licenses')
-            .select('id,chave,status,vencimento,company_id,created_at,companies(id,nome,status,codigo_ml)')
+            .select('id,chave,status,vencimento,company_id,created_at,companies(id,nome,status,codigo_ml,logo_url)')
             .in('id', ids).eq('status', 'active');
           if (error) throw error;
           licenses = data || [];
         }
       } else {
         const { data: links, error: linkError } = await supabase.from('portal_user_licenses')
-          .select('licenses(id,chave,status,vencimento,company_id,companies(id,nome,status,codigo_ml))').eq('user_id', req.portalUserId);
+          .select('licenses(id,chave,status,vencimento,company_id,companies(id,nome,status,codigo_ml,logo_url))').eq('user_id', req.portalUserId);
         if (linkError) throw linkError;
         licenses = (links || []).map(x => x.licenses).filter(Boolean);
       }
@@ -1387,7 +1389,7 @@ const codes = [...companies.entries()].map(([companyId, company]) => {
       }
       const activeLicenses = licenses.filter(l => activeLicense(l)).length;
       const agentMenus = req.portalRole === 'support_agent' ? (req.supportAgent.menu_permissions || []) : null;
-      const visibleLicenses = req.portalRole !== 'support_agent' || agentMenus.includes('licenses') ? licenses.map(l => ({ id: l.id, chave: l.chave, status: l.status, vencimento: l.vencimento, company_id: l.company_id, company: l.companies?.nome || 'Empresa não identificada', codigo_ml: activeLicense(l)?(l.companies?.codigo_ml || null):null })) : [];
+      const visibleLicenses = req.portalRole !== 'support_agent' || agentMenus.includes('licenses') ? licenses.map(l => ({ id: l.id, chave: l.chave, status: l.status, vencimento: l.vencimento, company_id: l.company_id, company: l.companies?.nome || 'Empresa não identificada', codigo_ml: activeLicense(l)?(l.companies?.codigo_ml || null):null, logo_url:l.companies?.logo_url || null })) : [];
       const visibleDevices = req.portalRole !== 'support_agent' || agentMenus.includes('devices') ? devices : [];
       const summary = req.portalRole === 'support_agent' && !agentMenus.includes('overview') ? { licenses: agentMenus.includes('licenses') ? visibleLicenses.length : 0, active_licenses: 0, companies: 0, devices: agentMenus.includes('devices') ? visibleDevices.length : 0, active_devices: 0 } : { licenses: licenses.length, active_licenses: activeLicenses, companies: companyIds.length, devices: devices.length, active_devices: devices.filter(d => d.status === 'active').length };
       return res.json({ ok: true, summary, licenses: visibleLicenses, devices: visibleDevices,license_access:req.portalLicenseAccess });

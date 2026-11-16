@@ -1,6 +1,6 @@
 function activeLicense(license,now=Date.now()) {return !!license&&license.status==='active'&&license.companies?.status==='active'&&(!license.vencimento||(Number.isFinite(Date.parse(license.vencimento))&&Date.parse(license.vencimento)>now));}
 function enforceCompanyMap(req,companies){if(req.portalLicenseAccess){const ids=new Set(req.portalLicenseAccess.company_ids);for(const id of companies.keys())if(!ids.has(String(id)))companies.delete(id);}return companies;}
-function metadataPath(path){return ['/me','/dashboard','/licenses','/license-access'].includes(path)||path==='/billing'||path.startsWith('/billing/');}
+function metadataPath(path){return ['/me','/dashboard','/licenses','/license-access'].includes(path)||path==='/billing'||path.startsWith('/billing/')||path.startsWith('/company-logo/');}
 async function entitlements(supabase,principal){
  let owner=principal.portal_user_id,agent=null;
  if(principal.type==='support_agent'){
