@@ -64,8 +64,8 @@
   background:linear-gradient(135deg,#ffae21,#ffce63)!important;
   color:#14213d!important;filter:brightness(1.05);transform:translateY(-1px)
 }
-.sidebar .mlsh-guide-menu .ico,
-.sidebar .mlsh-guide-menu .nav-text{color:#14213d!important;opacity:1!important}
+.sidebar .mlsh-guide-menu .ico{color:#14213d!important;opacity:1!important}
+.sidebar .mlsh-guide-menu .nav-text{color:#ffffff!important;opacity:1!important;text-shadow:0 1px 2px rgba(20,33,61,.32)}
 .sidebar .mlsh-guide-menu .nav-text{font-weight:900!important;line-height:1.35;font-size:12px}
 .sidebar .mlsh-guide-menu .ico{font-size:20px!important}
 .sidebar .mlsh-guide-menu .mlsh-guide-new{
