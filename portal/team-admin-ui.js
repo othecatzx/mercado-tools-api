@@ -7,18 +7,18 @@
     root.className='modal-backdrop';
     root.id='mlshAdminGate';
     root.style.zIndex='999999';
-    root.innerHTML='<section class="modal" role="dialog" aria-modal="true" aria-labelledby="adminGateTitle"><div class="modal-head"><h2 id="adminGateTitle">Autorização do supervisor</h2></div><div class="modal-body"><p class="small muted">Seu login foi reconhecido. Solicite ao gerente ou supervisor que digite a senha administrativa para liberar o acesso.</p><form id="mlshAdminGateForm"><div class="field"><label for="mlshGatePassword">Senha administrativa</label><input id="mlshGatePassword" type="password" autocomplete="off" required></div><div id="mlshGateError" role="alert" aria-live="polite"></div><div class="modal-actions"><button class="btn btn-ghost" type="button" id="mlshGateCancel">Cancelar</button><button class="btn btn-primary" type="submit">Autorizar acesso</button></div></form></div></section>';
+    root.innerHTML='<section class="modal" role="dialog" aria-modal="true" aria-labelledby="adminGateTitle"><div class="modal-head"><h2 id="adminGateTitle">Autorização do supervisor</h2></div><div class="modal-body"><p class="small muted">Seu login foi reconhecido. Solicite ao gerente ou supervisor que digite a senha administrativa para liberar o acesso.</p><div id="mlshAdminGateForm"><div class="field"><label for="mlshGatePassword">Senha administrativa</label><input id="mlshGatePassword" type="password" autocomplete="one-time-code" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" required></div><div id="mlshGateError" role="alert" aria-live="polite"></div><div class="modal-actions"><button class="btn btn-ghost" type="button" id="mlshGateCancel">Cancelar</button><button class="btn btn-primary" type="button" id="mlshGateAuthorize">Autorizar acesso</button></div></div></section>';
     document.body.appendChild(root);
     const field=root.querySelector('#mlshGatePassword');
     field.focus();
     root.querySelector('#mlshGateCancel').onclick=()=>{root.remove();document.querySelector('#loginPassword')?.focus();};
-    root.querySelector('form').onsubmit=async event=>{
-      event.preventDefault();
-      const button=root.querySelector('button[type="submit"]');
+    root.querySelector('#mlshGateAuthorize').onclick=async ()=>{
+      if(!field.value)return field.focus();
+      const button=root.querySelector('#mlshGateAuthorize');
       button.disabled=true;root.querySelector('#mlshGateError').textContent='';
       try {
         const result=await api('/api/portal/team-admin-authorize',{method:'POST',body:JSON.stringify({challenge,admin_password:field.value})});
-        root.remove();
+        field.value='';root.remove();
         token=result.token;localStorage.setItem('mlsh_portal_token',token);
         currentUser=result.user;
         await refreshDashboard();showApp();
@@ -27,6 +27,7 @@
         field.value='';field.focus();
       } finally {button.disabled=false;}
     };
+    field.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();root.querySelector('#mlshGateAuthorize').click();}});
   }
   async function mountTeamSettings() {
     const container=document.querySelector('#agentModalRoot');
