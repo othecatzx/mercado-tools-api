@@ -161,6 +161,10 @@ function openResultPanel(){
  overlay.hidden=false;document.body.classList.add('bulk-results-open');
  $('bulkResultClose')?.focus();
 }
+function finishBulkResults(){
+ closeResultPanel();
+ clearBulkList();
+}
 function closeResultPanel(){
  resultPanelOpen=false;
  const overlay=$('bulkResultOverlay');if(overlay)overlay.hidden=true;
@@ -189,7 +193,7 @@ function markup(){
 }
 function init(){
  $('bulkResultClose')?.addEventListener('click',closeResultPanel);
- $('bulkResultContinue')?.addEventListener('click',closeResultPanel);
+ $('bulkResultContinue')?.addEventListener('click',finishBulkResults);
  $('bulkResultDownload')?.addEventListener('click',downloadResultReport);
  $('bulkResultOverlay')?.addEventListener('click',e=>{if(e.target.id==='bulkResultOverlay')closeResultPanel()});
  $('bulkOpen')?.addEventListener('click',openBulkModal);
