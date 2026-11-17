@@ -671,7 +671,7 @@ const codes = [...companies.entries()].map(([companyId, company]) => {
               if (!skuMatch) continue;
             }
             found++;
-            if (!items.some(x => x.id === item.id && String(x.company_id) === String(account.company_id))) items.push({ input: entry.input, id: item.id, company_id: account.company_id, company_name: account.company_name, title: item.title, status: item.status, price: item.price, free_shipping: item.shipping?.free_shipping === true });
+            if (!items.some(x => x.id === item.id && String(x.company_id) === String(account.company_id))) items.push({ input: entry.input, id: item.id, company_id: account.company_id, company_name: account.company_name, title: item.title, status: item.status, price: item.price, image: item.thumbnail || item.pictures?.[0]?.secure_url || '', free_shipping: item.shipping?.free_shipping === true });
           }
         } catch (e) { errors.push(account.company_name + ': ' + e.message); }
       }
@@ -724,6 +724,93 @@ const codes = [...companies.entries()].map(([companyId, company]) => {
       }
       return res.json({ok:true,success,failed,skipped});
     } catch(e){return res.status(500).json({ok:false,message:e.message})}
+  });
+
+  // Editor em massa - apenas campos explicitamente autorizados.
+  app.post('/api/portal/bulk-editor/preview', authPortalOrAgent, async (req,res) => {
+    try {
+      if (!scopedMenuAllowed(req,'shipping')) return res.status(403).json({ok:false,message:'Acesso nao autorizado.'});
+      const inputs=req.body?.inputs;
+      if(!Array.isArray(inputs)||!inputs.length||inputs.length>100)return res.status(400).json({ok:false,message:'Informe de 1 a 100 codigos.'});
+      const accounts=await getShippingAccounts(req);
+      const found=await shippingFreeMatches([...new Set(inputs.map(x=>String(x)))],accounts);
+      const accountTokens=new Map();
+      for(const a of accounts){try{accountTokens.set(String(a.ml_user_id),await ensureMlToken(a))}catch(e){}}
+      const items=[],failed=[...found.failed];
+      for(const row of found.items){
+        try{
+          let account=null,token=null,item=null;
+          for(const candidate of accounts.filter(a=>String(a.company_id)===String(row.company_id))){
+            const currentToken=accountTokens.get(String(candidate.ml_user_id));
+            if(!currentToken)continue;
+            try{
+              const currentItem=await shippingFreeFetchItem(row.id,currentToken);
+              if(String(currentItem.seller_id)===String(candidate.ml_user_id)){
+                account=candidate;token=currentToken;item=currentItem;break;
+              }
+            }catch(e){if(!String(e.message).includes('404'))throw e}
+          }
+          if(!account)throw new Error('Anuncio nao pertence a nenhuma conta autorizada.');
+          const descriptionResponse=await fetch('https://api.mercadolibre.com/items/'+encodeURIComponent(item.id)+'/description',{headers:{Authorization:'Bearer '+token,Accept:'application/json'}});
+          const descriptionData=descriptionResponse.ok?await descriptionResponse.json().catch(()=>({})):{};
+          const sku=item.seller_custom_field||(item.attributes||[]).find(a=>a.id==='SELLER_SKU')?.value_name||(item.variations||[])[0]?.seller_custom_field||'';
+          items.push({input:row.input,id:item.id,company_id:row.company_id,company_name:row.company_name,sku,title:item.title||'',price:item.price,available_quantity:item.available_quantity,status:item.status,listing_type_id:item.listing_type_id||'',description:descriptionData.plain_text||descriptionData.text||'',image:item.thumbnail||item.pictures?.[0]?.secure_url||'',has_variations:!!item.variations?.length});
+        }catch(e){failed.push({input:row.input,error:e.message})}
+      }
+      res.json({ok:true,items,failed});
+    }catch(e){res.status(500).json({ok:false,message:e.message})}
+  });
+  app.post('/api/portal/bulk-editor/apply',authPortalOrAgent,async(req,res)=>{
+    try{
+      if(!scopedMenuAllowed(req,'shipping'))return res.status(403).json({ok:false,message:'Acesso nao autorizado.'});
+      const requested=req.body?.items;
+      if(!Array.isArray(requested)||!requested.length||requested.length>50)return res.status(400).json({ok:false,message:'Maximo de 50 anuncios por lote.'});
+      const accounts=await getShippingAccounts(req),results=[];
+      const fields=new Set(['title','price','available_quantity','status','listing_type_id','description']);
+      for(const input of requested){
+        const id=String(input?.id||'').toUpperCase(),companyId=String(input?.company_id||'');
+        const changes=input?.changes;
+        if(!/^MLB\d+$/.test(id)||!changes||Array.isArray(changes)||typeof changes!=='object'||!Object.keys(changes).length||Object.keys(changes).some(k=>!fields.has(k))){
+          results.push({id,status:'error',message:'Campos ou identificador invalidos.'});continue;
+        }
+        try{
+          const candidates=accounts.filter(a=>String(a.company_id)===companyId);
+          if(!candidates.length)throw new Error('Loja nao autorizada.');
+          let item=null,token=null;
+          for(const a of candidates){
+            const t=await ensureMlToken(a);const fetched=await shippingFreeFetchItem(id,t);
+            if(String(fetched.seller_id)===String(a.ml_user_id)){item=fetched;token=t;break}
+          }
+          if(!item)throw new Error('Anuncio nao pertence a loja.');
+          const body={};
+          for(const [k,raw] of Object.entries(changes)){
+            if(k==='description')continue;
+            if(k==='title'){const v=String(raw).trim();if(!v||v.length>60)throw new Error('Titulo deve ter entre 1 e 60 caracteres.');body.title=v}
+            if(k==='price'){const v=Number(raw);if(!Number.isFinite(v)||v<=0)throw new Error('Preco invalido.');body.price=v}
+            if(k==='available_quantity'){const v=Number(raw);if(!Number.isSafeInteger(v)||v<0)throw new Error('Estoque invalido.');if(item.variations?.length)throw new Error('Estoque por variacao: edite cada variacao individualmente.');body.available_quantity=v}
+            if(k==='status'){if(!['active','paused'].includes(String(raw)))throw new Error('Status nao permitido.');body.status=String(raw)}
+            if(k==='listing_type_id'){const v=String(raw).trim();if(!/^[a-z0-9_]{2,40}$/i.test(v))throw new Error('Modalidade invalida.');body.listing_type_id=v}
+          }
+          if(Object.keys(body).length){
+            const response=await fetch('https://api.mercadolibre.com/items/'+encodeURIComponent(id),{method:'PUT',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify(body)});
+            const data=await response.json().catch(()=>({}));
+            if(!response.ok)throw new Error(data.message||data.error||'HTTP '+response.status);
+          }
+          if(Object.hasOwn(changes,'description')){
+            const value=String(changes.description??'');
+            if(value.length>50000)throw new Error('Descricao excede limite de 50000 caracteres.');
+            const r=await fetch('https://api.mercadolibre.com/items/'+encodeURIComponent(id)+'/description',{method:'PUT',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify({plain_text:value})});
+            const data=await r.json().catch(()=>({}));
+            if(!r.ok)throw new Error('Descricao: '+(data.message||data.error||'HTTP '+r.status));
+          }
+          const verified=await shippingFreeFetchItem(id,token);
+          const mismatch=Object.entries(body).filter(([k,v])=>String(verified[k]??'')!==String(v));
+          if(mismatch.length)throw new Error('Atualizacao nao confirmada: '+mismatch.map(x=>x[0]).join(', '));
+          results.push({id,status:'success',message:'Alteracoes aplicadas e conferidas.'});
+        }catch(e){results.push({id,status:'error',message:e.message})}
+      }
+      res.json({ok:true,results});
+    }catch(e){res.status(500).json({ok:false,message:e.message})}
   });
 
   // Vendas reais das contas do Mercado Livre conectadas às empresas licenciadas.
