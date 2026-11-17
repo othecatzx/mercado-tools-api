@@ -137,20 +137,26 @@ function openResultPanel(){
  if(!results.length)return;
  resultPanelOpen=true;
  const overlay=$('bulkResultOverlay');if(!overlay)return;
+ const counts={success:0,error:0,warning:0,skipped:0};
+ results.forEach(r=>{if(Object.hasOwn(counts,r.status))counts[r.status]++});
+ $('bulkResultSummary').innerHTML=
+  '<div class="bulk-result-hero"><div class="bulk-result-hero-mark">M</div><div><span>PROCESSAMENTO CONCLUÍDO</span><strong>'+results.length+' anúncio(s) processado(s)</strong><small>Confira abaixo o resultado de cada alteração realizada.</small></div></div>'+
+  '<div class="bulk-result-stats">'+
+  [['success','check-circle','Aplicados'],['error','alert-circle','Com erro'],['warning','alert-triangle','Avisos'],['skipped','minus-circle','Ignorados']]
+    .map(([status,icon,label])=>'<div class="bulk-result-stat '+status+'"><span>'+label+'</span><strong>'+counts[status]+'</strong></div>').join('')+
+  '</div>';
  $('bulkResultGroups').innerHTML=[
-  ['success','✓ Sincronizados com sucesso','success',true],
-  ['warning','⚠ Atualizados com aviso','warning',true],
-  ['error','✕ Falharam','error',true],
-  ['skipped','↷ Ignorados / sem alteração','skipped',false]
+  ['success','Atualizados com sucesso','success',true],
+  ['error','Atualizações com erro','error',true],
+  ['warning','Atualizações com aviso','warning',true],
+  ['skipped','Sem alterações','skipped',false]
  ].map(([status,label,cls,expanded])=>{
   const items=results.filter(r=>r.status===status);
   if(!items.length)return '';
-  return '<details class="bulk-result-group '+cls+'" '+(expanded?'open':'')+'><summary><span>'+label+' ('+items.length+')</span><span class="bulk-result-chevron">⌄</span></summary><div class="bulk-result-items">'+items.map(r=>
-   '<article class="bulk-result-item"><strong>'+escape(r.title||r.id||'Anúncio')+'</strong>'+
-   '<div><b>SKU:</b> '+escape(r.sku||'Não informado')+'</div>'+
-   '<div><b>MLB:</b> '+escape(r.id||'')+'</div>'+
-   '<div><b>Loja:</b> '+escape(r.company_name||'Não informada')+'</div>'+
-   (r.message?'<p>'+escape(r.message)+'</p>':'')+'</article>').join('')+'</div></details>';
+  return '<details class="bulk-result-group '+cls+'" '+(expanded?'open':'')+'><summary><span class="bulk-result-heading"><span class="bulk-status-dot"></span>'+label+'</span><span class="bulk-result-right"><span class="bulk-result-number">'+items.length+'</span><span class="bulk-result-chevron">⌄</span></span></summary><div class="bulk-result-items">'+items.map(r=>
+   '<article class="bulk-result-item"><div class="bulk-result-item-main"><strong>'+escape(r.title||r.id||'Anúncio')+'</strong><span class="bulk-item-state '+cls+'">'+(cls==='success'?'Concluído':cls==='error'?'Falhou':cls==='warning'?'Aviso':'Ignorado')+'</span></div>'+
+   '<div class="bulk-result-item-info"><span><small>MLB</small>'+escape(r.id||'')+'</span><span><small>SKU</small>'+escape(r.sku||'Não informado')+'</span><span><small>Loja</small>'+escape(r.company_name||'Não informada')+'</span></div>'+
+   (r.message?'<div class="bulk-result-item-note">'+escape(r.message)+'</div>':'')+'</article>').join('')+'</div></details>';
  }).join('')||'<p>Nenhum resultado.</p>';
  overlay.hidden=false;document.body.classList.add('bulk-results-open');
  $('bulkResultClose')?.focus();
@@ -176,7 +182,7 @@ function markup(){
  '<div class="bulk-toolbar"><button class="btn btn-primary bulk-add-btn" id="bulkOpen">+ Adicione os MLB&#39;s</button><span id="bulkCount">0 anúncios</span><div class="bulk-toolbar-right"><button class="btn btn-ghost bulk-clear-btn" id="bulkClear">Limpar lista</button><button class="btn btn-ghost" id="bulkExport">↓ Baixar Excel</button><button class="btn btn-ghost" id="bulkImport">↑ Importar Excel</button><input id="bulkImportFile" type="file" accept=".xlsx,.xls" hidden></div></div>'+
  '<div class="bulk-grid"><table><thead><tr><th class="bulk-num">#</th><th>Foto</th>'+cols.map(c=>'<th style="min-width:'+c[2]+'px">'+escape(c[1])+(c[3]?' 🔒':'')+'</th>').join('')+'</tr></thead><tbody id="bulkRows"></tbody></table></div>'+
  '<div class="bulk-footer"><span class="small muted">As células alteradas ficam destacadas. Loja, MLB, SKU e Estoque são somente leitura.</span><button class="btn btn-primary" id="bulkApply" disabled>Revisar e aplicar alterações</button></div><div id="bulkFailures"></div><div id="bulkResults"></div></section>'+
- '<div id="bulkResultOverlay" class="bulk-result-overlay" hidden><aside class="bulk-result-panel" role="dialog" aria-modal="true" aria-labelledby="bulkResultTitle"><header class="bulk-result-top"><h2 id="bulkResultTitle">Resultado da edição em massa</h2><button type="button" id="bulkResultClose" aria-label="Fechar resultados">×</button></header><div class="bulk-result-groups" id="bulkResultGroups"></div><footer class="bulk-result-actions"><button class="btn btn-ghost" type="button" id="bulkResultDownload">↓ Baixar relatório</button><button class="btn btn-primary" type="button" id="bulkResultContinue">Prosseguir</button></footer></aside></div>'+
+ '<div id="bulkResultOverlay" class="bulk-result-overlay" hidden><aside class="bulk-result-panel" role="dialog" aria-modal="true" aria-labelledby="bulkResultTitle"><header class="bulk-result-top"><div><span class="bulk-result-eyebrow">ML SH SUPPORT / AÇÕES EM MASSA</span><h2 id="bulkResultTitle">Resumo das alterações</h2></div><button type="button" id="bulkResultClose" aria-label="Fechar resultados">×</button></header><div class="bulk-result-scroll"><div id="bulkResultSummary"></div><div class="bulk-result-section-title">Detalhes por situação</div><div class="bulk-result-groups" id="bulkResultGroups"></div></div><footer class="bulk-result-actions"><button class="btn btn-ghost" type="button" id="bulkResultDownload">↓ Exportar resultado</button><button class="btn btn-primary" type="button" id="bulkResultContinue">Concluir</button></footer></aside></div>'+
  '<div id="bulkModal" class="bulk-modal-overlay" hidden><div class="bulk-modal" role="dialog" aria-modal="true" aria-labelledby="bulkModalTitle"><div class="bulk-modal-top"><div><div class="bulk-modal-kicker">MERCADO LIVRE · IMPORTAÇÃO</div><h2 id="bulkModalTitle">Adicionar anúncios</h2><p>Cole os códigos MLB ou SKU. Vamos procurar nas lojas vinculadas à sua conta.</p></div><button type="button" class="bulk-close" id="bulkClose" aria-label="Fechar">×</button></div>'+
  '<div class="bulk-modal-content"><label for="bulkInputs">MLBs ou SKUs dos anúncios</label><textarea id="bulkInputs" placeholder="MLB5360939846&#10;MLB5361165102&#10;SKU-EXEMPLO" rows="7" spellcheck="false"></textarea><div class="bulk-modal-hint"><span>Um código por linha, vírgula ou ponto e vírgula</span><strong>Até 100 códigos</strong></div></div>'+
  '<div class="bulk-modal-actions"><button type="button" class="btn btn-ghost" id="bulkCancel">Cancelar</button><button type="button" class="btn btn-primary" id="bulkSearch">Buscar anúncios</button></div></div></div>';
