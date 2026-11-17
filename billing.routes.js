@@ -22,9 +22,19 @@ module.exports=function registerBilling(app,{supabase,jwt,verificarAdmin,env=pro
   try{
    const bearer=/^Bearer (.+)$/.exec(req.headers.authorization||'')?.[1];if(!bearer)return res.status(401).json({ok:false,error:'auth_required',message:'Entre na sua conta para continuar.'});
    const decoded=jwt.verify(bearer,env.JWT_SECRET);
-   if(decoded.type!=='portal'||!decoded.portal_user_id)return res.status(403).json({ok:false,error:'permission_denied',message:'Somente o titular gerencia pagamentos.'});
-   const {data:user,error}=await supabase.from('portal_users').select('id,nome,email,status,access_revoked,session_version').eq('id',decoded.portal_user_id).maybeSingle();if(error)throw error;
-   if(!user||user.status!=='active'||user.access_revoked||Number(user.session_version||0)!==Number(decoded.session_version||0))return res.status(401).json({ok:false,error:'invalid_session'});
+   let ownerId=decoded.portal_user_id;
+   if(decoded.type==='support_agent'&&decoded.support_agent_id){
+    const {data:agent,error:agentError}=await supabase.from('support_agents').select('id,status,license_id,created_by_portal_user_id,menu_permissions,licenses(status,vencimento)').eq('id',decoded.support_agent_id).maybeSingle();
+    if(agentError)throw agentError;
+    const permission=req.path.includes('/signup')?'purchase':'billing';
+    if(!agent||agent.status!=='active'||!Array.isArray(agent.menu_permissions)||!agent.menu_permissions.includes(permission)||agent.licenses?.status!=='active'||(agent.licenses?.vencimento&&new Date(agent.licenses.vencimento).getTime()<Date.now()))return res.status(403).json({ok:false,error:'permission_denied',message:'O titular não liberou esta operação.'});
+    const {data:ownership,error:ownError}=await supabase.from('portal_user_licenses').select('license_id').eq('user_id',agent.created_by_portal_user_id).eq('license_id',agent.license_id).maybeSingle();
+    if(ownError)throw ownError;
+    if(!ownership)return res.status(403).json({ok:false,error:'permission_denied'});
+    ownerId=agent.created_by_portal_user_id;
+   }else if(decoded.type!=='portal'||!ownerId)return res.status(403).json({ok:false,error:'permission_denied',message:'Acesso não autorizado.'});
+   const {data:user,error}=await supabase.from('portal_users').select('id,nome,email,status,access_revoked,session_version').eq('id',ownerId).maybeSingle();if(error)throw error;
+   if(!user||user.status!=='active'||user.access_revoked||(decoded.type==='portal'&&Number(user.session_version||0)!==Number(decoded.session_version||0)))return res.status(401).json({ok:false,error:'invalid_session'});
    req.billingUser=user;next();
   }catch(e){if(['JsonWebTokenError','TokenExpiredError'].includes(e.name))return res.status(401).json({ok:false,error:'invalid_session'});return res.status(503).json({ok:false,message:'Não foi possível validar a conta.'});}
  }

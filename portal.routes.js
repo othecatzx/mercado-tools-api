@@ -1229,7 +1229,7 @@ const codes = [...companies.entries()].map(([companyId, company]) => {
     }
   };
   app.get('/api/portal/sales', authPortalOrAgent, portalSalesHandler);
-  require('./automations.routes')(app,{supabase,authPortal,readSales:async(owner,range)=>{
+  require('./automations.routes')(app,{supabase,authPortal:async(req,res,next)=>{await authPortalOrAgent(req,res,()=>{if(!scopedMenuAllowed(req,'automations'))return res.status(403).json({ok:false,error:'menu_not_allowed',message:'Automações não autorizadas.'});next();});},readSales:async(owner,range)=>{
     let payload,code=200;
     await portalSalesHandler({portalRole:'portal_user',portalUserId:owner,query:{days:'1',aiMetrics:'1'},internalReportRange:range},{status(c){code=c;return this;},json(data){payload=data;return this;}});
     if(code!==200||!payload?.ok)throw new Error('Falha ao consultar vendas.');
