@@ -101,7 +101,7 @@ module.exports = function registerAtendimentoRoutes(app, { supabase, jwt, bcrypt
     return true;
   }
 
-  const menuKeys = new Set(['overview','licenses','devices','orders','sales','shipping','codes','team','chat','support','settings','bling-entries','bling-labels','bling-integrations','bling-dimensions','automations','purchase','billing']);
+  const menuKeys = new Set(['overview','licenses','devices','orders','sales','shipping','bulk-editor','codes','team','chat','support','settings','bling-entries','bling-labels','bling-integrations','bling-dimensions','automations','purchase','billing']);
 
   function agentCanGrantMenu(actor, menu) {
     const ownMenus = Array.isArray(actor?.menuPermissions) ? actor.menuPermissions : [];

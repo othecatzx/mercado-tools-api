@@ -729,7 +729,7 @@ const codes = [...companies.entries()].map(([companyId, company]) => {
   // Editor em massa - apenas campos explicitamente autorizados.
   app.post('/api/portal/bulk-editor/preview', authPortalOrAgent, async (req,res) => {
     try {
-      if (!scopedMenuAllowed(req,'shipping')) return res.status(403).json({ok:false,message:'Acesso nao autorizado.'});
+      if (!scopedMenuAllowed(req,'bulk-editor')) return res.status(403).json({ok:false,message:'Acesso nao autorizado.'});
       const inputs=req.body?.inputs;
       if(!Array.isArray(inputs)||!inputs.length||inputs.length>100)return res.status(400).json({ok:false,message:'Informe de 1 a 100 codigos.'});
       const accounts=await getShippingAccounts(req);
@@ -762,7 +762,7 @@ const codes = [...companies.entries()].map(([companyId, company]) => {
   });
   app.post('/api/portal/bulk-editor/apply',authPortalOrAgent,async(req,res)=>{
     try{
-      if(!scopedMenuAllowed(req,'shipping'))return res.status(403).json({ok:false,message:'Acesso nao autorizado.'});
+      if(!scopedMenuAllowed(req,'bulk-editor'))return res.status(403).json({ok:false,message:'Acesso nao autorizado.'});
       const requested=req.body?.items;
       if(!Array.isArray(requested)||!requested.length||requested.length>50)return res.status(400).json({ok:false,message:'Maximo de 50 anuncios por lote.'});
       const accounts=await getShippingAccounts(req),results=[];
