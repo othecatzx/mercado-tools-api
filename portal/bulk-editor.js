@@ -3,16 +3,16 @@
 'use strict';
 let rows=[],failures=[],busy=false,term='',results=[];
 const $=id=>document.getElementById(id), escape=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const cols=[['company_name','Loja',155,true],['id','MLB',160,true],['sku','SKU',160,true],['title','Titulo',350],['price','Preco (R$)',120],['available_quantity','Estoque',100],['status','Status',120],['listing_type_id','Modalidade',145],['description','Descricao',330]];
-const permitted=['title','price','available_quantity','status','listing_type_id','description'];
+const cols=[['company_name','Loja',155,true],['id','MLB',160,true],['sku','SKU',160,true],['title','Titulo',350],['price','Preco (R$)',120],['available_quantity','Estoque',100,true],['description','Descricao',330]];
+const permitted=['title','price','description'];
 const key=r=>r.company_id+'|'+r.id;
 const orig=r=>r.original||{};
 const changed=r=>permitted.filter(c=>String(r[c]??'')!==String(orig(r)[c]??''));
 const viewRows=()=>rows.filter(r=>!term||[r.id,r.company_name,r.sku,r.title].some(v=>String(v||'').toLowerCase().includes(term.toLowerCase())));
-const money=v=>v==null?'':String(v);
+let inputDraft='';
 function render(){
  const body=$('bulkRows');if(!body)return;
- body.innerHTML=viewRows().map((r,i)=>'<tr data-key="'+escape(key(r))+'"><td class="bulk-num">'+(i+1)+'</td><td><img class="bulk-thumb" src="'+escape(r.image||'')+'" alt="" loading="lazy" onerror="this.style.visibility=\'hidden\'"></td>'+cols.map(([k,label,w,locked])=>'<td class="'+(locked?'bulk-locked':'')+(changed(r).includes(k)?' bulk-changed':'')+'">'+(locked?'<span title="Somente leitura">'+escape(r[k]??'—')+'</span>':k==='status'?'<select data-field="'+k+'">'+[['active','Publicado'],['paused','Pausado']].map(([v,n])=>'<option value="'+v+'" '+(String(r[k])===v?'selected':'')+'>'+n+'</option>').join('')+'</select>':k==='description'?'<textarea data-field="'+k+'" rows="1" title="Clique para editar a descricao">'+escape(r[k]??'')+'</textarea>':'<input data-field="'+k+'" type="'+(['price','available_quantity'].includes(k)?'number':'text')+'" '+(k==='price'?'min="0.01" step="0.01"':k==='available_quantity'?'min="0" step="1"':'')+' value="'+escape(r[k]??'')+'" '+(k==='title'?'maxlength="60"':'')+'>')+'</td>').join('')+'</tr>').join('')||'<tr><td colspan="11" class="bulk-empty">Nenhum anuncio carregado. Cole MLB ou SKU para buscar.</td></tr>';
+ body.innerHTML=viewRows().map((r,i)=>'<tr data-key="'+escape(key(r))+'"><td class="bulk-num">'+(i+1)+'</td><td><img class="bulk-thumb" src="'+escape(r.image||'')+'" alt="" loading="lazy" onerror="this.style.visibility=\'hidden\'"></td>'+cols.map(([k,label,w,locked])=>'<td class="'+(locked?'bulk-locked':'')+(changed(r).includes(k)?' bulk-changed':'')+'">'+(locked?'<span title="Somente leitura">'+escape(r[k]??'—')+'</span>':k==='status'?'<select data-field="'+k+'">'+[['active','Publicado'],['paused','Pausado']].map(([v,n])=>'<option value="'+v+'" '+(String(r[k])===v?'selected':'')+'>'+n+'</option>').join('')+'</select>':k==='description'?'<textarea data-field="'+k+'" rows="1" title="Clique para editar a descricao">'+escape(r[k]??'')+'</textarea>':'<input data-field="'+k+'" type="'+(['price','available_quantity'].includes(k)?'number':'text')+'" '+(k==='price'?'min="0.01" step="0.01"':k==='available_quantity'?'min="0" step="1"':'')+' value="'+escape(r[k]??'')+'" '+(k==='title'?'maxlength="60"':'')+'>')+'</td>').join('')+'</tr>').join('')||'<tr><td colspan="9" class="bulk-empty">Nenhum anúncio carregado. Clique em Adicione os MLB\'s para começar.</td></tr>';
  $('bulkCount').textContent=rows.length+' anuncio(s) · '+rows.filter(r=>changed(r).length).length+' alterado(s)';
  $('bulkFailures').innerHTML=failures.map(f=>'<div class="bulk-error">'+escape(f.input)+': '+escape(f.error)+'</div>').join('');
  $('bulkResults').innerHTML=results.map(r=>'<div class="bulk-result '+(r.status==='success'?'ok':r.status==='skipped'?'skip':'err')+'">'+escape(r.id)+' · '+escape(r.status==='success'?'Atualizado':r.status==='skipped'?'Sem alteracoes':'Erro')+' · '+escape(r.message||'')+'</div>').join('');
@@ -27,6 +27,7 @@ async function lookup(){
  try{
  const data=await api('/api/portal/bulk-editor/preview',{method:'POST',body:JSON.stringify({inputs:[...new Set(input)]})});
  rows=(data.items||[]).map(r=>({...r,original:Object.fromEntries(permitted.map(k=>[k,r[k]??'']))}));
+ closeBulkModal();
  failures=data.failed||[];results=[];render();window.toast?.(rows.length+' anuncio(s) encontrado(s).');
  }catch(e){window.toast?.(e.message||'Erro na consulta.')}
  finally{markBusy(false);$('bulkSearch').textContent='Buscar anuncios';render()}
@@ -63,10 +64,10 @@ function downloadFile(blob,name){const a=document.createElement('a'),u=URL.creat
 function exportExcel(){
  if(!rows.length)return;
  if(!window.XLSX){window.toast?.('Biblioteca Excel indisponivel.');return}
- const headers=['Loja','MLB','SKU','Titulo','Preco','Estoque','Status','Modalidade','Descricao'];
- const values=[headers,...rows.map(r=>[r.company_name,r.id,r.sku,r.title,Number(r.price),Number(r.available_quantity),r.status,r.listing_type_id,r.description||''])];
+ const headers=['Loja','MLB','SKU','Titulo','Preco','Estoque','Descricao'];
+ const values=[headers,...rows.map(r=>[r.company_name,r.id,r.sku,r.title,Number(r.price),Number(r.available_quantity),r.description||''])];
  const wb=XLSX.utils.book_new(),ws=XLSX.utils.aoa_to_sheet(values);
- ws['!cols']=[{wch:24},{wch:20},{wch:24},{wch:65},{wch:15},{wch:12},{wch:16},{wch:20},{wch:80}];
+ ws['!cols']=[{wch:24},{wch:20},{wch:24},{wch:65},{wch:15},{wch:12},{wch:80}];
  XLSX.utils.book_append_sheet(wb,ws,'Anuncios');XLSX.writeFile(wb,'ml-sh-acoes-em-massa.xlsx');
 }
 async function importExcel(file){
@@ -79,21 +80,48 @@ async function importExcel(file){
   const id=String(input.MLB||'').trim().toUpperCase(),loja=String(input.Loja||'').trim();
   const matched=rows.filter(r=>r.id===id&&r.company_name===loja);
   if(matched.length!==1||String(input.SKU||'').trim()!==String(matched[0].sku||'')){ignored++;continue}
-  const row=matched[0],mapping={Titulo:'title',Preco:'price',Estoque:'available_quantity',Status:'status',Modalidade:'listing_type_id',Descricao:'description'};
+  const row=matched[0],mapping={Titulo:'title',Preco:'price',Descricao:'description'};
   Object.entries(mapping).forEach(([c,k])=>{if(Object.hasOwn(input,c)&&String(input[c])!==String(row[k]??'')){row[k]=String(input[c]);pending.push(k)}});
  }
  results=[];render();window.toast?.('Planilha importada. '+pending.length+' celula(s) revisada(s); '+ignored+' linha(s) ignorada(s).');
  }catch(e){window.toast?.('Erro ao importar: '+e.message)}
  finally{$('bulkImportFile').value=''}
 }
+function openBulkModal(){
+ const modal=$('bulkModal');if(!modal)return;
+ modal.hidden=false;document.body.classList.add('bulk-modal-open');
+ const area=$('bulkInputs');area.value=inputDraft;area.focus();
+}
+function closeBulkModal(){
+ const modal=$('bulkModal');if(!modal)return;
+ inputDraft=$('bulkInputs')?.value||inputDraft;
+ modal.hidden=true;document.body.classList.remove('bulk-modal-open');
+}
+function cancelBulkEditor(){
+ if(busy)return;
+ rows=[];failures=[];results=[];term='';inputDraft='';
+ if($('bulkInputs'))$('bulkInputs').value='';
+ if($('bulkImportFile'))$('bulkImportFile').value='';
+ closeBulkModal();
+ render();
+ window.toast?.('Lista de anúncios e alterações pendentes removidas.');
+}
 function markup(){
- return pageHead('FERRAMENTAS','Acoes em massa','Editor de anuncios estilo Excel. Loja, MLB e SKU permanecem bloqueados.')+
- '<section class="panel bulk-panel"><div class="bulk-head"><div><h3>Buscar anuncios</h3><p class="small muted">Cole MLB, numero do anuncio ou SKU, um por linha (ate 100).</p></div><span class="bulk-tag">Mercado Livre</span></div>'+
- '<textarea id="bulkInputs" placeholder="MLB5360939846&#10;SKU-EXEMPLO" rows="3" spellcheck="false"></textarea><div class="bulk-toolbar"><button class="btn btn-primary" id="bulkSearch">Buscar anuncios</button><span id="bulkCount">0 anuncios</span><div class="bulk-toolbar-right"><button class="btn btn-ghost" id="bulkExport">↓ Baixar Excel</button><button class="btn btn-ghost" id="bulkImport">↑ Importar Excel</button><input id="bulkImportFile" type="file" accept=".xlsx,.xls" hidden></div></div>'+
+ return pageHead('FERRAMENTAS','Ações em massa','Edite títulos, preços e descrições diretamente nas células, como no Excel.')+
+ '<section class="panel bulk-panel"><div class="bulk-head"><div><h3>Editor de anúncios</h3><p class="small muted">Tabela de edição em massa, com identificação e estoque protegidos.</p></div><span class="bulk-tag">Mercado Livre</span></div>'+
+ '<div class="bulk-toolbar"><button class="btn btn-primary bulk-add-btn" id="bulkOpen">+ Adicione os MLB&#39;s</button><span id="bulkCount">0 anúncios</span><div class="bulk-toolbar-right"><button class="btn btn-ghost" id="bulkExport">↓ Baixar Excel</button><button class="btn btn-ghost" id="bulkImport">↑ Importar Excel</button><input id="bulkImportFile" type="file" accept=".xlsx,.xls" hidden></div></div>'+
  '<div class="bulk-grid"><table><thead><tr><th class="bulk-num">#</th><th>Foto</th>'+cols.map(c=>'<th style="min-width:'+c[2]+'px">'+escape(c[1])+(c[3]?' 🔒':'')+'</th>').join('')+'</tr></thead><tbody id="bulkRows"></tbody></table></div>'+
- '<div class="bulk-footer"><span class="small muted">Celulas amarelas = alteradas. Campos bloqueados sao somente leitura. Imagens nao entram no Excel.</span><button class="btn btn-primary" id="bulkApply" disabled>Revisar e aplicar alteracoes</button></div><div id="bulkFailures"></div><div id="bulkResults"></div></section>';
+ '<div class="bulk-footer"><span class="small muted">As células alteradas ficam destacadas. Loja, MLB, SKU e Estoque são somente leitura.</span><button class="btn btn-primary" id="bulkApply" disabled>Revisar e aplicar alterações</button></div><div id="bulkFailures"></div><div id="bulkResults"></div></section>'+
+ '<div id="bulkModal" class="bulk-modal-overlay" hidden><div class="bulk-modal" role="dialog" aria-modal="true" aria-labelledby="bulkModalTitle"><div class="bulk-modal-top"><div><div class="bulk-modal-kicker">MERCADO LIVRE · IMPORTAÇÃO</div><h2 id="bulkModalTitle">Adicionar anúncios</h2><p>Cole os códigos MLB ou SKU. Vamos procurar nas lojas vinculadas à sua conta.</p></div><button type="button" class="bulk-close" id="bulkClose" aria-label="Fechar">×</button></div>'+
+ '<div class="bulk-modal-content"><label for="bulkInputs">MLBs ou SKUs dos anúncios</label><textarea id="bulkInputs" placeholder="MLB5360939846&#10;MLB5361165102&#10;SKU-EXEMPLO" rows="7" spellcheck="false"></textarea><div class="bulk-modal-hint"><span>Um código por linha, vírgula ou ponto e vírgula</span><strong>Até 100 códigos</strong></div></div>'+
+ '<div class="bulk-modal-actions"><button type="button" class="btn btn-ghost" id="bulkCancel">Cancelar</button><button type="button" class="btn btn-primary" id="bulkSearch">Buscar anúncios</button></div></div></div>';
 }
 function init(){
+ $('bulkOpen')?.addEventListener('click',openBulkModal);
+ $('bulkClose')?.addEventListener('click',closeBulkModal);
+ $('bulkCancel')?.addEventListener('click',cancelBulkEditor);
+ $('bulkModal')?.addEventListener('click',e=>{if(e.target.id==='bulkModal'&&!busy)closeBulkModal()});
+ $('bulkInputs')?.addEventListener('input',e=>{inputDraft=e.target.value});
  $('bulkSearch')?.addEventListener('click',lookup);$('bulkApply')?.addEventListener('click',apply);
  $('bulkRows')?.addEventListener('input',edit);$('bulkRows')?.addEventListener('change',edit);
  $('bulkExport')?.addEventListener('click',exportExcel);$('bulkImport')?.addEventListener('click',()=>$('bulkImportFile').click());

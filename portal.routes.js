@@ -766,7 +766,7 @@ const codes = [...companies.entries()].map(([companyId, company]) => {
       const requested=req.body?.items;
       if(!Array.isArray(requested)||!requested.length||requested.length>50)return res.status(400).json({ok:false,message:'Maximo de 50 anuncios por lote.'});
       const accounts=await getShippingAccounts(req),results=[];
-      const fields=new Set(['title','price','available_quantity','status','listing_type_id','description']);
+      const fields=new Set(['title','price','description']);
       for(const input of requested){
         const id=String(input?.id||'').toUpperCase(),companyId=String(input?.company_id||'');
         const changes=input?.changes;
