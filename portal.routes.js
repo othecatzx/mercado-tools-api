@@ -1114,7 +1114,17 @@ const codes = [...companies.entries()].map(([companyId, company]) => {
                 'return', 'returned', 'returning', 'return_in_process', 'returning_to_seller',
                 'refund', 'refunded', 'partially_refunded', 'claim', 'has_claim', 'claim_opened', 'dispute'
               ]);
-              const hasReturnOrClaim = shipmentType === 'return' || orderTags.some(tag => returnOrClaimTags.has(tag));
+              // Devoluções também podem ser informadas apenas no substatus do envio.
+              // Não devem reaparecer em Cancelados, mesmo que já tenham integrado a fila.
+              const returnShippingStates = new Set([
+                'returned_to_hub', 'returning_to_hub', 'returning_to_sender',
+                'returned_to_sender', 'returning_to_seller', 'returned_to_seller',
+                'return_in_process', 'returned', 'returning'
+              ]);
+              const hasReturnOrClaim = shipmentType === 'return'
+                || orderTags.some(tag => returnOrClaimTags.has(tag))
+                || returnShippingStates.has(shippingStatus)
+                || returnShippingStates.has(shippingSubstatus);
               const delivered = shippingStatus === 'delivered' || shippingSubstatus === 'delivered'
                 || Boolean(shipping.date_delivered || shipment.date_delivered || shipping.status_history?.date_delivered || shipment.status_history?.date_delivered);
               const dispatched =
