@@ -232,29 +232,34 @@ function desktopSpecs(value){
   .replace(/\b(\d+)\s*TB\b/g,(_,n)=>String(Number(n)*1024)+'GB')
   .replace(/\b(\d{1,4})\s*G\b/g,'$1GB').replace(/\bM[\s.-]*2\b/g,'M2')
   .replace(/[^A-Z0-9]+/g,' ').trim();
- const ram=s.match(/\bRAM\s*(4|8|16|32|64)\s*GB\b/)||s.match(/\b(4|8|16|32|64)\s*GB\s*RAM\b/)||
-  s.match(/\b(4|8|16|32|64)\s*GB\b(?=.*\b(?:SSD|HD|HDD)\b)/);
+ const explicitRam=s.match(/\bRAM\s*(4|8|16|32|64)\s*GB\b/)||s.match(/\b(4|8|16|32|64)\s*GB\s*RAM\b/);
+ const shortRam=[...s.matchAll(/\b(4|8|16|32|64)\s*GB\b/g)];
+ // Os anuncios podem informar "480gb 16gb" ou "16gb 480gb", sem escrever RAM.
+ // Sem um unico candidato de RAM, nao inferir.
+ const ram=explicitRam?Number(explicitRam[1]):shortRam.length===1?Number(shortRam[0][1]):null;
+ const ramIndex=explicitRam?(explicitRam[0].startsWith('RAM')?explicitRam.index+explicitRam[0].indexOf(explicitRam[1]):explicitRam.index):shortRam[0]?.index;
  if(!ram)return null;
+ const capacityPattern=/\b(120|128|240|250|256|480|500|512|960|1000|1024|1920|2048)\s*GB\b/g;
+ const capacities=[...s.matchAll(capacityPattern)].filter(m=>m.index!==ramIndex);
  const disks=[];
- const capacities=[...s.matchAll(/\b(120|128|240|250|256|480|500|512|960|1000|1024|1920|2048)\s*GB\b/g)]
-  .filter(m=>m.index!==ram.index);
  for(const size of capacities){
   const start=size.index,end=start+size[0].length;
-  const before=s.slice(Math.max(0,start-18),start);
-  const after=s.slice(end,end+16);
-  const previous=[...s.slice(0,start).matchAll(/\b(SSD|HD|HDD)\b/g)].at(-1);
+  const before=s.slice(0,start),after=s.slice(end,end+22);
+  const previous=[...before.matchAll(/\b(SSD|HD|HDD)\b/g)].at(-1);
   const suffix=after.match(/^\s*(SSD|HD|HDD)\b/);
-  const type=suffix?.[1]||previous?.[1]||'';
+  let type=suffix?.[1]||previous?.[1]||'';
+  // Capacidade unica em titulos curtos geralmente representa SSD, mas nao inferir HDD/SSD de 1TB.
+  if(!type&&capacities.length===1&&Number(size[1])<1000)type='SSD';
   if(!type)return null;
   const kind=type==='SSD'?'SSD':'HD';
   const afterForm=after.match(/^\s*(SATA|M2|NVME)\b/)?.[1]||'';
-  const beforeForm=previous&&!suffix?s.slice(previous.index,start).match(/\b(SATA|M2|NVME)\s*$/)?.[1]||'':'';
+  const beforeForm=previous&&!suffix?before.slice(previous.index).match(/\b(SATA|M2|NVME)\s*$/)?.[1]||'':'';
   const selectedForm=afterForm||beforeForm;
   const form=kind==='SSD'?(selectedForm==='M2'||selectedForm==='NVME'?'M2':selectedForm==='SATA'?'SATA':''):'';
   disks.push({kind,capacity:Number(size[1])===1000?1024:Number(size[1]),form});
  }
  if(!disks.length)return null;
- return {ram:Number(ram[1]),disks};
+ return {ram,disks};
 }
 function desktopCompatible(ad,reference){
  const a=desktopSpecs(ad),b=desktopSpecs(reference);
