@@ -748,11 +748,11 @@ const codes = [...companies.entries()].map(([companyId, company]) => {
       if(Date.now()-usage.last<8000)return res.status(429).json({ok:false,message:'Aguarde 8 segundos para tentar outra leitura.'});
       bulkVisionUsage.set(bucket,{count:usage.count+1,last:Date.now()});
       const conditionNames={caixa_aberta:'CAIXA ABERTA',mostruario:'MOSTRUARIO',com_marcas:'COM MARCAS',recondicionado:'RECONDICIONADO'};
-      const prompt='O usuario selecionou a categoria de preco '+conditionNames[condition]+'. Extraia exatamente a coluna correspondente a essa categoria; nunca confunda com as demais. Se ela nao existir, retorne lista vazia. Leia a tabela de precos da imagem em portugues. Retorne SOMENTE JSON valido no formato {"columns":["nome da coluna de preco"],"items":[{"configuration":"configuracao literal da linha","prices":[numero ou null]}]}. Preserve TODAS as colunas de preco (como CAIXA ABERTA, MOSTRUARIO, COM MARCAS), na mesma ordem. Exclua colunas de diferenca/adicional, que nao sao preco de venda. Extraia TODAS as linhas legiveis, sem inventar, sem completar numeros ausentes. Converta 3.300,00 em 3300. A configuracao deve permanecer textual e fiel a imagem. Se houver valor duvidoso, use null. Nunca misture precos entre linhas ou colunas. Maximo 100 linhas.';
-      const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),35000);
+      const prompt='Extraia a tabela da imagem. Leia APENAS a coluna de preco '+conditionNames[condition]+', ignorando todas as outras colunas, inclusive Adicional. Responda somente JSON, sem markdown: {"columns":["'+conditionNames[condition]+'"],"items":[{"configuration":"texto original da configuracao","prices":[3300]}]}. Um item por linha, preserve a configuracao completa e a ordem. Precos sao numeros em reais: 3.300,00 vira 3300. Se um preco estiver ilegivel, use null. Se a coluna nao existir, retorne items vazio. Nao invente valores.';
+      const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),55000);
       let response;
       console.info('[bulk-scan] enviando para Cloudflare Vision, categoria=',condition,'imagem_bytes=',Math.floor(image.length*3/4));
-      try {response=await fetch('https://api.cloudflare.com/client/v4/accounts/'+encodeURIComponent(accountId)+'/ai/run/@cf/meta/llama-3.2-11b-vision-instruct',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({prompt,image,max_tokens:2600,temperature:0}),signal:controller.signal});}
+      try {response=await fetch('https://api.cloudflare.com/client/v4/accounts/'+encodeURIComponent(accountId)+'/ai/run/@cf/meta/llama-3.2-11b-vision-instruct',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({messages:[{role:'user',content:[{type:'text',text:prompt},{type:'image_url',image_url:{url:image}}]}],max_tokens:2200,temperature:0}),signal:controller.signal});}
       finally{clearTimeout(timer)}
       const payload=await response.json().catch(()=>({}));
       console.info('[bulk-scan] Cloudflare Vision respondeu',response.status,'em_ms=',Date.now()-started);
@@ -791,7 +791,7 @@ const codes = [...companies.entries()].map(([companyId, company]) => {
     }catch(err){
       console.error('[bulk-scan] erro',err.name,'duracao_ms=',Date.now()-started,'motivo=',String(err.message||'falha').slice(0,220));
       if(res.headersSent)return;
-      res.status(err.name==='AbortError'?504:502).json({ok:false,message:err.name==='AbortError'?'A IA demorou demais a responder; tente imagem menor ou mais nitida.':err.message||'Falha na leitura da imagem.'});
+      res.status(err.name==='AbortError'?504:502).json({ok:false,message:err.name==='AbortError'?'A Cloudflare nao respondeu dentro de 55 segundos. Tente um print menor ou uma tabela com menos linhas.':err.message||'Falha na leitura da imagem.'});
     }
   });
 
