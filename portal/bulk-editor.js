@@ -240,10 +240,15 @@ function matchingTableItems(row,items){
   (!option.form||!disk.form||option.form===disk.form);
  const eligible=items.map(item=>({item,reference:productSpecs(item.configuration)}))
   .filter(x=>x.reference?.ram===specs.ram);
- // Capacidade exata somente: 1TB nao e 960GB. A linha "SSD 1TB (SATA E M2)"
- // aceita SSD SATA ou M2, mas nao deve ser confundida com outras capacidades.
- return eligible.filter(x=>x.reference.disks.some(option=>compatible(option,disk.size)))
-  .map(x=>x.item);
+ // Correspondencia exata tem prioridade. 1TB pode usar a linha de 960GB
+ // somente se nao houver nenhuma linha de 1TB na tabela.
+ const exact=eligible.filter(x=>x.reference.disks.some(option=>compatible(option,disk.size)));
+ if(exact.length)return exact.map(x=>x.item);
+ if(disk.type==='SSD'&&(disk.size===1024||disk.size===960)){
+  const equivalent=disk.size===1024?960:1024;
+  return eligible.filter(x=>x.reference.disks.some(option=>compatible(option,equivalent))).map(x=>x.item);
+ }
+ return [];
 }
 // Desktop: titulo curto pode indicar "480gb 16gb" sem dizer RAM/SSD.
 // Exigir mesmo numero de discos da tabela; nao atribuir precos de kits mistos a unidade unica.
@@ -370,12 +375,18 @@ async function prepareScanImage(file){
  }finally{URL.revokeObjectURL(objectUrl)}
 }
 async function scanImage(file){
- if(!file)return;
- if(!rows.length){window.toast?.('Adicione primeiro os anuncios MLB ou SKU.');$('bulkScanFile').value='';return}
- if(!/^image\/(png|jpeg|webp)$/.test(file.type)||file.size>4*1024*1024){window.toast?.('Use PNG, JPG ou WebP de ate 4 MB.');$('bulkScanFile').value='';return}
+ if(!file)return; // O usuario cancelou a escolha do arquivo: manter o modal aberto.
+ const setup=$('bulkAiSetup'),choose=$('bulkAiChooseImage'),status=$('bulkAiProgress');
  try{
   if($('bulkScanError')){$('bulkScanError').hidden=true;$('bulkScanError').textContent=''}
-  markBusy(true);$('bulkScanOpen').disabled=true;$('bulkScanOpen').textContent='Analisando imagem...';
+  markBusy(true);
+  $('bulkScanOpen').disabled=true;$('bulkScanOpen').textContent='Analisando imagem...';
+  if(choose){choose.disabled=true;choose.classList.add('bulk-ai-loading');choose.textContent='Analisando imagem...'}
+  if(status){status.hidden=false;status.textContent='Processando imagem com IA. Aguarde a conclusão.'}
+  for(const id of ['bulkScanCondition','bulkScanProductType','bulkAiClose','bulkAiCancel'])if($(id))$(id).disabled=true;
+  if(!rows.length)throw new Error('Adicione primeiro os anuncios MLB ou SKU.');
+  if(!/^image\/(png|jpeg|webp)$/.test(file.type)||file.size>4*1024*1024)
+   throw new Error('Use PNG, JPG ou WebP de ate 4 MB.');
   const image=await prepareScanImage(file);
   const condition=$('bulkScanCondition')?.value;
   const productType=$('bulkScanProductType')?.value||'notebook';
@@ -383,9 +394,19 @@ async function scanImage(file){
   const data=await api('/api/portal/bulk-editor/scan-image',{method:'POST',body:JSON.stringify({image,condition,productType})});
   if(!data.items?.length)throw new Error('Nenhuma configuracao encontrada.');
   autoFillScan(data,condition,productType);
-  if($('bulkAiSetup'))$('bulkAiSetup').hidden=true;
- }catch(e){const message=e.message||'Falha na leitura da imagem';window.toast?.(message);if($('bulkScanError')){$('bulkScanError').hidden=false;$('bulkScanError').textContent=message}}
- finally{markBusy(false);$('bulkScanOpen').disabled=false;$('bulkScanOpen').textContent='✦ Importar print com IA';$('bulkScanFile').value='';render()}
+ }catch(e){
+  const message=e.message||'Falha na leitura da imagem';
+  window.toast?.(message);
+  if($('bulkScanError')){$('bulkScanError').hidden=false;$('bulkScanError').textContent=message}
+ }finally{
+  if(setup)setup.hidden=true;
+  if(status){status.hidden=true;status.textContent=''}
+  if(choose){choose.disabled=false;choose.classList.remove('bulk-ai-loading');choose.textContent='Selecionar imagem / print'}
+  for(const id of ['bulkScanCondition','bulkScanProductType','bulkAiClose','bulkAiCancel'])if($(id))$(id).disabled=false;
+  markBusy(false);
+  $('bulkScanOpen').disabled=false;$('bulkScanOpen').textContent='✦ Importar print com IA';
+  $('bulkScanFile').value='';render();
+ }
 }
 function acceptScan(){
  if(!scanned)return;
@@ -404,7 +425,7 @@ function markup(){
  '<div class="bulk-footer"><span class="small muted">As células alteradas ficam destacadas. Loja, MLB, SKU e Estoque são somente leitura.</span><button class="btn btn-primary" id="bulkApply" disabled>Revisar e aplicar alterações</button></div><div id="bulkFailures"></div><div id="bulkResults"></div></section>'+
  '<div id="bulkResultOverlay" class="bulk-result-overlay" hidden><aside class="bulk-result-panel" role="dialog" aria-modal="true" aria-labelledby="bulkResultTitle"><header class="bulk-result-top"><div><span class="bulk-result-eyebrow">ML SH SUPPORT / AÇÕES EM MASSA</span><h2 id="bulkResultTitle">Resumo das alterações</h2></div><button type="button" id="bulkResultClose" aria-label="Fechar resultados">×</button></header><div class="bulk-result-scroll"><div id="bulkResultSummary"></div><div class="bulk-result-section-title">Detalhes por situação</div><div class="bulk-result-groups" id="bulkResultGroups"></div></div><footer class="bulk-result-actions"><button class="btn btn-ghost" type="button" id="bulkResultDownload">↓ Exportar resultado</button><button class="btn btn-primary" type="button" id="bulkResultContinue">Concluir</button></footer></aside></div>'+
  '<div id="bulkScanOverlay" class="bulk-scan-overlay" hidden><section class="bulk-scan-modal" role="dialog" aria-modal="true" aria-labelledby="bulkScanTitle"><header class="bulk-scan-head"><div><small>ML SH SUPPORT · LEITURA POR IA</small><h2 id="bulkScanTitle">Conferir preços da imagem</h2><p>Selecione a coluna de preços, confira cada configuração e escolha os anúncios corretos. Nada será publicado agora.</p></div><button type="button" class="btn btn-ghost" id="bulkScanClose">Fechar</button></header><div class="bulk-scan-controls"><label for="bulkScanColumn">Coluna da imagem</label><select id="bulkScanColumn"></select><span id="bulkScanStatus"></span></div><div class="bulk-scan-scroll"><table><thead><tr><th>Usar</th><th>Configuração identificada</th><th>Preço da imagem</th><th>Anúncio vinculado</th><th>Preço atual → novo</th></tr></thead><tbody id="bulkScanRows"></tbody></table></div><footer class="bulk-scan-actions"><span>Revise os preços na imagem original. Sugestões automáticas não são selecionadas por padrão.</span><button class="btn btn-primary" id="bulkScanConfirm" disabled>Preencher preços selecionados</button></footer></section></div>'+
- '<div id="bulkAiSetup" class="bulk-modal-overlay" hidden><section class="bulk-modal" role="dialog" aria-modal="true" aria-labelledby="bulkAiTitle"><div class="bulk-modal-top"><div><div class="bulk-modal-kicker">ML SH SUPPORT · IMPORTAÇÃO IA</div><h2 id="bulkAiTitle">Importar tabela de preços</h2><p>Escolha o produto e o tipo de preço. Depois selecione o print recortado.</p></div><button type="button" class="bulk-close" id="bulkAiClose" aria-label="Fechar">×</button></div><div class="bulk-modal-content"><label for="bulkScanProductType">Produto</label><select id="bulkScanProductType" class="bulk-price-condition"><option value="notebook">Notebook</option><option value="desktop">Desktop</option></select><label for="bulkScanCondition" style="margin-top:15px">Tipo de preço</label><select id="bulkScanCondition" class="bulk-price-condition"><option value="">Escolha a condição</option><option value="caixa_aberta">Caixa aberta</option><option value="mostruario">Mostruário</option><option value="com_marcas">Com marcas</option><option value="recondicionado">Recondicionado</option></select><p class="small muted" style="margin-top:12px">A coluna Adicional será ignorada. A importação apenas preenche os campos para conferência.</p></div><div class="bulk-modal-actions"><button type="button" class="btn btn-ghost" id="bulkAiCancel">Cancelar</button><button type="button" class="btn btn-primary" id="bulkAiChooseImage">Selecionar imagem / print</button></div></section></div>'+
+ '<div id="bulkAiSetup" class="bulk-modal-overlay" hidden><section class="bulk-modal" role="dialog" aria-modal="true" aria-labelledby="bulkAiTitle"><div class="bulk-modal-top"><div><div class="bulk-modal-kicker">ML SH SUPPORT · IMPORTAÇÃO IA</div><h2 id="bulkAiTitle">Importar tabela de preços</h2><p>Escolha o produto e o tipo de preço. Depois selecione o print recortado.</p></div><button type="button" class="bulk-close" id="bulkAiClose" aria-label="Fechar">×</button></div><div class="bulk-modal-content"><label for="bulkScanProductType">Produto</label><select id="bulkScanProductType" class="bulk-price-condition"><option value="notebook">Notebook</option><option value="desktop">Desktop</option></select><label for="bulkScanCondition" style="margin-top:15px">Tipo de preço</label><select id="bulkScanCondition" class="bulk-price-condition"><option value="">Escolha a condição</option><option value="caixa_aberta">Caixa aberta</option><option value="mostruario">Mostruário</option><option value="com_marcas">Com marcas</option><option value="recondicionado">Recondicionado</option></select><p class="small muted" style="margin-top:12px">A coluna Adicional será ignorada. A importação apenas preenche os campos para conferência.</p></div><div class="bulk-modal-actions"><span id="bulkAiProgress" class="bulk-ai-progress" role="status" aria-live="polite" hidden></span><button type="button" class="btn btn-ghost" id="bulkAiCancel">Cancelar</button><button type="button" class="btn btn-primary" id="bulkAiChooseImage">Selecionar imagem / print</button></div></section></div>'+
  '<div id="bulkModal" class="bulk-modal-overlay" hidden><div class="bulk-modal" role="dialog" aria-modal="true" aria-labelledby="bulkModalTitle"><div class="bulk-modal-top"><div><div class="bulk-modal-kicker">MERCADO LIVRE · IMPORTAÇÃO</div><h2 id="bulkModalTitle">Adicionar anúncios</h2><p>Cole os códigos MLB ou SKU. Vamos procurar nas lojas vinculadas à sua conta.</p></div><button type="button" class="bulk-close" id="bulkClose" aria-label="Fechar">×</button></div>'+
  '<div class="bulk-modal-content"><label for="bulkInputs">MLBs ou SKUs dos anúncios</label><textarea id="bulkInputs" placeholder="MLB5360939846&#10;MLB5361165102&#10;SKU-EXEMPLO" rows="7" spellcheck="false"></textarea><div class="bulk-modal-hint"><span>Um código por linha, vírgula ou ponto e vírgula</span><strong>Até 100 códigos</strong></div></div>'+
  '<div class="bulk-modal-actions"><button type="button" class="btn btn-ghost" id="bulkCancel">Cancelar</button><button type="button" class="btn btn-primary" id="bulkSearch">Buscar anúncios</button></div></div></div>';

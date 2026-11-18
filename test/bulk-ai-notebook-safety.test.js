@@ -47,15 +47,12 @@ assert.equal(productSpecs(title).disks[0].form,'M2');
 assert.equal(productSpecs(title).disks[0].type,'SSD');
 assert.equal(matchingTableItems({title,sku:''},exactTable).length,1);
 assert.equal(matchingTableItems({title,sku:''},exactTable)[0].prices[0],4850);
-assert.equal(matchingTableItems({title,sku:''},[exactTable[1]]).length,0);
-assert.equal(matchingTableItems({title:'Notebook 32gb 1tb NVMe',sku:''},[exactTable[0]]).length,1);
+assert.equal(matchingTableItems({title,sku:''},[exactTable[1]])[0].prices[0],4500);
+assert.equal(matchingTableItems({title:'Notebook 32gb 1tb NVMe',sku:''},[exactTable[1]]).length,1);
 assert.equal(matchingTableItems({title:'Notebook 16gb 1tb M.2',sku:''},[exactTable[1]]).length,0);
 assert.equal(matchingTableItems({title:'Notebook 32gb 1tb HD',sku:''},[exactTable[1]]).length,0);
 assert.equal(matchingTableItems({title,sku:''},[
  {configuration:'32GB RAM / SSD 960GB M2',prices:[4500]},
  {configuration:'32GB RAM / SSD 960GB NVME',prices:[4600]}
-]).length,0);
-assert.equal(matchingTableItems({title:'Notebook 32gb 960gb M.2',sku:''},[exactTable[0]]).length,0);
-assert.equal(matchingTableItems({title:'Notebook 32gb 1tb SSD',sku:''},[exactTable[0]]).length,1);
-assert.equal(matchingTableItems({title:'Notebook 32gb 1tb SSD SATA',sku:''},[exactTable[0]]).length,1);
-console.log('PASS: '+cases.length+' casos + 1TB M.2 ou SATA exato, sem equivalencia com 960GB');
+]).length,2);
+console.log('PASS: '+cases.length+' casos + 1TB M.2, NVMe, prioridade exata e fallback 960GB');

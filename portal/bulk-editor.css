@@ -166,3 +166,11 @@ html[data-theme="dark"] .bulk-scan-summary strong,html[data-theme="dark"] .bulk-
 #bulkAiSetup[hidden]{display:none!important}
 #bulkAiSetup .bulk-modal-content select{width:100%;max-width:none;min-width:0;height:44px;box-sizing:border-box;border-radius:9px;padding:8px 12px;background:var(--panel-2);color:var(--ink);border:1px solid var(--line)}
 #bulkAiSetup .bulk-modal-content label{margin-top:12px}
+
+/* Feedback de processamento da importacao com IA */
+#bulkAiProgress[hidden]{display:none!important}
+.bulk-ai-progress{display:inline-flex;align-items:center;gap:8px;margin-right:auto;font-size:12px;font-weight:600;color:var(--ink);line-height:1.4}
+.bulk-ai-progress::before{content:'';width:16px;height:16px;flex-shrink:0;border:2px solid #fca311;border-top-color:transparent;border-radius:50%;animation:bulk-ai-spin .75s linear infinite}
+#bulkAiChooseImage.bulk-ai-loading{opacity:.8;cursor:wait}
+@keyframes bulk-ai-spin{to{transform:rotate(360deg)}}
+@media(max-width:600px){.bulk-ai-progress{width:100%;margin-bottom:10px}}
