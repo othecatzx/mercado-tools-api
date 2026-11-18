@@ -751,7 +751,7 @@ const codes = [...companies.entries()].map(([companyId, company]) => {
     }
     return null;
   }
-  function chooseDesktopVisionColumn(columns,condition){
+  function chooseDesktopVisionColumn(columns,condition,singlePrice=false){
     const norm=v=>String(v||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase().trim();
     const names={caixa_aberta:/CAIXA\s*ABERTA/,mostruario:/MOSTR[U]?ARIO|MOSTRUAR|MOSTRUA/,com_marcas:/COM\s*MARCAS?/,recondicionado:/RECONDICIONAD/};
     const wanted=names[condition];
@@ -762,7 +762,23 @@ const codes = [...companies.entries()].map(([companyId, company]) => {
     if(columns.length===1){
       const only=norm(columns[0]);
       const belongsToOther=Object.entries(names).some(([id,re])=>id!==condition&&re.test(only));
-      if(!belongsToOther&&/^(PRECO|VALOR|R\$|COLUNA|PRICE|SELECIONAD|PRECO\s+DO\s+PRODUTO)/.test(only))return 0;
+      // O pedido para Desktop solicita apenas UMA coluna de preco.
+      // O modelo pode rotular a resposta como "COLUNA_1", "price_0" etc.
+      // Proibir explicitamente qualquer rotulo de outra condicao, ADICIONAL,
+      // CONFIGURACAO ou TOTAL para nao preencher a coluna errada.
+      const forbidden=/ADICIONAL|ACRESCIMO|CONFIGURAC|DESCRIC|PRODUTO|TOTAL|FRETE|CUSTO|ESTOQUE/.test(only);
+      if(!belongsToOther&&!forbidden)return 0;
+    }
+    if(singlePrice){
+      // A IA listou titulos genericos (ex.: Configuracao, Valor), mas somente
+      // um preco por produto. Aceitar apenas se NAO houver qualquer indicacao
+      // de outra condicao ou da coluna adicional entre os cabecalhos.
+      const hasOther=columns.some(x=>{
+        const value=norm(x);
+        return /ADICIONAL|ACRESCIMO|TOTAL|FRETE|CUSTO/.test(value)||
+          Object.entries(names).some(([id,re])=>id!==condition&&re.test(value));
+      });
+      if(!hasOther)return 0;
     }
     return -1;
   }
@@ -836,7 +852,13 @@ const codes = [...companies.entries()].map(([companyId, company]) => {
         if(!match)throw new Error('A IA nao retornou uma tabela estruturada. Tente um print mais nitido.');
         try{parsed=JSON.parse(match[0]);}catch{throw new Error('A leitura retornou um JSON invalido. Tente novamente com uma imagem mais nitida.')}
       }
-      const columns=Array.isArray(parsed.columns)?parsed.columns.filter(x=>typeof x==='string'&&x.trim()).slice(0,8).map(x=>x.slice(0,65)):(productType==='desktop'?[conditionNames[condition]]:[]);
+      const suppliedColumns=Array.isArray(parsed.columns)?parsed.columns.filter(x=>typeof x==='string'&&x.trim()).slice(0,8).map(x=>x.slice(0,65)):[];
+      // Em Desktop, quando a IA devolve um unico valor por linha e nao fornece
+      // cabecalhos, ele pertence a unica coluna solicitada no prompt.
+      const desktopSinglePrice=productType==='desktop'&&Array.isArray(parsed.items)&&parsed.items.length>0&&
+        parsed.items.every(x=>Array.isArray(x)?x.length===2:Array.isArray(x?.prices)&&x.prices.length===1);
+      const columns=suppliedColumns.length?suppliedColumns:
+        desktopSinglePrice?[conditionNames[condition]]:[];
       if(!columns.length||!Array.isArray(parsed.items))throw new Error('A imagem nao possui colunas de preco identificaveis.');
       // A visao pode devolver precos como "R$ 3.310,00", "3.310" ou numero.
       // Aceitar formatos monetarios BR sem interpretar textos ambiguos como valores.
@@ -858,7 +880,7 @@ const codes = [...companies.entries()].map(([companyId, company]) => {
       }));
       console.info('[bulk-scan] leitura estruturada', 'tipo=',productType,'linhas=',items.length,'valores_validos=',items.flatMap(x=>x.prices).filter(v=>v!==null).length);
       if(productType==='desktop')console.info('[bulk-scan] desktop: linhas extraidas',items.map((x,i)=>({linha:i+1,configuracao:x.configuration.slice(0,120),preco_identificado:x.prices[0]!==null})));
-      const chosen=productType==='desktop'?chooseDesktopVisionColumn(columns,condition):columns.findIndex(c=>{
+      const chosen=productType==='desktop'?chooseDesktopVisionColumn(columns,condition,desktopSinglePrice):columns.findIndex(c=>{
         const text=String(c).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase();
         return condition==='caixa_aberta'?text.includes('CAIXA ABERTA'):condition==='mostruario'?text.includes('MOSTRUARIO'):condition==='com_marcas'?text.includes('COM MARCAS')||text.includes('COM MARCA'):text.includes('RECONDICIONADO');
       });
@@ -866,7 +888,11 @@ const codes = [...companies.entries()].map(([companyId, company]) => {
         if(productType==='desktop')console.warn('[bulk-scan] desktop: coluna nao identificada','solicitada=',condition,'retornadas=',columns);
         return res.status(422).json({ok:false,message:'A coluna '+conditionNames[condition]+' nao foi identificada na resposta da IA. Os precos foram preservados.'});
       }
-      res.json({ok:true,columns:[conditionNames[condition]],items:items.map(item=>({...item,prices:[item.prices[chosen]]})),requires_review:true});
+      // O modelo pode listar varios cabecalhos, mas devolver so o preco
+      // solicitado para cada linha. Nesse caso o valor esta no indice zero,
+      // independentemente da posicao do cabecalho na tabela original.
+      const selectedIndex=desktopSinglePrice?0:chosen;
+      res.json({ok:true,columns:[conditionNames[condition]],items:items.map(item=>({...item,prices:[item.prices[selectedIndex]]})),requires_review:true});
     }catch(err){
       console.error('[bulk-scan] erro',err.name,'duracao_ms=',Date.now()-started,'motivo=',String(err.message||'falha').slice(0,220));
       if(res.headersSent)return;

@@ -15,8 +15,27 @@ const cases=[
  [['COM MARCAS'],'mostruario',-1],
  [['ADICIONAL'],'mostruario',-1],
  [['PREÇO','ADICIONAL'],'mostruario',-1],
+ [['COLUNA_1'],'mostruario',0],
+ [['price_0'],'mostruario',0],
+ [['PRECO_SELECIONADO'],'mostruario',0],
+ [['TABELA'],'mostruario',0],
+ [['CONFIGURAÇÃO'],'mostruario',-1],
+ [['ADICIONAL R$'],'mostruario',-1],
+ [['TOTAL'],'mostruario',-1],
+ [['CAIXA ABERTA'],'mostruario',-1],
+ [['PREÇO DO PRODUTO'],'com_marcas',-1],
  [['MOSTRUÁRIO','COM MARCAS'],'com_marcas',1],
  [['MOSTRUÁRIO','COM MARCAS'],'caixa_aberta',-1]
 ];
 for(const [columns,condition,wanted] of cases)assert.equal(choose(columns,condition),wanted,columns.join(',')+' '+condition);
+const onePrice=[
+ [['CONFIGURAÇÃO','PREÇO'],'mostruario',0],
+ [['CONFIGURAÇÃO','VALOR'],'mostruario',0],
+ [['COLUNA A','COLUNA B'],'mostruario',0],
+ [['CONFIGURAÇÃO','COM MARCAS'],'mostruario',-1],
+ [['CONFIGURAÇÃO','ADICIONAL'],'mostruario',-1],
+ [['MOSTRUÁRIO','COM MARCAS','ADICIONAL'],'mostruario',0]
+];
+for(const [columns,condition,wanted] of onePrice)assert.equal(choose(columns,condition,true),wanted,columns.join(',')+' unica coluna');
+
 console.log('PASS: '+cases.length+' cabecalhos de Desktop, sem confundir outras condicoes ou Adicional');
