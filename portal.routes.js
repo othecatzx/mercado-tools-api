@@ -756,7 +756,7 @@ const codes = [...companies.entries()].map(([companyId, company]) => {
       const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),55000);
       let response;
       console.info('[bulk-scan] enviando para Cloudflare Vision, categoria=',condition,'imagem_bytes=',Math.floor(image.length*3/4));
-      try {response=await fetch('https://api.cloudflare.com/client/v4/accounts/'+encodeURIComponent(accountId)+'/ai/run/@cf/meta/llama-3.2-11b-vision-instruct',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({messages:[{role:'user',content:[{type:'text',text:prompt},{type:'image_url',image_url:{url:image}}]}],max_tokens:1150,temperature:0}),signal:controller.signal});}
+      try {response=await fetch('https://api.cloudflare.com/client/v4/accounts/'+encodeURIComponent(accountId)+'/ai/run/@cf/meta/llama-3.2-11b-vision-instruct',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({messages:[{role:'user',content:[{type:'text',text:prompt},{type:'image_url',image_url:{url:image}}]}],max_tokens:2000,temperature:0}),signal:controller.signal});}
       finally{clearTimeout(timer)}
       const payload=await response.json().catch(()=>({}));
       console.info('[bulk-scan] Cloudflare Vision respondeu',response.status,'em_ms=',Date.now()-started);
@@ -775,13 +775,27 @@ const codes = [...companies.entries()].map(([companyId, company]) => {
         const detail=String(payload.errors?.[0]?.message||payload.error||payload.message||'').slice(0,220);
         throw new Error('Cloudflare Vision HTTP '+response.status+(detail?': '+detail:'')+'. Se o modelo exigir aceite da licenca Meta, autorize no painel da Cloudflare.');
       }
-      const raw=typeof payload.result==='string'?payload.result:typeof payload.result?.response==='string'?payload.result.response:typeof payload.response==='string'?payload.response:'';
-      const match=raw.match(/\{[\s\S]*\}/);
-      if(!match)throw new Error('A IA nao retornou uma tabela estruturada. Tente um print mais nitido.');
-      let parsed;
-      try{parsed=JSON.parse(match[0]);}catch{throw new Error('A leitura retornou um JSON invalido. Tente novamente com uma imagem mais nitida.')}
-      const columns=Array.isArray(parsed.columns)?parsed.columns.filter(x=>typeof x==='string'&&x.trim()).slice(0,8).map(x=>x.slice(0,65)):[];
-      if(!columns.length||!Array.isArray(parsed.items))throw new Error('A imagem nao possui colunas de preco identificaveis.');
+      const root=payload.result??payload;
+      const raw=typeof root==='string'?root:typeof root?.response==='string'?root.response:
+        typeof root?.text==='string'?root.text:
+        typeof root?.message?.content==='string'?root.message.content:
+        typeof payload.response==='string'?payload.response:'';
+      // Diferenciar resposta vazia, texto fora do formato e JSON interrompido pelo limite de tokens.
+      console.info('[bulk-scan] vision output', 'chars=',raw.length,'finish_reason=',String(root?.finish_reason||root?.stop_reason||payload?.finish_reason||'unknown'),
+        'result_type=',typeof root,'keys=',Object.keys(root&&typeof root==='object'?root:{}).slice(0,8).join(','));
+      let parsed=null;
+      if(root&&typeof root==='object'&&Array.isArray(root.items))parsed=root;
+      if(!parsed&&raw){
+        const stripped=raw.trim().replace(/^\x60\x60\x60(?:json)?\s*/i,'').replace(/\s*\x60\x60\x60$/,'');
+        const first=stripped.indexOf('{'),last=stripped.lastIndexOf('}');
+        const candidate=first>=0&&last>first?stripped.slice(first,last+1):stripped;
+        try{parsed=JSON.parse(candidate)}catch{}
+      }
+      if(!parsed||!Array.isArray(parsed.items)){
+        console.warn('[bulk-scan] Resposta de IA sem JSON completo; saida_chars=',raw.length,'amostra=',raw.slice(0,100).replace(/[^\x20-\x7e]/g,' '));
+        throw new Error('A Cloudflare respondeu, mas nao devolveu a tabela completa em JSON. Nenhum preco foi alterado.');
+      }
+      const columns=Array.isArray(parsed.columns)&&parsed.columns.length?parsed.columns.filter(x=>typeof x==='string'&&x.trim()).slice(0,8).map(x=>x.slice(0,65)):[conditionNames[condition]];
       // A visao pode devolver precos como "R$ 3.310,00", "3.310" ou numero.
       // Aceitar formatos monetarios BR sem interpretar textos ambiguos como valores.
       function parseVisionPrice(value){
