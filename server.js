@@ -54,6 +54,8 @@ const path = require("path");
 
 console.log("ASAAS URL:", process.env.ASAAS_API_URL);
 // Nunca registrar partes de tokens ou chaves de integração nos logs.
+// Aceita imagens maiores somente nesta rota; demais rotas mantem limite original.
+app.use('/api/portal/bulk-editor/scan-image', express.json({limit:'6mb'}));
 app.use(express.json({
     type: ["application/json", "application/*+json", "text/plain"],
     verify: (req, res, buf) => { if (req.originalUrl?.startsWith("/api/webhooks/bling/")) req.rawBody = Buffer.from(buf); }

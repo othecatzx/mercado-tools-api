@@ -726,6 +726,44 @@ const codes = [...companies.entries()].map(([companyId, company]) => {
     } catch(e){return res.status(500).json({ok:false,message:e.message})}
   });
 
+  // Extracao visual de tabela de precos. Nunca escreve no Mercado Livre.
+  const bulkVisionUsage = new Map();
+  app.post('/api/portal/bulk-editor/scan-image', authPortalOrAgent, async (req,res) => {
+    res.set('Cache-Control','no-store');
+    try {
+      if(!scopedMenuAllowed(req,'bulk-editor'))return res.status(403).json({ok:false,message:'Sem permissao para Acoes em massa.'});
+      const accountId=process.env.CLOUDFLARE_ACCOUNT_ID, token=process.env.CLOUDFLARE_AI_API_TOKEN;
+      if(!accountId||!token)return res.status(503).json({ok:false,message:'Configure CLOUDFLARE_ACCOUNT_ID e CLOUDFLARE_AI_API_TOKEN no Render.'});
+      const image=String(req.body?.image||'');
+      if(!/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(image)||image.length>5500000)return res.status(400).json({ok:false,message:'Envie PNG, JPG ou WebP com ate 4 MB.'});
+      const actor=req.portalRole==='support_agent'?'agent:'+req.supportAgent?.id:'user:'+req.portalUserId;
+      const bucket=new Date().toISOString().slice(0,10)+':'+actor;
+      const usage=bulkVisionUsage.get(bucket)||{count:0,last:0};
+      if(usage.count>=15)return res.status(429).json({ok:false,message:'Limite diario de 15 leituras de imagem atingido.'});
+      if(Date.now()-usage.last<8000)return res.status(429).json({ok:false,message:'Aguarde 8 segundos para tentar outra leitura.'});
+      bulkVisionUsage.set(bucket,{count:usage.count+1,last:Date.now()});
+      const prompt='Leia a tabela de precos da imagem em portugues. Retorne SOMENTE JSON valido no formato {"columns":["nome da coluna de preco"],"items":[{"configuration":"configuracao literal da linha","prices":[numero ou null]}]}. Preserve TODAS as colunas de preco (como CAIXA ABERTA, MOSTRUARIO, COM MARCAS), na mesma ordem. Exclua colunas de diferenca/adicional, que nao sao preco de venda. Extraia TODAS as linhas legiveis, sem inventar, sem completar numeros ausentes. Converta 3.300,00 em 3300. A configuracao deve permanecer textual e fiel a imagem. Se houver valor duvidoso, use null. Nunca misture precos entre linhas ou colunas. Maximo 100 linhas.';
+      const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),35000);
+      let response;
+      try {response=await fetch('https://api.cloudflare.com/client/v4/accounts/'+encodeURIComponent(accountId)+'/ai/run/@cf/meta/llama-3.2-11b-vision-instruct',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({messages:[{role:'user',content:prompt}],image,max_tokens:3000,temperature:0}),signal:controller.signal});}
+      finally{clearTimeout(timer)}
+      const payload=await response.json().catch(()=>({}));
+      if(!response.ok||payload.success===false)throw new Error('A leitura por IA falhou (HTTP '+response.status+'). Verifique se o modelo de visao esta habilitado na Cloudflare.');
+      const raw=typeof payload.result==='string'?payload.result:typeof payload.result?.response==='string'?payload.result.response:typeof payload.response==='string'?payload.response:'';
+      const match=raw.match(/\{[\s\S]*\}/);
+      if(!match)throw new Error('A IA nao retornou uma tabela estruturada. Tente um print mais nitido.');
+      let parsed;
+      try{parsed=JSON.parse(match[0]);}catch{throw new Error('A leitura retornou um JSON invalido. Tente novamente com uma imagem mais nitida.')}
+      const columns=Array.isArray(parsed.columns)?parsed.columns.filter(x=>typeof x==='string'&&x.trim()).slice(0,8).map(x=>x.slice(0,65)):[];
+      if(!columns.length||!Array.isArray(parsed.items))throw new Error('A imagem nao possui colunas de preco identificaveis.');
+      const items=parsed.items.slice(0,100).filter(x=>x&&typeof x.configuration==='string'&&x.configuration.trim()).map(x=>({
+        configuration:x.configuration.slice(0,240),
+        prices:columns.map((_,i)=>{const v=x.prices?.[i];return typeof v==='number'&&Number.isFinite(v)&&v>0&&v<1000000?Math.round(v*100)/100:null;})
+      }));
+      res.json({ok:true,columns,items,requires_review:true});
+    }catch(err){res.status(502).json({ok:false,message:err.message||'Falha na leitura da imagem.'})}
+  });
+
   // Editor em massa - apenas campos explicitamente autorizados.
   app.post('/api/portal/bulk-editor/preview', authPortalOrAgent, async (req,res) => {
     try {

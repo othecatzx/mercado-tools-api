@@ -180,18 +180,83 @@ function downloadResultReport(){
  XLSX.utils.book_append_sheet(book,sheet,'Resultados');
  XLSX.writeFile(book,'ml-sh-resultado-edicao-em-massa.xlsx');
 }
+let scanned=null;
+const formatPrice=v=>Number(v).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
+function specKey(s){
+ const t=String(s||'').toUpperCase().replace(/[^A-Z0-9]+/g,' '),ram=t.match(/\b(4|8|16|32|64)\s*GB\s*(?:RAM)?\b/);
+ const disks=[...t.matchAll(/\b(SSD|HDD|HD)\s*(?:SATA|M2|NVME|M 2)?\s*(\d{2,4})\s*(GB|TB)?\b/g)].map(m=>m[1].replace('HDD','HD')+':'+Number(m[2])*(m[3]==='TB'?1024:1)).sort();
+ return ram&&disks.length?ram[1]+'GB|'+disks.join('|'):null;
+}
+function suggestedTarget(item){
+ const sig=specKey(item.configuration);
+ if(!sig)return '';
+ const found=rows.filter(r=>specKey(r.title+' '+r.sku)===sig);
+ return found.length===1?key(found[0]):'';
+}
+function closeScan(){if($('bulkScanOverlay'))$('bulkScanOverlay').hidden=true;}
+function renderScan(){
+ if(!scanned)return;
+ const col=Number($('bulkScanColumn').value);
+ $('bulkScanRows').innerHTML=scanned.items.map((item,i)=>{
+  const price=item.prices[col],current=rows.find(r=>key(r)===item.target);
+  const opts='<option value="">Selecionar anuncio...</option>'+rows.map(r=>'<option value="'+escape(key(r))+'" '+(key(r)===item.target?'selected':'')+'>'+escape(r.company_name+' / '+r.id+' / '+r.title.slice(0,55))+'</option>').join('');
+  return '<tr><td><input type="checkbox" data-index="'+i+'" class="bulk-scan-check" '+(item.checked?'checked':'')+' '+(!price||!current?'disabled':'')+'></td><td>'+escape(item.configuration)+'</td><td>'+(price?formatPrice(price):'Duvidoso')+'</td><td><select class="bulk-scan-target" data-index="'+i+'">'+opts+'</select></td><td>'+(current?formatPrice(current.price)+' → '+formatPrice(price):'Sem anuncio vinculado')+'</td></tr>';
+ }).join('');
+ const active=scanned.items.filter(x=>x.checked&&x.target&&Number(x.prices[col])>0);
+ const repeated=new Set(active.map(x=>x.target)).size!==active.length;
+ $('bulkScanStatus').textContent=active.length+' selecionado(s)'+(repeated?' · anuncio duplicado: corrija antes de continuar':'');
+ $('bulkScanConfirm').disabled=!active.length||repeated;
+}
+async function scanImage(file){
+ if(!file)return;
+ if(!rows.length){window.toast?.('Adicione primeiro os anuncios MLB ou SKU.');$('bulkScanFile').value='';return}
+ if(!/^image\/(png|jpeg|webp)$/.test(file.type)||file.size>4*1024*1024){window.toast?.('Use PNG, JPG ou WebP de ate 4 MB.');$('bulkScanFile').value='';return}
+ try{
+  $('bulkScanOpen').disabled=true;$('bulkScanOpen').textContent='Analisando imagem...';
+  const image=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=reject;reader.readAsDataURL(file)});
+  const data=await api('/api/portal/bulk-editor/scan-image',{method:'POST',body:JSON.stringify({image})});
+  if(!data.items?.length)throw new Error('Nenhuma configuracao encontrada.');
+  scanned={columns:data.columns,items:data.items.map(x=>({...x,target:suggestedTarget(x),checked:false}))};
+  $('bulkScanColumn').innerHTML=scanned.columns.map((s,i)=>'<option value="'+i+'">'+escape(s)+'</option>').join('');
+  $('bulkScanOverlay').hidden=false;renderScan();
+ }catch(e){window.toast?.(e.message||'Falha na leitura da imagem')}
+ finally{$('bulkScanOpen').disabled=false;$('bulkScanOpen').textContent='✦ Importar print com IA';$('bulkScanFile').value=''}
+}
+function acceptScan(){
+ if(!scanned)return;
+ const col=Number($('bulkScanColumn').value),chosen=scanned.items.filter(x=>x.checked&&x.target&&Number(x.prices[col])>0);
+ if(!chosen.length||new Set(chosen.map(x=>x.target)).size!==chosen.length)return;
+ for(const item of chosen){const row=rows.find(r=>key(r)===item.target);if(row)row.price=String(item.prices[col])}
+ results=[];closeScan();scanned=null;render();
+ window.toast?.(chosen.length+' preco(s) preenchido(s). Revise as celulas antes de publicar.');
+}
 function markup(){
  return pageHead('FERRAMENTAS','Ações em massa','Edite títulos, preços e descrições diretamente nas células, como no Excel.')+
  '<section class="panel bulk-panel"><div class="bulk-head"><div><h3>Editor de anúncios</h3><p class="small muted">Tabela de edição em massa, com identificação e estoque protegidos.</p></div><span class="bulk-tag">Mercado Livre</span></div>'+
- '<div class="bulk-toolbar"><button class="btn btn-primary bulk-add-btn" id="bulkOpen">+ Adicione os MLB&#39;s</button><span id="bulkCount">0 anúncios</span><div class="bulk-toolbar-right"><button class="btn btn-ghost bulk-clear-btn" id="bulkClear">Limpar lista</button><button class="btn btn-ghost" id="bulkExport">↓ Baixar Excel</button><button class="btn btn-ghost" id="bulkImport">↑ Importar Excel</button><input id="bulkImportFile" type="file" accept=".xlsx,.xls" hidden></div></div>'+
+ '<div class="bulk-toolbar"><button class="btn btn-primary bulk-add-btn" id="bulkOpen">+ Adicione os MLB&#39;s</button><span id="bulkCount">0 anúncios</span><div class="bulk-toolbar-right"><button class="btn btn-ghost bulk-clear-btn" id="bulkClear">Limpar lista</button><button class="btn btn-ghost" id="bulkScanOpen">✦ Importar print com IA</button><input id="bulkScanFile" type="file" accept="image/png,image/jpeg,image/webp" hidden><button class="btn btn-ghost" id="bulkExport">↓ Baixar Excel</button><button class="btn btn-ghost" id="bulkImport">↑ Importar Excel</button><input id="bulkImportFile" type="file" accept=".xlsx,.xls" hidden></div></div>'+
  '<div class="bulk-grid"><table><thead><tr><th class="bulk-num">#</th><th>Foto</th>'+cols.map(c=>'<th style="min-width:'+c[2]+'px">'+escape(c[1])+(c[3]?' 🔒':'')+'</th>').join('')+'</tr></thead><tbody id="bulkRows"></tbody></table></div>'+
  '<div class="bulk-footer"><span class="small muted">As células alteradas ficam destacadas. Loja, MLB, SKU e Estoque são somente leitura.</span><button class="btn btn-primary" id="bulkApply" disabled>Revisar e aplicar alterações</button></div><div id="bulkFailures"></div><div id="bulkResults"></div></section>'+
  '<div id="bulkResultOverlay" class="bulk-result-overlay" hidden><aside class="bulk-result-panel" role="dialog" aria-modal="true" aria-labelledby="bulkResultTitle"><header class="bulk-result-top"><div><span class="bulk-result-eyebrow">ML SH SUPPORT / AÇÕES EM MASSA</span><h2 id="bulkResultTitle">Resumo das alterações</h2></div><button type="button" id="bulkResultClose" aria-label="Fechar resultados">×</button></header><div class="bulk-result-scroll"><div id="bulkResultSummary"></div><div class="bulk-result-section-title">Detalhes por situação</div><div class="bulk-result-groups" id="bulkResultGroups"></div></div><footer class="bulk-result-actions"><button class="btn btn-ghost" type="button" id="bulkResultDownload">↓ Exportar resultado</button><button class="btn btn-primary" type="button" id="bulkResultContinue">Concluir</button></footer></aside></div>'+
+ '<div id="bulkScanOverlay" class="bulk-scan-overlay" hidden><section class="bulk-scan-modal" role="dialog" aria-modal="true" aria-labelledby="bulkScanTitle"><header class="bulk-scan-head"><div><small>ML SH SUPPORT · LEITURA POR IA</small><h2 id="bulkScanTitle">Conferir preços da imagem</h2><p>Selecione a coluna de preços, confira cada configuração e escolha os anúncios corretos. Nada será publicado agora.</p></div><button type="button" class="btn btn-ghost" id="bulkScanClose">Fechar</button></header><div class="bulk-scan-controls"><label for="bulkScanColumn">Coluna da imagem</label><select id="bulkScanColumn"></select><span id="bulkScanStatus"></span></div><div class="bulk-scan-scroll"><table><thead><tr><th>Usar</th><th>Configuração identificada</th><th>Preço da imagem</th><th>Anúncio vinculado</th><th>Preço atual → novo</th></tr></thead><tbody id="bulkScanRows"></tbody></table></div><footer class="bulk-scan-actions"><span>Revise os preços na imagem original. Sugestões automáticas não são selecionadas por padrão.</span><button class="btn btn-primary" id="bulkScanConfirm" disabled>Preencher preços selecionados</button></footer></section></div>'+
  '<div id="bulkModal" class="bulk-modal-overlay" hidden><div class="bulk-modal" role="dialog" aria-modal="true" aria-labelledby="bulkModalTitle"><div class="bulk-modal-top"><div><div class="bulk-modal-kicker">MERCADO LIVRE · IMPORTAÇÃO</div><h2 id="bulkModalTitle">Adicionar anúncios</h2><p>Cole os códigos MLB ou SKU. Vamos procurar nas lojas vinculadas à sua conta.</p></div><button type="button" class="bulk-close" id="bulkClose" aria-label="Fechar">×</button></div>'+
  '<div class="bulk-modal-content"><label for="bulkInputs">MLBs ou SKUs dos anúncios</label><textarea id="bulkInputs" placeholder="MLB5360939846&#10;MLB5361165102&#10;SKU-EXEMPLO" rows="7" spellcheck="false"></textarea><div class="bulk-modal-hint"><span>Um código por linha, vírgula ou ponto e vírgula</span><strong>Até 100 códigos</strong></div></div>'+
  '<div class="bulk-modal-actions"><button type="button" class="btn btn-ghost" id="bulkCancel">Cancelar</button><button type="button" class="btn btn-primary" id="bulkSearch">Buscar anúncios</button></div></div></div>';
 }
 function init(){
+ $('bulkScanOpen')?.addEventListener('click',()=>$('bulkScanFile').click());
+ $('bulkScanFile')?.addEventListener('change',e=>scanImage(e.target.files[0]));
+ $('bulkScanClose')?.addEventListener('click',closeScan);
+ $('bulkScanColumn')?.addEventListener('change',()=>{if(scanned)scanned.items.forEach(x=>x.checked=false);renderScan()});
+ $('bulkScanRows')?.addEventListener('change',e=>{
+  if(!scanned)return;
+  const i=Number(e.target.dataset.index),item=scanned.items[i];
+  if(!item)return;
+  if(e.target.classList.contains('bulk-scan-target')){item.target=e.target.value;item.checked=false}
+  if(e.target.classList.contains('bulk-scan-check'))item.checked=e.target.checked;
+  renderScan();
+ });
+ $('bulkScanConfirm')?.addEventListener('click',acceptScan);
+ $('bulkScanOverlay')?.addEventListener('click',e=>{if(e.target.id==='bulkScanOverlay')closeScan()});
  $('bulkResultClose')?.addEventListener('click',closeResultPanel);
  $('bulkResultContinue')?.addEventListener('click',finishBulkResults);
  $('bulkResultDownload')?.addEventListener('click',downloadResultReport);
