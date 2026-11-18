@@ -240,15 +240,10 @@ function matchingTableItems(row,items){
   (!option.form||!disk.form||option.form===disk.form);
  const eligible=items.map(item=>({item,reference:productSpecs(item.configuration)}))
   .filter(x=>x.reference?.ram===specs.ram);
- // Correspondencia exata tem prioridade. 1TB pode usar a linha de 960GB
- // somente se nao houver nenhuma linha de 1TB na tabela.
- const exact=eligible.filter(x=>x.reference.disks.some(option=>compatible(option,disk.size)));
- if(exact.length)return exact.map(x=>x.item);
- if(disk.type==='SSD'&&(disk.size===1024||disk.size===960)){
-  const equivalent=disk.size===1024?960:1024;
-  return eligible.filter(x=>x.reference.disks.some(option=>compatible(option,equivalent))).map(x=>x.item);
- }
- return [];
+ // Capacidade exata somente: 1TB nao e 960GB. A linha "SSD 1TB (SATA E M2)"
+ // aceita SSD SATA ou M2, mas nao deve ser confundida com outras capacidades.
+ return eligible.filter(x=>x.reference.disks.some(option=>compatible(option,disk.size)))
+  .map(x=>x.item);
 }
 // Desktop: titulo curto pode indicar "480gb 16gb" sem dizer RAM/SSD.
 // Exigir mesmo numero de discos da tabela; nao atribuir precos de kits mistos a unidade unica.
