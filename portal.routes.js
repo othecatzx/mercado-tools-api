@@ -752,7 +752,7 @@ const codes = [...companies.entries()].map(([companyId, company]) => {
       const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),35000);
       let response;
       console.info('[bulk-scan] enviando para Cloudflare Vision, categoria=',condition,'imagem_bytes=',Math.floor(image.length*3/4));
-      try {response=await fetch('https://api.cloudflare.com/client/v4/accounts/'+encodeURIComponent(accountId)+'/ai/run/@cf/meta/llama-3.2-11b-vision-instruct',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({messages:[{role:'user',content:prompt}],image,max_tokens:2600,temperature:0}),signal:controller.signal});}
+      try {response=await fetch('https://api.cloudflare.com/client/v4/accounts/'+encodeURIComponent(accountId)+'/ai/run/@cf/meta/llama-3.2-11b-vision-instruct',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({prompt,image,max_tokens:2600,temperature:0}),signal:controller.signal});}
       finally{clearTimeout(timer)}
       const payload=await response.json().catch(()=>({}));
       console.info('[bulk-scan] Cloudflare Vision respondeu',response.status,'em_ms=',Date.now()-started);
