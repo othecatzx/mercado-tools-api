@@ -189,42 +189,59 @@ const formatPrice=v=>Number(v).toLocaleString('pt-BR',{style:'currency',currency
 // Combina apenas especificacoes completas, nao um titulo genericamente parecido.
 // Analisa titulo natural ("Lenovo ... 16gb 512gb Ssd") e linha compacta da tabela.
 function productSpecs(value){
- const t=String(value||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase()
-  .replace(/\b(1|2)\s*TB\b/g,(_,n)=>String(Number(n)*1024)+'GB')
-  .replace(/\b(\d{1,4})\s*G\b/g,'$1GB').replace(/[^A-Z0-9]+/g,' ');
- const ramMatch=t.match(/\bRAM\s*(4|8|16|32|64)\s*GB\b/)||t.match(/\b(4|8|16|32|64)\s*GB\s*RAM\b/)||
-  t.match(/\b(4|8|16|32|64)\s*GB\b(?=.*\b(?:SSD|HDD|HD)\b)/)||
-  t.match(/\b(4|8|16|32|64)\s*GB\b(?=.*\b(?:120|128|240|250|256|480|500|512|960|1000|1024|1920|2048)\s*GB\b)/);
- const ram=ramMatch?Number(ramMatch[1]):null;
+ const t=String(value||'').replace(/\b1000\s*GB\b(\s*M2)?\s*\(\s*1\s*TB\s*\)/ig,'1000GB$1').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase()
+  .replace(/\b(\d+)\s*TB\b/g,(_,n)=>String(Number(n)*1024)+'GB')
+  .replace(/\b(\d{1,4})\s*G\b/g,'$1GB').replace(/\bM[ .-]*2\b/g,'M2')
+  .replace(/[^A-Z0-9]+/g,' ').trim();
+ const candidates=[...t.matchAll(/\b(4|8|16|32|64)\s*GB\b/g)];
+ const explicitBefore=t.match(/\bRAM\s*(4|8|16|32|64)\s*GB\b/);
+ const explicitAfter=t.match(/\b(4|8|16|32|64)\s*GB\s*RAM\b/);
+ const explicit=explicitBefore||explicitAfter;
+ // Somente um valor possivel de RAM se o titulo nao escrever RAM.
+ if(!explicit&&candidates.length!==1)return null;
+ const ram=explicit?Number(explicit[1]):Number(candidates[0][1]);
+ const ramIndex=explicitBefore?explicitBefore.index+explicitBefore[0].indexOf(explicitBefore[1]):
+  explicitAfter?explicitAfter.index:candidates[0].index;
  const capacities=[...t.matchAll(/\b(120|128|240|250|256|480|500|512|960|1000|1024|1920|2048)\s*GB\b/g)]
-  .map(m=>({value:Number(m[1]),index:m.index})).filter(c=>!ramMatch||c.index!==ramMatch.index);
+  .filter(m=>m.index!==ramIndex);
+ if(!capacities.length)return null;
  const disks=[];
- for(const entry of capacities){
-  const before=t.slice(0,entry.index),after=t.slice(entry.index+String(entry.value).length+2,entry.index+String(entry.value).length+22);
-  const storageBefore=[...before.matchAll(/\b(SSD|HDD|HD)\b/g)].at(-1)?.[1];
-  const storageAfter=after.match(/\b(SSD|HDD|HD)\b/)?.[1];
-  const storage=storageBefore||storageAfter;
-  if(storage)disks.push({size:entry.value===1000?1024:entry.value,type:storage==='SSD'?'SSD':'HD'});
+ for(const m of capacities){
+  const before=t.slice(0,m.index),after=t.slice(m.index+m[0].length);
+  const lastType=[...before.matchAll(/\b(SSD|HDD|HD)\b/g)].at(-1);
+  const nextType=after.match(/^\s*(SSD|HDD|HD)\b/);
+  // "SSD 240GB SATA 256GB M2" herda SSD; "HDD 500GB / SSD 120GB" troca corretamente.
+  const prefixType=before.match(/\b(SSD|HDD|HD)\b(?:\s+(?:SATA|M2|NVME))?\s*$/);
+  const previousCapacity=[...before.matchAll(/\b(?:120|128|240|250|256|480|500|512|960|1000|1024|1920|2048)\s*GB\b/g)].at(-1);
+  const suffixOfPrevious=!!(lastType&&previousCapacity&&lastType.index>previousCapacity.index);
+  let type=(suffixOfPrevious&&nextType?nextType[1]:prefixType?.[1]||nextType?.[1]||lastType?.[1])||'';
+  if(!type&&capacities.length===1&&Number(m[1])<1000)type='SSD';
+  if(!type)return null; // Ex.: 1TB sem especificar SSD ou HDD.
+  const formatAfter=after.match(/^\s*(?:SSD|HDD|HD)?\s*(M2|NVME|SATA)\b/)?.[1]||'';
+  const formatBefore=lastType&&!nextType?before.slice(lastType.index).match(/\b(M2|NVME|SATA)\s*$/)?.[1]||'':'';
+  const fmt=formatAfter||formatBefore;
+  disks.push({size:Number(m[1])===1000?1024:Number(m[1]),
+   type:type==='SSD'?'SSD':'HD',
+   form:fmt==='M2'||fmt==='NVME'?'M2':fmt==='SATA'?'SATA':''});
  }
- const unique=disks.filter((x,i)=>disks.findIndex(y=>y.size===x.size&&y.type===x.type)===i);
- // Titulo resumido "16gb 256gb" pode omitir a palavra SSD.
- // So inferir quando ha uma unica capacidade alem da RAM e nenhum HD explicitado.
- if(ram&&!unique.length&&capacities.length===1&&!/\b(?:SSD|HDD|HD)\b/.test(t))
-  unique.push({size:capacities[0].value===1000?1024:capacities[0].value,type:'SSD'});
- return ram&&unique.length?{ram,disks:unique,text:t}:null;
+ return {ram,disks,text:t};
 }
 function matchingTableItems(row,items){
  const specs=productSpecs(row.title+' '+row.sku);
  if(!specs)return [];
- const wanted=specs.disks.filter(x=>x.type==='SSD');
- if(wanted.length!==1)return []; // nao presumir qual unidade alterar se houver varios SSDs no anuncio
- const candidates=items.filter(x=>{
-  const spec=productSpecs(x.configuration);
-  if(!spec||spec.ram!==specs.ram)return false;
-  const tableSSD=spec.disks.filter(d=>d.type==='SSD');
-  return tableSSD.some(d=>d.size===wanted[0].size);
+ // A quantidade e os tipos de unidades da imagem precisam corresponder ao anuncio.
+ // Ex.: SSD 256GB sozinho nao equivale a SSD 240GB + SSD 256GB M2.
+ return items.filter(x=>{
+  const ref=productSpecs(x.configuration);
+  if(!ref||ref.ram!==specs.ram||ref.disks.length!==specs.disks.length)return false;
+  const remaining=ref.disks.slice();
+  for(const disk of specs.disks){
+   const index=remaining.findIndex(candidate=>candidate.type===disk.type&&candidate.size===disk.size&&(!candidate.form||!disk.form||candidate.form===disk.form));
+   if(index<0)return false;
+   remaining.splice(index,1);
+  }
+  return !remaining.length;
  });
- return candidates;
 }
 // Desktop: titulo curto pode indicar "480gb 16gb" sem dizer RAM/SSD.
 // Exigir mesmo numero de discos da tabela; nao atribuir precos de kits mistos a unidade unica.
