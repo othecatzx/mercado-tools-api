@@ -228,19 +228,16 @@ function productSpecs(value){
 }
 function matchingTableItems(row,items){
  const specs=productSpecs(row.title+' '+row.sku);
- if(!specs)return [];
- // A quantidade e os tipos de unidades da imagem precisam corresponder ao anuncio.
- // Ex.: SSD 256GB sozinho nao equivale a SSD 240GB + SSD 256GB M2.
- return items.filter(x=>{
-  const ref=productSpecs(x.configuration);
-  if(!ref||ref.ram!==specs.ram||ref.disks.length!==specs.disks.length)return false;
-  const remaining=ref.disks.slice();
-  for(const disk of specs.disks){
-   const index=remaining.findIndex(candidate=>candidate.type===disk.type&&candidate.size===disk.size&&(!candidate.form||!disk.form||candidate.form===disk.form));
-   if(index<0)return false;
-   remaining.splice(index,1);
-  }
-  return !remaining.length;
+ if(!specs||specs.disks.length!==1)return [];
+ // Na TABELA os discos listados na mesma linha sao ALTERNATIVAS de preco.
+ // "SSD 240GB SATA 256GB M2" = 240GB OU 256GB, nao duas unidades.
+ // No ANUNCIO, exigir um armazenamento identificavel e coincidente.
+ const disk=specs.disks[0];
+ return items.filter(item=>{
+  const reference=productSpecs(item.configuration);
+  if(!reference||reference.ram!==specs.ram)return false;
+  return reference.disks.some(option=>option.type===disk.type&&option.size===disk.size&&
+   (!option.form||!disk.form||option.form===disk.form));
  });
 }
 // Desktop: titulo curto pode indicar "480gb 16gb" sem dizer RAM/SSD.

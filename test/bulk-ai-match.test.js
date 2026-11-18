@@ -11,10 +11,10 @@ const samples=[
  {configuration:'8GB RAM / SSD SATA 480GB',prices:[3310]}
 ];
 const cases=[
- ['Notebook Lenovo Thinkpad T14 G1 Core I7 10a 16gb 256gb Ssd',null],
+ ['Notebook Lenovo Thinkpad T14 G1 Core I7 10a 16gb 256gb Ssd',3320],
  ['Notebook Lenovo Thinkpad T14 G1 Core I7 10a 16gb 512gb Ssd',3630],
- ['Notebook Thinkpad T14 I7-10610u 16gb 256gb Fhd 14 W11',null],
- ['Notebook Thinkpad T14 I7-10610u 16gb 256gb SSD FHD 14 W11',null],
+ ['Notebook Thinkpad T14 I7-10610u 16gb 256gb Fhd 14 W11',3320],
+ ['Notebook Thinkpad T14 I7-10610u 16gb 256gb SSD FHD 14 W11',3320],
  ['Notebook Lenovo Thinkpad T14 G1 Core I7 10a 16gb 1tb Ssd',4110]
 ];
 for(const [title,price] of cases){
@@ -24,4 +24,4 @@ for(const [title,price] of cases){
 }
 assert.equal(matching.matchingTableItems({title:'Notebook 16GB 512GB SSD',sku:''},
  [...samples,{configuration:'16GB RAM / SSD SATA 512GB',prices:[3500]}]).length,2);
-console.log('PASS: cinco titulos testados; configuracoes multiplo-SSD nao sao tratadas como SSD unico');
+console.log('PASS: cinco titulos testados; linhas com alternativas 240GB OU 256GB');
