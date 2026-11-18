@@ -208,6 +208,21 @@ function renderScan(){
  $('bulkScanStatus').textContent=active.length+' selecionado(s)'+(repeated?' · anuncio duplicado: corrija antes de continuar':'');
  $('bulkScanConfirm').disabled=!active.length||repeated;
 }
+async function prepareScanImage(file){
+ const objectUrl=URL.createObjectURL(file);
+ try{
+  const img=await new Promise((resolve,reject)=>{const image=new Image();image.onload=()=>resolve(image);image.onerror=()=>reject(new Error('Nao foi possivel abrir a imagem.'));image.src=objectUrl});
+  const scale=Math.min(1,1800/Math.max(img.naturalWidth,img.naturalHeight));
+  const canvas=document.createElement('canvas');
+  canvas.width=Math.max(1,Math.round(img.naturalWidth*scale));
+  canvas.height=Math.max(1,Math.round(img.naturalHeight*scale));
+  const ctx=canvas.getContext('2d');
+  if(!ctx)throw new Error('Nao foi possivel processar a imagem.');
+  ctx.fillStyle='#fff';ctx.fillRect(0,0,canvas.width,canvas.height);
+  ctx.drawImage(img,0,0,canvas.width,canvas.height);
+  return canvas.toDataURL('image/jpeg',.88);
+ }finally{URL.revokeObjectURL(objectUrl)}
+}
 async function scanImage(file){
  if(!file)return;
  if(!rows.length){window.toast?.('Adicione primeiro os anuncios MLB ou SKU.');$('bulkScanFile').value='';return}
@@ -215,7 +230,7 @@ async function scanImage(file){
  try{
   if($('bulkScanError')){$('bulkScanError').hidden=true;$('bulkScanError').textContent=''}
   $('bulkScanOpen').disabled=true;$('bulkScanOpen').textContent='Analisando imagem...';
-  const image=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=reject;reader.readAsDataURL(file)});
+  const image=await prepareScanImage(file);
   const condition=$('bulkScanCondition')?.value;
   if(!condition)throw new Error('Escolha primeiro a categoria de preco.');
   const data=await api('/api/portal/bulk-editor/scan-image',{method:'POST',body:JSON.stringify({image,condition})});
