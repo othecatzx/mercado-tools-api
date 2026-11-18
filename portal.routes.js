@@ -727,6 +727,30 @@ const codes = [...companies.entries()].map(([companyId, company]) => {
   });
 
   // Extracao visual de tabela de precos. Nunca escreve no Mercado Livre.
+  // Desktop recebe JSON direto, JSON cercado por markdown, ou campos alternativos
+  // dos provedores de IA. Nunca converter texto livre em preco automaticamente.
+  function parseDesktopVisionPayload(payload){
+    const root=payload?.result??payload;
+    const candidates=[root,root?.response,root?.text,root?.output,root?.generated_text,
+      root?.message?.content,root?.choices?.[0]?.message?.content,payload?.response];
+    const texts=[];
+    for(const candidate of candidates){
+      if(candidate&&typeof candidate==='object'&&Array.isArray(candidate.items))return candidate;
+      if(typeof candidate==='string'&&candidate.trim())texts.push(candidate.trim());
+    }
+    for(const source of texts){
+      const text=source.replace(/^```(?:json)?\s*/i,'').replace(/\s*```$/,'').trim();
+      const first=text.indexOf('{'),last=text.lastIndexOf('}');
+      for(const candidate of [text,first>=0&&last>first?text.slice(first,last+1):'']){
+        if(!candidate)continue;
+        try{
+          const result=JSON.parse(candidate);
+          if(result&&Array.isArray(result.items))return result;
+        }catch{}
+      }
+    }
+    return null;
+  }
   const bulkVisionUsage = new Map();
   app.post('/api/portal/bulk-editor/scan-image', authPortalOrAgent, async (req,res) => {
     res.set('Cache-Control','no-store');
@@ -750,7 +774,10 @@ const codes = [...companies.entries()].map(([companyId, company]) => {
       if(Date.now()-usage.last<8000)return res.status(429).json({ok:false,message:'Aguarde 8 segundos para tentar outra leitura.'});
       bulkVisionUsage.set(bucket,{count:usage.count+1,last:Date.now()});
       const conditionNames={caixa_aberta:'CAIXA ABERTA',mostruario:'MOSTRUARIO',com_marcas:'COM MARCAS',recondicionado:'RECONDICIONADO'};
-      const prompt='Extraia a tabela da imagem. Leia APENAS a coluna de preco '+conditionNames[condition]+', ignorando todas as outras colunas, inclusive Adicional. Responda somente JSON, sem markdown: {"columns":["'+conditionNames[condition]+'"],"items":[{"configuration":"texto original da configuracao","prices":[3300]}]}. Um item por linha, preserve a configuracao completa e a ordem. Precos sao numeros em reais: 3.300,00 vira 3300. Se um preco estiver ilegivel, use null. Se a coluna nao existir, retorne items vazio. Nao invente valores.'+(productType==='desktop'?' A imagem e uma tabela recortada de desktop. Preserve todos os discos SSD, HDD e formatos SATA/M2 da linha, sem completar unidades ausentes.':'');
+      const notebookPrompt='Extraia a tabela da imagem. Leia APENAS a coluna de preco '+conditionNames[condition]+', ignorando todas as outras colunas, inclusive Adicional. Responda somente JSON, sem markdown: {"columns":["'+conditionNames[condition]+'"],"items":[{"configuration":"texto original da configuracao","prices":[3300]}]}. Um item por linha, preserve a configuracao completa e a ordem. Precos sao numeros em reais: 3.300,00 vira 3300. Se um preco estiver ilegivel, use null. Se a coluna nao existir, retorne items vazio. Nao invente valores.';
+      // Prompt de desktop isolado: nao modifica o fluxo de notebook ja validado.
+      const desktopPrompt='A imagem e uma tabela de precos de DESKTOP ja recortada. Leia cada linha da coluna CONFIGURACAO e o preco SOMENTE da coluna '+conditionNames[condition]+'. Ignore totalmente ADICIONAL e as outras colunas de preco. Responda SOMENTE JSON valido, sem explicacoes, no formato {"columns":["'+conditionNames[condition]+'"],"items":[{"configuration":"RAM 8GB / SSD SATA 480GB","prices":[2309]}]}. O exemplo define apenas o formato, NAO invente linhas ou valores. Preserve o texto real de todas as configuracoes, SSD, HDD, SATA e M2. Cada preco e um numero em reais (2.309,00 = 2309). Se uma celula estiver ilegivel use null. Se nao localizar a coluna, items deve ser [].';
+      const prompt=productType==='desktop'?desktopPrompt:notebookPrompt;
       const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),55000);
       let response;
       console.info('[bulk-scan] enviando para Cloudflare Vision, categoria=',condition,'imagem_bytes=',Math.floor(image.length*3/4));
@@ -773,12 +800,28 @@ const codes = [...companies.entries()].map(([companyId, company]) => {
         const detail=String(payload.errors?.[0]?.message||payload.error||payload.message||'').slice(0,220);
         throw new Error('Cloudflare Vision HTTP '+response.status+(detail?': '+detail:'')+'. Se o modelo exigir aceite da licenca Meta, autorize no painel da Cloudflare.');
       }
-      const raw=typeof payload.result==='string'?payload.result:typeof payload.result?.response==='string'?payload.result.response:typeof payload.response==='string'?payload.response:'';
-      const match=raw.match(/\{[\s\S]*\}/);
-      if(!match)throw new Error('A IA nao retornou uma tabela estruturada. Tente um print mais nitido.');
       let parsed;
-      try{parsed=JSON.parse(match[0]);}catch{throw new Error('A leitura retornou um JSON invalido. Tente novamente com uma imagem mais nitida.')}
-      const columns=Array.isArray(parsed.columns)?parsed.columns.filter(x=>typeof x==='string'&&x.trim()).slice(0,8).map(x=>x.slice(0,65)):[];
+      if(productType==='desktop'){
+        parsed=parseDesktopVisionPayload(payload);
+        if(!parsed){
+          const root=payload.result??payload;
+          const responseText=typeof root==='string'?root:typeof root?.response==='string'?root.response:
+            typeof root?.text==='string'?root.text:'';
+          console.warn('[bulk-scan] desktop: resposta nao estruturada',
+            'result_type=',typeof root,
+            'result_keys=',Object.keys(root&&typeof root==='object'?root:{}).slice(0,12).join(','),
+            'texto_chars=',responseText.length,
+            'finish_reason=',String(root?.finish_reason||root?.stop_reason||'indisponivel'));
+          throw new Error('A Cloudflare respondeu, mas nao retornou a tabela de Desktop em JSON valido. Nenhum preco foi alterado.');
+        }
+      }else{
+        // Fluxo original de notebook preservado.
+        const raw=typeof payload.result==='string'?payload.result:typeof payload.result?.response==='string'?payload.result.response:typeof payload.response==='string'?payload.response:'';
+        const match=raw.match(/\{[\s\S]*\}/);
+        if(!match)throw new Error('A IA nao retornou uma tabela estruturada. Tente um print mais nitido.');
+        try{parsed=JSON.parse(match[0]);}catch{throw new Error('A leitura retornou um JSON invalido. Tente novamente com uma imagem mais nitida.')}
+      }
+      const columns=Array.isArray(parsed.columns)?parsed.columns.filter(x=>typeof x==='string'&&x.trim()).slice(0,8).map(x=>x.slice(0,65)):(productType==='desktop'?[conditionNames[condition]]:[]);
       if(!columns.length||!Array.isArray(parsed.items))throw new Error('A imagem nao possui colunas de preco identificaveis.');
       // A visao pode devolver precos como "R$ 3.310,00", "3.310" ou numero.
       // Aceitar formatos monetarios BR sem interpretar textos ambiguos como valores.
@@ -793,7 +836,8 @@ const codes = [...companies.entries()].map(([companyId, company]) => {
         const price=Number(s);
         return Number.isFinite(price)&&price>0&&price<1000000?Math.round(price*100)/100:null;
       }
-      const items=parsed.items.slice(0,100).filter(x=>x&&typeof x.configuration==='string'&&x.configuration.trim()).map(x=>({
+      const items=parsed.items.slice(0,100).map(x=>productType==='desktop'&&Array.isArray(x)?{configuration:x[0],prices:[x[1]]}:x)
+        .filter(x=>x&&typeof x.configuration==='string'&&x.configuration.trim()).map(x=>({
         configuration:x.configuration.slice(0,240),
         prices:columns.map((_,i)=>parseVisionPrice(x.prices?.[i]))
       }));
