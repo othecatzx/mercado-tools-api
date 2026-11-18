@@ -739,8 +739,6 @@ const codes = [...companies.entries()].map(([companyId, company]) => {
       const image=String(req.body?.image||'');
       const allowedConditions=['caixa_aberta','mostruario','com_marcas','recondicionado'];
       const condition=String(req.body?.condition||'');
-      const productType=String(req.body?.productType||'notebook');
-      if(!['notebook','desktop'].includes(productType))return res.status(400).json({ok:false,message:'Tipo de produto invalido.'});
       if(!allowedConditions.includes(condition))return res.status(400).json({ok:false,message:'Selecione o tipo de preco antes da leitura.'});
       if(!/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(image)||image.length>5500000)return res.status(400).json({ok:false,message:'Envie PNG, JPG ou WebP com ate 4 MB.'});
       const actor=req.portalRole==='support_agent'?'agent:'+req.supportAgent?.id:'user:'+req.portalUserId;
@@ -750,13 +748,11 @@ const codes = [...companies.entries()].map(([companyId, company]) => {
       if(Date.now()-usage.last<8000)return res.status(429).json({ok:false,message:'Aguarde 8 segundos para tentar outra leitura.'});
       bulkVisionUsage.set(bucket,{count:usage.count+1,last:Date.now()});
       const conditionNames={caixa_aberta:'CAIXA ABERTA',mostruario:'MOSTRUARIO',com_marcas:'COM MARCAS',recondicionado:'RECONDICIONADO'};
-      // Resposta compacta: menos tokens gerados pelo modelo visual e menor risco de timeout.
-      // Nao mudar a coluna nem usar valores da coluna ADICIONAL.
-      const prompt='Tabela de '+(productType==='desktop'?'DESKTOP':'NOTEBOOK')+' recortada. Extraia somente a coluna '+conditionNames[condition]+'. Ignore ADICIONAL e todas as demais colunas. Responda exclusivamente JSON: {"columns":["'+conditionNames[condition]+'"],"items":[["8GB RAM / SSD SATA 480GB",2309],["16GB RAM / SSD 512GB M2",2489]]}. Substitua os exemplos pelos valores reais; nao copie exemplos. Cada item e [configuracao literal, preco numerico em reais]. Todas as linhas visiveis, RAM, SSD, HDD, SATA/M2 completos. 2.309,00 = 2309. Valores ilegiveis: null. Se houver dois blocos de produto na mesma imagem, retorne items vazio. Nao explique.';
+      const prompt='Extraia a tabela da imagem. Leia APENAS a coluna de preco '+conditionNames[condition]+', ignorando todas as outras colunas, inclusive Adicional. Responda somente JSON, sem markdown: {"columns":["'+conditionNames[condition]+'"],"items":[{"configuration":"texto original da configuracao","prices":[3300]}]}. Um item por linha, preserve a configuracao completa e a ordem. Precos sao numeros em reais: 3.300,00 vira 3300. Se um preco estiver ilegivel, use null. Se a coluna nao existir, retorne items vazio. Nao invente valores.';
       const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),55000);
       let response;
       console.info('[bulk-scan] enviando para Cloudflare Vision, categoria=',condition,'imagem_bytes=',Math.floor(image.length*3/4));
-      try {response=await fetch('https://api.cloudflare.com/client/v4/accounts/'+encodeURIComponent(accountId)+'/ai/run/@cf/meta/llama-3.2-11b-vision-instruct',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({messages:[{role:'user',content:[{type:'text',text:prompt},{type:'image_url',image_url:{url:image}}]}],max_tokens:2000,temperature:0}),signal:controller.signal});}
+      try {response=await fetch('https://api.cloudflare.com/client/v4/accounts/'+encodeURIComponent(accountId)+'/ai/run/@cf/meta/llama-3.2-11b-vision-instruct',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({messages:[{role:'user',content:[{type:'text',text:prompt},{type:'image_url',image_url:{url:image}}]}],max_tokens:2200,temperature:0}),signal:controller.signal});}
       finally{clearTimeout(timer)}
       const payload=await response.json().catch(()=>({}));
       console.info('[bulk-scan] Cloudflare Vision respondeu',response.status,'em_ms=',Date.now()-started);
@@ -775,27 +771,13 @@ const codes = [...companies.entries()].map(([companyId, company]) => {
         const detail=String(payload.errors?.[0]?.message||payload.error||payload.message||'').slice(0,220);
         throw new Error('Cloudflare Vision HTTP '+response.status+(detail?': '+detail:'')+'. Se o modelo exigir aceite da licenca Meta, autorize no painel da Cloudflare.');
       }
-      const root=payload.result??payload;
-      const raw=typeof root==='string'?root:typeof root?.response==='string'?root.response:
-        typeof root?.text==='string'?root.text:
-        typeof root?.message?.content==='string'?root.message.content:
-        typeof payload.response==='string'?payload.response:'';
-      // Diferenciar resposta vazia, texto fora do formato e JSON interrompido pelo limite de tokens.
-      console.info('[bulk-scan] vision output', 'chars=',raw.length,'finish_reason=',String(root?.finish_reason||root?.stop_reason||payload?.finish_reason||'unknown'),
-        'result_type=',typeof root,'keys=',Object.keys(root&&typeof root==='object'?root:{}).slice(0,8).join(','));
-      let parsed=null;
-      if(root&&typeof root==='object'&&Array.isArray(root.items))parsed=root;
-      if(!parsed&&raw){
-        const stripped=raw.trim().replace(/^\x60\x60\x60(?:json)?\s*/i,'').replace(/\s*\x60\x60\x60$/,'');
-        const first=stripped.indexOf('{'),last=stripped.lastIndexOf('}');
-        const candidate=first>=0&&last>first?stripped.slice(first,last+1):stripped;
-        try{parsed=JSON.parse(candidate)}catch{}
-      }
-      if(!parsed||!Array.isArray(parsed.items)){
-        console.warn('[bulk-scan] Resposta de IA sem JSON completo; saida_chars=',raw.length,'amostra=',raw.slice(0,100).replace(/[^\x20-\x7e]/g,' '));
-        throw new Error('A Cloudflare respondeu, mas nao devolveu a tabela completa em JSON. Nenhum preco foi alterado.');
-      }
-      const columns=Array.isArray(parsed.columns)&&parsed.columns.length?parsed.columns.filter(x=>typeof x==='string'&&x.trim()).slice(0,8).map(x=>x.slice(0,65)):[conditionNames[condition]];
+      const raw=typeof payload.result==='string'?payload.result:typeof payload.result?.response==='string'?payload.result.response:typeof payload.response==='string'?payload.response:'';
+      const match=raw.match(/\{[\s\S]*\}/);
+      if(!match)throw new Error('A IA nao retornou uma tabela estruturada. Tente um print mais nitido.');
+      let parsed;
+      try{parsed=JSON.parse(match[0]);}catch{throw new Error('A leitura retornou um JSON invalido. Tente novamente com uma imagem mais nitida.')}
+      const columns=Array.isArray(parsed.columns)?parsed.columns.filter(x=>typeof x==='string'&&x.trim()).slice(0,8).map(x=>x.slice(0,65)):[];
+      if(!columns.length||!Array.isArray(parsed.items))throw new Error('A imagem nao possui colunas de preco identificaveis.');
       // A visao pode devolver precos como "R$ 3.310,00", "3.310" ou numero.
       // Aceitar formatos monetarios BR sem interpretar textos ambiguos como valores.
       function parseVisionPrice(value){
@@ -809,8 +791,7 @@ const codes = [...companies.entries()].map(([companyId, company]) => {
         const price=Number(s);
         return Number.isFinite(price)&&price>0&&price<1000000?Math.round(price*100)/100:null;
       }
-      const items=parsed.items.slice(0,100).map(x=>Array.isArray(x)?{configuration:x[0],prices:[x[1]]}:x)
-        .filter(x=>x&&typeof x.configuration==='string'&&x.configuration.trim()).map(x=>({
+      const items=parsed.items.slice(0,100).filter(x=>x&&typeof x.configuration==='string'&&x.configuration.trim()).map(x=>({
         configuration:x.configuration.slice(0,240),
         prices:columns.map((_,i)=>parseVisionPrice(x.prices?.[i]))
       }));
@@ -820,7 +801,7 @@ const codes = [...companies.entries()].map(([companyId, company]) => {
         return condition==='caixa_aberta'?text.includes('CAIXA ABERTA'):condition==='mostruario'?text.includes('MOSTRUARIO'):condition==='com_marcas'?text.includes('COM MARCAS')||text.includes('COM MARCA'):text.includes('RECONDICIONADO');
       });
       if(chosen<0)return res.status(422).json({ok:false,message:'A coluna '+conditionNames[condition]+' nao foi identificada na imagem. Confira o tipo de tabela e tente novamente.'});
-      res.json({ok:true,productType,columns:[columns[chosen]],items:items.map(item=>({configuration:item.configuration,prices:[item.prices[chosen]]})),requires_review:true});
+      res.json({ok:true,columns:[columns[chosen]],items:items.map(item=>({...item,prices:[item.prices[chosen]]})),requires_review:true});
     }catch(err){
       console.error('[bulk-scan] erro',err.name,'duracao_ms=',Date.now()-started,'motivo=',String(err.message||'falha').slice(0,220));
       if(res.headersSent)return;
