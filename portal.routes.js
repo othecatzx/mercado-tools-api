@@ -778,10 +778,24 @@ const codes = [...companies.entries()].map(([companyId, company]) => {
       try{parsed=JSON.parse(match[0]);}catch{throw new Error('A leitura retornou um JSON invalido. Tente novamente com uma imagem mais nitida.')}
       const columns=Array.isArray(parsed.columns)?parsed.columns.filter(x=>typeof x==='string'&&x.trim()).slice(0,8).map(x=>x.slice(0,65)):[];
       if(!columns.length||!Array.isArray(parsed.items))throw new Error('A imagem nao possui colunas de preco identificaveis.');
+      // A visao pode devolver precos como "R$ 3.310,00", "3.310" ou numero.
+      // Aceitar formatos monetarios BR sem interpretar textos ambiguos como valores.
+      function parseVisionPrice(value){
+        if(typeof value==='number')return Number.isFinite(value)&&value>0&&value<1000000?Math.round(value*100)/100:null;
+        if(typeof value!=='string')return null;
+        let s=value.trim().replace(/^R\\$\\s*/i,'').replace(/\\s/g,'');
+        if(!/^\\d[\\d.,]*$/.test(s))return null;
+        if(s.includes(',')&&s.includes('.'))s=s.replace(/\\./g,'').replace(',','.');
+        else if(s.includes(','))s=s.replace(',','.');
+        else if(/^\\d{1,3}(?:\\.\\d{3})+$/.test(s))s=s.replace(/\\./g,'');
+        const price=Number(s);
+        return Number.isFinite(price)&&price>0&&price<1000000?Math.round(price*100)/100:null;
+      }
       const items=parsed.items.slice(0,100).filter(x=>x&&typeof x.configuration==='string'&&x.configuration.trim()).map(x=>({
         configuration:x.configuration.slice(0,240),
-        prices:columns.map((_,i)=>{const v=x.prices?.[i];return typeof v==='number'&&Number.isFinite(v)&&v>0&&v<1000000?Math.round(v*100)/100:null;})
+        prices:columns.map((_,i)=>parseVisionPrice(x.prices?.[i]))
       }));
+      console.info('[bulk-scan] leitura estruturada', 'linhas=',items.length,'valores_validos=',items.flatMap(x=>x.prices).filter(v=>v!==null).length);
       const chosen=columns.findIndex(c=>{
         const text=String(c).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase();
         return condition==='caixa_aberta'?text.includes('CAIXA ABERTA'):condition==='mostruario'?text.includes('MOSTRUARIO'):condition==='com_marcas'?text.includes('COM MARCAS')||text.includes('COM MARCA'):text.includes('RECONDICIONADO');

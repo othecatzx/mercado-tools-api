@@ -187,28 +187,44 @@ function downloadResultReport(){
 let scanned=null;
 const formatPrice=v=>Number(v).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
 // Combina apenas especificacoes completas, nao um titulo genericamente parecido.
-function specKey(s){
- const t=String(s||'').toUpperCase().replace(/(\d+)\s*T(B)?\b/g,(_,n)=>String(Number(n)*1024)+'GB')
-   .replace(/(\d+)\s*G(B)?\b/g,(_,n)=>n+'GB').replace(/\bM[\s.-]*2\b/g,'M2').replace(/[^A-Z0-9]+/g,' ').trim();
- const ram=t.match(/\b(4|8|16|32|64)\s*GB\s*RAM\b/)||t.match(/^(4|8|16|32|64)\s*GB\b/);
- if(!ram)return null;
- const tokens=[...t.matchAll(/\b(SSD|HDD|HD)\b/g)];
+// Analisa titulo natural ("Lenovo ... 16gb 512gb Ssd") e linha compacta da tabela.
+function productSpecs(value){
+ const t=String(value||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase()
+  .replace(/\b(1|2)\s*TB\b/g,(_,n)=>String(Number(n)*1024)+'GB')
+  .replace(/\b(\d{1,4})\s*G\b/g,'$1GB').replace(/[^A-Z0-9]+/g,' ');
+ const ramMatch=t.match(/\bRAM\s*(4|8|16|32|64)\s*GB\b/)||t.match(/\b(4|8|16|32|64)\s*GB\s*RAM\b/)||
+  t.match(/\b(4|8|16|32|64)\s*GB\b(?=.*\b(?:SSD|HDD|HD)\b)/)||
+  t.match(/\b(4|8|16|32|64)\s*GB\b(?=.*\b(?:120|128|240|250|256|480|500|512|960|1000|1024|1920|2048)\s*GB\b)/);
+ const ram=ramMatch?Number(ramMatch[1]):null;
+ const capacities=[...t.matchAll(/\b(120|128|240|250|256|480|500|512|960|1000|1024|1920|2048)\s*GB\b/g)]
+  .map(m=>({value:Number(m[1]),index:m.index})).filter(c=>!ramMatch||c.index!==ramMatch.index);
  const disks=[];
- for(let i=0;i<tokens.length;i++){
-  const m=tokens[i],end=tokens[i+1]?.index??t.length,chunk=t.slice(m.index,end);
-  const sizes=[...chunk.matchAll(/\b(\d{2,4})\s*GB\b/g)].map(x=>Number(x[1]));
-  // Se nao for possivel determinar o armazenamento, a associacao e insegura.
-  if(!sizes.length)return null;
-  const matches=[...chunk.matchAll(/\b(\d{2,4})\s*GB\b/g)];
-  for(const sizeMatch of matches){
-   const size=Number(sizeMatch[1]),medium=m[1]==='HD'||m[1]==='HDD'?'HD':'SSD';
-   const local=chunk.slice(Math.max(0,sizeMatch.index-12),Math.min(chunk.length,sizeMatch.index+sizeMatch[0].length+8));
-   const form=medium==='HD'?'':(/\bM2\b/.test(local)?':M2':/\bSATA\b/.test(local)?':SATA':':TIPO_NAO_INFORMADO');
-   disks.push(medium+':'+size+form);
-  }
+ for(const entry of capacities){
+  const before=t.slice(0,entry.index),after=t.slice(entry.index+String(entry.value).length+2,entry.index+String(entry.value).length+22);
+  const storageBefore=[...before.matchAll(/\b(SSD|HDD|HD)\b/g)].at(-1)?.[1];
+  const storageAfter=after.match(/\b(SSD|HDD|HD)\b/)?.[1];
+  const storage=storageBefore||storageAfter;
+  if(storage)disks.push({size:entry.value===1000?1024:entry.value,type:storage==='SSD'?'SSD':'HD'});
  }
- if(!disks.length)return null;
- return ram[1]+'GB|'+disks.sort().join('|');
+ const unique=disks.filter((x,i)=>disks.findIndex(y=>y.size===x.size&&y.type===x.type)===i);
+ // Titulo resumido "16gb 256gb" pode omitir a palavra SSD.
+ // So inferir quando ha uma unica capacidade alem da RAM e nenhum HD explicitado.
+ if(ram&&!unique.length&&capacities.length===1&&!/\b(?:SSD|HDD|HD)\b/.test(t))
+  unique.push({size:capacities[0].value===1000?1024:capacities[0].value,type:'SSD'});
+ return ram&&unique.length?{ram,disks:unique,text:t}:null;
+}
+function matchingTableItems(row,items){
+ const specs=productSpecs(row.title+' '+row.sku);
+ if(!specs)return [];
+ const wanted=specs.disks.filter(x=>x.type==='SSD');
+ if(wanted.length!==1)return []; // nao presumir qual unidade alterar se houver varios SSDs no anuncio
+ const candidates=items.filter(x=>{
+  const spec=productSpecs(x.configuration);
+  if(!spec||spec.ram!==specs.ram)return false;
+  const tableSSD=spec.disks.filter(d=>d.type==='SSD');
+  return tableSSD.some(d=>d.size===wanted[0].size);
+ });
+ return candidates;
 }
 function conditionConflict(text,condition){
  const s=String(text||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
@@ -217,40 +233,48 @@ function conditionConflict(text,condition){
 }
 let scanSummary=null;
 function autoFillScan(data,condition){
- const groups=new Map(),ignored=[];
+ const valid=[],ignored=[];
+ const parsePrice=v=>{
+  if(typeof v==='number')return v;
+  if(typeof v!=='string')return NaN;
+  let s=v.trim().replace(/^R\$\s*/i,'').replace(/\s/g,'');
+  if(!/^\d[\d.,]*$/.test(s))return NaN;
+  if(s.includes(','))s=s.replace(/\./g,'').replace(',','.');
+  else if(/^\d{1,3}(?:\.\d{3})+$/.test(s))s=s.replace(/\./g,'');
+  return Number(s);
+ };
  for(const item of data.items){
-  const sig=specKey(item.configuration),price=Number(item.prices?.[0]);
-  if(!sig||!Number.isFinite(price)||price<=0){ignored.push(item.configuration+' (leitura incompleta)');continue}
-  const entries=groups.get(sig)||[];entries.push({item,price});groups.set(sig,entries);
+  const price=parsePrice(item.prices?.[0]);
+  if(!productSpecs(item.configuration)||!Number.isFinite(price)||price<=0){
+   ignored.push(item.configuration+' (configuracao ou preco ilegivel)');continue;
+  }
+  valid.push({...item,parsedPrice:price});
  }
  let updated=0,already=0,unmatched=0,ambiguous=0,conflicts=0,manual=0;
- const updatedKeys=[];
+ const updatedKeys=[],used=new Set();
  for(const row of rows){
-  const label=row.title+' '+row.sku;
-  const sig=specKey(label);
-  const options=sig?groups.get(sig):null;
-  if(!options){unmatched++;continue}
-  if(options.length!==1){ambiguous++;continue}
-  if(conditionConflict(label,condition)){conflicts++;continue}
-  if(changed(row).includes('price')){manual++;continue}
-  const price=options[0].price;
+  if(conditionConflict(row.title+' '+row.sku,condition)){conflicts++;continue}
+  const matches=matchingTableItems(row,valid);
+  // Mesmo tamanho de SSD/RAM pode corresponder a mais de uma configuracao; nunca escolher por proximidade.
+  if(!matches.length){unmatched++;continue}
+  if(matches.length!==1){ambiguous++;continue}
+  if(changed(row).includes('price')&&!row.aiImported){manual++;continue}
+  const price=matches[0].parsedPrice;
+  used.add(matches[0]);
   if(Number(row.price)===price){already++;continue}
-  row.price=String(price);
-  row.aiImported=true;
-  updatedKeys.push(key(row));updated++;
+  row.price=String(price);row.aiImported=true;updatedKeys.push(key(row));updated++;
  }
- const matchedSignatures=new Set(rows.map(r=>specKey(r.title+' '+r.sku)).filter(Boolean));
- for(const [sig,group] of groups)if(!matchedSignatures.has(sig))ignored.push(...group.map(x=>x.item.configuration+' (sem anuncio correspondente)'));
+ for(const item of valid)if(!used.has(item))ignored.push(item.configuration+' (nenhum anuncio compativel)');
  scanSummary={updated,already,unmatched,ambiguous,conflicts,manual,ignored,condition,updatedKeys};
  results=[];render();
  const panel=$('bulkScanSummary');
  if(panel){
   panel.hidden=false;
   panel.innerHTML='<strong>IA: '+updated+' preco(s) preenchido(s) automaticamente</strong><span>'+already+' ja corretos · '+unmatched+' sem correspondencia · '+ambiguous+' ambiguos · '+conflicts+' condicao divergente · '+manual+' edicoes manuais preservadas</span>'+
-   '<small>Somente valores associados a configuracoes identificaveis foram preenchidos. Confira os campos laranja antes de publicar.</small>'+
-   (ignored.length?'<details><summary>Ver '+ignored.length+' configuracao(oes) da imagem nao aplicadas</summary><ul>'+ignored.slice(0,50).map(x=>'<li>'+escape(x)+'</li>').join('')+'</ul></details>':'');
+   '<small>Compare os campos destacados com o print antes de publicar. A IA nao altera MLB, SKU ou estoque.</small>'+
+   (ignored.length?'<details><summary>Ver '+ignored.length+' configuracao(oes) nao aplicadas</summary><ul>'+ignored.slice(0,50).map(x=>'<li>'+escape(x)+'</li>').join('')+'</ul></details>':'');
  }
- window.toast?.(updated?updated+' preco(s) preenchido(s). Confira os campos destacados.':'Nenhum anuncio correspondeu com seguranca a tabela. Precos mantidos.');
+ window.toast?.(updated?updated+' preco(s) preenchido(s). Revise antes de publicar.':'Nao houve correspondencias seguras. Os precos foram preservados.');
 }
 function closeScan(){if($('bulkScanOverlay'))$('bulkScanOverlay').hidden=true;}
 function renderScan(){
