@@ -148,3 +148,4 @@ html[data-theme="dark"] .bulk-result-actions .btn-ghost{background:#26364c;color
 .bulk-price-condition:focus{outline:2px solid #fca311;outline-offset:2px}
 html[data-theme="dark"] .bulk-price-condition-label{color:#e5e5e5}
 html[data-theme="dark"] .bulk-price-condition{background:#14213d;color:white;border-color:#455875}
+.bulk-scan-error[hidden]{display:none!important}.bulk-scan-error{padding:13px 16px;margin:12px 20px;background:#fff1eb;border:1px solid #e8ac88;border-radius:10px;color:#813417;font-size:13px;white-space:pre-wrap;overflow-wrap:anywhere}
