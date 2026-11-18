@@ -38,4 +38,21 @@ const ambiguous=matchingTableItems({title:'Notebook 16gb 512gb SSD',sku:''},[
  {configuration:'16GB RAM / SSD 512GB M2',prices:[3300]}
 ]);
 assert.equal(ambiguous.length,2);
-console.log('PASS: '+cases.length+' casos de notebook, multiplos discos e variantes ambiguas');
+const title='Notebook Lenovo T14 G1 I7-10610u 32gb 1tb M.2 Fhd 14 W11';
+const exactTable=[
+ {configuration:'32GB RAM / SSD SATA 1TB (SATA E M2)',prices:[4850]},
+ {configuration:'32GB RAM / SSD 960GB M2',prices:[4500]}
+];
+assert.equal(productSpecs(title).disks[0].form,'M2');
+assert.equal(productSpecs(title).disks[0].type,'SSD');
+assert.equal(matchingTableItems({title,sku:''},exactTable).length,1);
+assert.equal(matchingTableItems({title,sku:''},exactTable)[0].prices[0],4850);
+assert.equal(matchingTableItems({title,sku:''},[exactTable[1]])[0].prices[0],4500);
+assert.equal(matchingTableItems({title:'Notebook 32gb 1tb NVMe',sku:''},[exactTable[1]]).length,1);
+assert.equal(matchingTableItems({title:'Notebook 16gb 1tb M.2',sku:''},[exactTable[1]]).length,0);
+assert.equal(matchingTableItems({title:'Notebook 32gb 1tb HD',sku:''},[exactTable[1]]).length,0);
+assert.equal(matchingTableItems({title,sku:''},[
+ {configuration:'32GB RAM / SSD 960GB M2',prices:[4500]},
+ {configuration:'32GB RAM / SSD 960GB NVME',prices:[4600]}
+]).length,2);
+console.log('PASS: '+cases.length+' casos + 1TB M.2, NVMe, prioridade exata e fallback 960GB');

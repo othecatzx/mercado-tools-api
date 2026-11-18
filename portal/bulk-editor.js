@@ -215,14 +215,17 @@ function productSpecs(value){
   const previousCapacity=[...before.matchAll(/\b(?:120|128|240|250|256|480|500|512|960|1000|1024|1920|2048)\s*GB\b/g)].at(-1);
   const suffixOfPrevious=!!(lastType&&previousCapacity&&lastType.index>previousCapacity.index);
   let type=(suffixOfPrevious&&nextType?nextType[1]:prefixType?.[1]||nextType?.[1]||lastType?.[1])||'';
+  // M2/NVMe identifica SSD mesmo quando o titulo omite a palavra SSD.
+  if(!type&&(/^(?:\s*(?:M2|NVME))\b/.test(after)||/\b(?:M2|NVME)\s*$/.test(before)))type='SSD';
   if(!type&&capacities.length===1&&Number(m[1])<1000)type='SSD';
   if(!type)return null; // Ex.: 1TB sem especificar SSD ou HDD.
   const formatAfter=after.match(/^\s*(?:SSD|HDD|HD)?\s*(M2|NVME|SATA)\b/)?.[1]||'';
   const formatBefore=lastType&&!nextType?before.slice(lastType.index).match(/\b(M2|NVME|SATA)\s*$/)?.[1]||'':'';
   const fmt=formatAfter||formatBefore;
+  const bothForms=/\bSATA\s+E\s+M2\b|\bM2\s+E\s+SATA\b/.test(after.slice(0,35));
   disks.push({size:Number(m[1])===1000?1024:Number(m[1]),
    type:type==='SSD'?'SSD':'HD',
-   form:fmt==='M2'||fmt==='NVME'?'M2':fmt==='SATA'?'SATA':''});
+   form:bothForms?'':fmt==='M2'||fmt==='NVME'?'M2':fmt==='SATA'?'SATA':''});
  }
  return {ram,disks,text:t};
 }
@@ -233,12 +236,19 @@ function matchingTableItems(row,items){
  // "SSD 240GB SATA 256GB M2" = 240GB OU 256GB, nao duas unidades.
  // No ANUNCIO, exigir um armazenamento identificavel e coincidente.
  const disk=specs.disks[0];
- return items.filter(item=>{
-  const reference=productSpecs(item.configuration);
-  if(!reference||reference.ram!==specs.ram)return false;
-  return reference.disks.some(option=>option.type===disk.type&&option.size===disk.size&&
-   (!option.form||!disk.form||option.form===disk.form));
- });
+ const compatible=(option,size)=>option.type===disk.type&&option.size===size&&
+  (!option.form||!disk.form||option.form===disk.form);
+ const eligible=items.map(item=>({item,reference:productSpecs(item.configuration)}))
+  .filter(x=>x.reference?.ram===specs.ram);
+ // Correspondencia exata tem prioridade. 1TB pode usar a linha de 960GB
+ // somente se nao houver nenhuma linha de 1TB na tabela.
+ const exact=eligible.filter(x=>x.reference.disks.some(option=>compatible(option,disk.size)));
+ if(exact.length)return exact.map(x=>x.item);
+ if(disk.type==='SSD'&&(disk.size===1024||disk.size===960)){
+  const equivalent=disk.size===1024?960:1024;
+  return eligible.filter(x=>x.reference.disks.some(option=>compatible(option,equivalent))).map(x=>x.item);
+ }
+ return [];
 }
 // Desktop: titulo curto pode indicar "480gb 16gb" sem dizer RAM/SSD.
 // Exigir mesmo numero de discos da tabela; nao atribuir precos de kits mistos a unidade unica.
