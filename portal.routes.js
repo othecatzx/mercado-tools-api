@@ -730,6 +730,7 @@ const codes = [...companies.entries()].map(([companyId, company]) => {
   const bulkVisionUsage = new Map();
   app.post('/api/portal/bulk-editor/scan-image', authPortalOrAgent, async (req,res) => {
     res.set('Cache-Control','no-store');
+    const started=Date.now();
     try {
       if(!scopedMenuAllowed(req,'bulk-editor'))return res.status(403).json({ok:false,message:'Sem permissao para Acoes em massa.'});
       const accountId=process.env.CLOUDFLARE_ACCOUNT_ID, token=process.env.CLOUDFLARE_AI_API_TOKEN;
@@ -749,9 +750,11 @@ const codes = [...companies.entries()].map(([companyId, company]) => {
       const prompt='O usuario selecionou a categoria de preco '+conditionNames[condition]+'. Extraia exatamente a coluna correspondente a essa categoria; nunca confunda com as demais. Se ela nao existir, retorne lista vazia. Leia a tabela de precos da imagem em portugues. Retorne SOMENTE JSON valido no formato {"columns":["nome da coluna de preco"],"items":[{"configuration":"configuracao literal da linha","prices":[numero ou null]}]}. Preserve TODAS as colunas de preco (como CAIXA ABERTA, MOSTRUARIO, COM MARCAS), na mesma ordem. Exclua colunas de diferenca/adicional, que nao sao preco de venda. Extraia TODAS as linhas legiveis, sem inventar, sem completar numeros ausentes. Converta 3.300,00 em 3300. A configuracao deve permanecer textual e fiel a imagem. Se houver valor duvidoso, use null. Nunca misture precos entre linhas ou colunas. Maximo 100 linhas.';
       const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),35000);
       let response;
+      console.info('[bulk-scan] enviando para Cloudflare Vision, categoria=',condition,'imagem_bytes=',Math.floor(image.length*3/4));
       try {response=await fetch('https://api.cloudflare.com/client/v4/accounts/'+encodeURIComponent(accountId)+'/ai/run/@cf/meta/llama-3.2-11b-vision-instruct',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({messages:[{role:'user',content:prompt}],image,max_tokens:2600,temperature:0}),signal:controller.signal});}
       finally{clearTimeout(timer)}
       const payload=await response.json().catch(()=>({}));
+      console.info('[bulk-scan] Cloudflare Vision respondeu',response.status,'em_ms=',Date.now()-started);
       if(!response.ok||payload.success===false){
         const detail=String(payload.errors?.[0]?.message||payload.error||payload.message||'').slice(0,220);
         throw new Error('Cloudflare Vision HTTP '+response.status+(detail?': '+detail:'')+'. Se o modelo exigir aceite da licenca Meta, autorize no painel da Cloudflare.');
@@ -773,7 +776,11 @@ const codes = [...companies.entries()].map(([companyId, company]) => {
       });
       if(chosen<0)return res.status(422).json({ok:false,message:'A coluna '+conditionNames[condition]+' nao foi identificada na imagem. Confira o tipo de tabela e tente novamente.'});
       res.json({ok:true,columns:[columns[chosen]],items:items.map(item=>({...item,prices:[item.prices[chosen]]})),requires_review:true});
-    }catch(err){res.status(err.name==='AbortError'?504:502).json({ok:false,message:err.name==='AbortError'?'A IA demorou demais a responder; tente imagem menor ou mais nitida.':err.message||'Falha na leitura da imagem.'})}
+    }catch(err){
+      console.error('[bulk-scan] erro',err.name,'duracao_ms=',Date.now()-started,'motivo=',String(err.message||'falha').slice(0,220));
+      if(res.headersSent)return;
+      res.status(err.name==='AbortError'?504:502).json({ok:false,message:err.name==='AbortError'?'A IA demorou demais a responder; tente imagem menor ou mais nitida.':err.message||'Falha na leitura da imagem.'});
+    }
   });
 
   // Editor em massa - apenas campos explicitamente autorizados.

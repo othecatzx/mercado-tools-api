@@ -54,6 +54,15 @@ const path = require("path");
 
 console.log("ASAAS URL:", process.env.ASAAS_API_URL);
 // Nunca registrar partes de tokens ou chaves de integração nos logs.
+// Log de diagnostico limitado a rota de IA, sem expor imagem, conta, token ou usuario.
+app.use('/api/portal/bulk-editor/scan-image', (req,res,next)=>{
+  const started=Date.now(), requestId=require('node:crypto').randomUUID().slice(0,8);
+  res.setHeader('X-MLSH-Scan-Request',requestId);
+  console.info('[bulk-scan]',requestId,'recebido',req.method,'bytes=',req.headers['content-length']||'?');
+  res.on('finish',()=>console.info('[bulk-scan]',requestId,'resposta',res.statusCode,'duracao_ms=',Date.now()-started));
+  res.on('close',()=>{if(!res.writableEnded)console.warn('[bulk-scan]',requestId,'conexao encerrada antes da resposta','duracao_ms=',Date.now()-started)});
+  next();
+});
 // Aceita imagens maiores somente nesta rota; demais rotas mantem limite original.
 app.use('/api/portal/bulk-editor/scan-image', express.json({limit:'6mb'}));
 app.use(express.json({
