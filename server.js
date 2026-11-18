@@ -4331,17 +4331,23 @@ app.get("/api/mercadolivre/preco", async (req, res) => {
         // PREÇO ATUAL
         // ====================================================
 
-        const pricesResponse =
-            await axios.get(
+        // A consulta de preços detalhados pode estar indisponível para alguns anúncios.
+        // Nesse caso, manter o preço retornado pelo endpoint principal de itens.
+        let pricesData = null;
+        let pricesError = null;
+        try {
+            const pricesResponse = await axios.get(
                 `https://api.mercadolibre.com/items/${itemId}/prices`,
-                {
-                    headers
-                }
+                { headers }
             );
-
-
-        const pricesData =
-            pricesResponse.data;
+            pricesData = pricesResponse.data;
+        } catch (error) {
+            pricesError = {
+                status: error.response?.status ?? null,
+                message: error.response?.data?.message || error.message
+            };
+            console.warn("Preços detalhados indisponíveis, usando item.price:", pricesError);
+        }
 
 
         const listaPrecos =
@@ -4707,6 +4713,7 @@ app.get("/api/mercadolivre/preco", async (req, res) => {
 
             },
 
+            preco_detalhado_error: pricesError,
 
             referencia: reference
                 ? {
