@@ -141,3 +141,10 @@ html[data-theme="dark"] .bulk-result-actions .btn-ghost{background:#26364c;color
 #bulkScanOpen{border:1px solid #fca311;color:#14213d;font-weight:750;background:#fff8eb}
 #bulkScanOpen:hover{background:#fca311;color:#14213d}
 @media(max-width:720px){.bulk-scan-overlay{padding:6px}.bulk-scan-modal{max-height:96vh}.bulk-scan-head,.bulk-scan-controls,.bulk-scan-actions{padding:14px}.bulk-scan-actions{flex-direction:column;align-items:stretch}}
+
+/* Categoria escolhida explicitamente antes de analisar o print */
+.bulk-price-condition-label{font-size:12px;font-weight:750;color:#14213d;white-space:nowrap}
+.bulk-price-condition{min-width:175px;max-width:220px;height:37px;padding:6px 10px;background:#fff;color:#14213d;border:1px solid #cbd2dd;border-radius:9px;font-size:12px;font-weight:650}
+.bulk-price-condition:focus{outline:2px solid #fca311;outline-offset:2px}
+html[data-theme="dark"] .bulk-price-condition-label{color:#e5e5e5}
+html[data-theme="dark"] .bulk-price-condition{background:#14213d;color:white;border-color:#455875}

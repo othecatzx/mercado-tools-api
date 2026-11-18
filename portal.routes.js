@@ -735,6 +735,9 @@ const codes = [...companies.entries()].map(([companyId, company]) => {
       const accountId=process.env.CLOUDFLARE_ACCOUNT_ID, token=process.env.CLOUDFLARE_AI_API_TOKEN;
       if(!accountId||!token)return res.status(503).json({ok:false,message:'Configure CLOUDFLARE_ACCOUNT_ID e CLOUDFLARE_AI_API_TOKEN no Render.'});
       const image=String(req.body?.image||'');
+      const allowedConditions=['caixa_aberta','mostruario','com_marcas','recondicionado'];
+      const condition=String(req.body?.condition||'');
+      if(!allowedConditions.includes(condition))return res.status(400).json({ok:false,message:'Selecione o tipo de preco antes da leitura.'});
       if(!/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(image)||image.length>5500000)return res.status(400).json({ok:false,message:'Envie PNG, JPG ou WebP com ate 4 MB.'});
       const actor=req.portalRole==='support_agent'?'agent:'+req.supportAgent?.id:'user:'+req.portalUserId;
       const bucket=new Date().toISOString().slice(0,10)+':'+actor;
@@ -742,13 +745,17 @@ const codes = [...companies.entries()].map(([companyId, company]) => {
       if(usage.count>=15)return res.status(429).json({ok:false,message:'Limite diario de 15 leituras de imagem atingido.'});
       if(Date.now()-usage.last<8000)return res.status(429).json({ok:false,message:'Aguarde 8 segundos para tentar outra leitura.'});
       bulkVisionUsage.set(bucket,{count:usage.count+1,last:Date.now()});
-      const prompt='Leia a tabela de precos da imagem em portugues. Retorne SOMENTE JSON valido no formato {"columns":["nome da coluna de preco"],"items":[{"configuration":"configuracao literal da linha","prices":[numero ou null]}]}. Preserve TODAS as colunas de preco (como CAIXA ABERTA, MOSTRUARIO, COM MARCAS), na mesma ordem. Exclua colunas de diferenca/adicional, que nao sao preco de venda. Extraia TODAS as linhas legiveis, sem inventar, sem completar numeros ausentes. Converta 3.300,00 em 3300. A configuracao deve permanecer textual e fiel a imagem. Se houver valor duvidoso, use null. Nunca misture precos entre linhas ou colunas. Maximo 100 linhas.';
+      const conditionNames={caixa_aberta:'CAIXA ABERTA',mostruario:'MOSTRUARIO',com_marcas:'COM MARCAS',recondicionado:'RECONDICIONADO'};
+      const prompt='O usuario selecionou a categoria de preco '+conditionNames[condition]+'. Extraia exatamente a coluna correspondente a essa categoria; nunca confunda com as demais. Se ela nao existir, retorne lista vazia. Leia a tabela de precos da imagem em portugues. Retorne SOMENTE JSON valido no formato {"columns":["nome da coluna de preco"],"items":[{"configuration":"configuracao literal da linha","prices":[numero ou null]}]}. Preserve TODAS as colunas de preco (como CAIXA ABERTA, MOSTRUARIO, COM MARCAS), na mesma ordem. Exclua colunas de diferenca/adicional, que nao sao preco de venda. Extraia TODAS as linhas legiveis, sem inventar, sem completar numeros ausentes. Converta 3.300,00 em 3300. A configuracao deve permanecer textual e fiel a imagem. Se houver valor duvidoso, use null. Nunca misture precos entre linhas ou colunas. Maximo 100 linhas.';
       const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),35000);
       let response;
-      try {response=await fetch('https://api.cloudflare.com/client/v4/accounts/'+encodeURIComponent(accountId)+'/ai/run/@cf/meta/llama-3.2-11b-vision-instruct',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({messages:[{role:'user',content:prompt}],image,max_tokens:3000,temperature:0}),signal:controller.signal});}
+      try {response=await fetch('https://api.cloudflare.com/client/v4/accounts/'+encodeURIComponent(accountId)+'/ai/run/@cf/meta/llama-3.2-11b-vision-instruct',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({prompt,image,max_tokens:3000,temperature:0}),signal:controller.signal});}
       finally{clearTimeout(timer)}
       const payload=await response.json().catch(()=>({}));
-      if(!response.ok||payload.success===false)throw new Error('A leitura por IA falhou (HTTP '+response.status+'). Verifique se o modelo de visao esta habilitado na Cloudflare.');
+      if(!response.ok||payload.success===false){
+        const detail=String(payload.errors?.[0]?.message||payload.error||payload.message||'').slice(0,220);
+        throw new Error('Cloudflare Vision HTTP '+response.status+(detail?': '+detail:'')+'. Se o modelo exigir aceite da licenca Meta, autorize no painel da Cloudflare.');
+      }
       const raw=typeof payload.result==='string'?payload.result:typeof payload.result?.response==='string'?payload.result.response:typeof payload.response==='string'?payload.response:'';
       const match=raw.match(/\{[\s\S]*\}/);
       if(!match)throw new Error('A IA nao retornou uma tabela estruturada. Tente um print mais nitido.');
@@ -760,8 +767,13 @@ const codes = [...companies.entries()].map(([companyId, company]) => {
         configuration:x.configuration.slice(0,240),
         prices:columns.map((_,i)=>{const v=x.prices?.[i];return typeof v==='number'&&Number.isFinite(v)&&v>0&&v<1000000?Math.round(v*100)/100:null;})
       }));
-      res.json({ok:true,columns,items,requires_review:true});
-    }catch(err){res.status(502).json({ok:false,message:err.message||'Falha na leitura da imagem.'})}
+      const chosen=columns.findIndex(c=>{
+        const text=String(c).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase();
+        return condition==='caixa_aberta'?text.includes('CAIXA ABERTA'):condition==='mostruario'?text.includes('MOSTRUARIO'):condition==='com_marcas'?text.includes('COM MARCAS')||text.includes('COM MARCA'):text.includes('RECONDICIONADO');
+      });
+      if(chosen<0)return res.status(422).json({ok:false,message:'A coluna '+conditionNames[condition]+' nao foi identificada na imagem. Confira o tipo de tabela e tente novamente.'});
+      res.json({ok:true,columns:[columns[chosen]],items:items.map(item=>({...item,prices:[item.prices[chosen]]})),requires_review:true});
+    }catch(err){res.status(err.name==='AbortError'?504:502).json({ok:false,message:err.name==='AbortError'?'A IA demorou demais a responder; tente imagem menor ou mais nitida.':err.message||'Falha na leitura da imagem.'})}
   });
 
   // Editor em massa - apenas campos explicitamente autorizados.
