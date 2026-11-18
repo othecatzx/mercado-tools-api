@@ -751,6 +751,21 @@ const codes = [...companies.entries()].map(([companyId, company]) => {
     }
     return null;
   }
+  function chooseDesktopVisionColumn(columns,condition){
+    const norm=v=>String(v||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase().trim();
+    const names={caixa_aberta:/CAIXA\s*ABERTA/,mostruario:/MOSTR[U]?ARIO|MOSTRUAR|MOSTRUA/,com_marcas:/COM\s*MARCAS?/,recondicionado:/RECONDICIONAD/};
+    const wanted=names[condition];
+    const matched=columns.findIndex(x=>wanted.test(norm(x)));
+    if(matched>=0)return matched;
+    // A IA recebeu pedido para ler UMA coluna, mas pode chama-la "preco"
+    // ou "valor" em vez de repetir o cabecalho. Nao aceitar nomes de outra condicao.
+    if(columns.length===1){
+      const only=norm(columns[0]);
+      const belongsToOther=Object.entries(names).some(([id,re])=>id!==condition&&re.test(only));
+      if(!belongsToOther&&/^(PRECO|VALOR|R\$|COLUNA|PRICE|SELECIONAD|PRECO\s+DO\s+PRODUTO)/.test(only))return 0;
+    }
+    return -1;
+  }
   const bulkVisionUsage = new Map();
   app.post('/api/portal/bulk-editor/scan-image', authPortalOrAgent, async (req,res) => {
     res.set('Cache-Control','no-store');
@@ -843,12 +858,15 @@ const codes = [...companies.entries()].map(([companyId, company]) => {
       }));
       console.info('[bulk-scan] leitura estruturada', 'tipo=',productType,'linhas=',items.length,'valores_validos=',items.flatMap(x=>x.prices).filter(v=>v!==null).length);
       if(productType==='desktop')console.info('[bulk-scan] desktop: linhas extraidas',items.map((x,i)=>({linha:i+1,configuracao:x.configuration.slice(0,120),preco_identificado:x.prices[0]!==null})));
-      const chosen=columns.findIndex(c=>{
+      const chosen=productType==='desktop'?chooseDesktopVisionColumn(columns,condition):columns.findIndex(c=>{
         const text=String(c).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase();
         return condition==='caixa_aberta'?text.includes('CAIXA ABERTA'):condition==='mostruario'?text.includes('MOSTRUARIO'):condition==='com_marcas'?text.includes('COM MARCAS')||text.includes('COM MARCA'):text.includes('RECONDICIONADO');
       });
-      if(chosen<0)return res.status(422).json({ok:false,message:'A coluna '+conditionNames[condition]+' nao foi identificada na imagem. Confira o tipo de tabela e tente novamente.'});
-      res.json({ok:true,columns:[columns[chosen]],items:items.map(item=>({...item,prices:[item.prices[chosen]]})),requires_review:true});
+      if(chosen<0){
+        if(productType==='desktop')console.warn('[bulk-scan] desktop: coluna nao identificada','solicitada=',condition,'retornadas=',columns);
+        return res.status(422).json({ok:false,message:'A coluna '+conditionNames[condition]+' nao foi identificada na resposta da IA. Os precos foram preservados.'});
+      }
+      res.json({ok:true,columns:[conditionNames[condition]],items:items.map(item=>({...item,prices:[item.prices[chosen]]})),requires_review:true});
     }catch(err){
       console.error('[bulk-scan] erro',err.name,'duracao_ms=',Date.now()-started,'motivo=',String(err.message||'falha').slice(0,220));
       if(res.headersSent)return;
