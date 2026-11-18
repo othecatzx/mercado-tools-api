@@ -161,3 +161,11 @@ html[data-theme="dark"] .bulk-price-condition{background:#14213d;color:white;bor
 .bulk-scan-summary ul{padding-left:20px;max-height:140px;overflow:auto}
 html[data-theme="dark"] .bulk-scan-summary{background:#172640;border-color:#475979;color:#fff}
 html[data-theme="dark"] .bulk-scan-summary strong,html[data-theme="dark"] .bulk-scan-summary span{color:#fff}
+
+/* Opcoes de desktop visiveis somente para tabelas com ou sem monitor */
+#bulkScanDesktopControls[hidden]{display:none!important}
+#bulkScanDesktopControls{display:inline-flex;align-items:center;gap:8px}
+#bulkScanProductType{min-width:105px}
+#bulkScanDesktopVariant{min-width:185px}
+.bulk-price-condition:disabled{opacity:.65}
+@media(max-width:800px){#bulkScanDesktopControls{flex-wrap:wrap}.bulk-toolbar-right{row-gap:9px}}
