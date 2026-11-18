@@ -304,6 +304,18 @@ function desktopMatches(row,items){
   return true;
  });
 }
+function desktopMatchReason(row,items){
+ const specs=desktopSpecs(row.title+' '+row.sku);
+ if(!specs)return 'Titulo sem RAM e armazenamento identificaveis (ex.: 1TB sem SSD/HDD)';
+ if(specs.disks.length!==1)return 'Titulo com multiplas unidades: necessaria revisao';
+ const sameRam=items.filter(item=>desktopSpecs(item.configuration)?.ram===specs.ram);
+ if(!sameRam.length)return 'Tabela lida sem linha com '+specs.ram+'GB RAM';
+ const disk=specs.disks[0];
+ const size=disk.size===1024?'1TB':disk.size+'GB';
+ const sameCapacity=sameRam.filter(item=>desktopSpecs(item.configuration)?.disks.some(x=>x.size===disk.size));
+ if(!sameCapacity.length)return 'Tabela lida sem '+specs.ram+'GB RAM / '+size;
+ return 'Capacidade encontrada, mas SSD/HDD ou SATA/M2 nao corresponde';
+}
 function conditionConflict(text,condition){
  const s=String(text||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
  const categories={caixa_aberta:/caixa\s*aberta/,mostruario:/mostruario/,com_marcas:/com\s*marcas|com\s*marca/,recondicionado:/recondicionad/};
@@ -329,27 +341,30 @@ function autoFillScan(data,condition,productType='notebook'){
   valid.push({...item,parsedPrice:price});
  }
  let updated=0,already=0,unmatched=0,ambiguous=0,conflicts=0,manual=0;
- const updatedKeys=[],used=new Set();
+ const updatedKeys=[],used=new Set(),outcomes=[];
+ const note=(row,status,reason)=>outcomes.push({title:row.title||row.sku||row.id||'Anuncio',status,reason});
  for(const row of rows){
-  if(conditionConflict(row.title+' '+row.sku,condition)){conflicts++;continue}
+  if(conditionConflict(row.title+' '+row.sku,condition)){conflicts++;note(row,'Condição diferente','O titulo indica outra condicao');continue}
   const matches=productType==='desktop'?desktopMatches(row,valid):matchingTableItems(row,valid);
-  // Mesmo tamanho de SSD/RAM pode corresponder a mais de uma configuracao; nunca escolher por proximidade.
-  if(!matches.length){unmatched++;continue}
-  if(matches.length!==1){ambiguous++;continue}
-  if(changed(row).includes('price')&&!row.aiImported){manual++;continue}
+  // Nunca escolher o primeiro item se mais de uma linha oferece precos divergentes.
+  if(!matches.length){unmatched++;note(row,'Sem correspondência',productType==='desktop'?desktopMatchReason(row,valid):'RAM ou armazenamento nao identificado na tabela');continue}
+  if(matches.length!==1){ambiguous++;note(row,'Ambíguo',matches.length+' configuracoes compativeis; revise a imagem');continue}
+  if(changed(row).includes('price')&&!row.aiImported){manual++;note(row,'Edição manual','Preco alterado manualmente foi preservado');continue}
   const price=matches[0].parsedPrice;
   used.add(matches[0]);
-  if(Number(row.price)===price){already++;continue}
+  if(Number(row.price)===price){already++;note(row,'Já correto',formatPrice(price));continue}
   row.price=String(price);row.aiImported=true;updatedKeys.push(key(row));updated++;
+  note(row,'Preenchido',formatPrice(price));
  }
  for(const item of valid)if(!used.has(item))ignored.push(item.configuration+' (nenhum anuncio compativel)');
- scanSummary={updated,already,unmatched,ambiguous,conflicts,manual,ignored,condition,updatedKeys};
+ scanSummary={updated,already,unmatched,ambiguous,conflicts,manual,ignored,condition,updatedKeys,outcomes};
  results=[];render();
  const panel=$('bulkScanSummary');
  if(panel){
   panel.hidden=false;
   panel.innerHTML='<strong>IA: '+updated+' preco(s) preenchido(s) automaticamente</strong><span>'+already+' ja corretos · '+unmatched+' sem correspondencia · '+ambiguous+' ambiguos · '+conflicts+' condicao divergente · '+manual+' edicoes manuais preservadas</span>'+
    '<small>Compare os campos destacados com o print antes de publicar. A IA nao altera MLB, SKU ou estoque.</small>'+
+   (outcomes.length?'<details><summary>Ver resultado de cada anuncio ('+outcomes.length+')</summary><ul>'+outcomes.map(x=>'<li><strong>'+escape(x.status)+'</strong> — '+escape(x.title)+' <small>('+escape(x.reason)+')</small></li>').join('')+'</ul></details>':'')+
    (ignored.length?'<details><summary>Ver '+ignored.length+' configuracao(oes) nao aplicadas</summary><ul>'+ignored.slice(0,50).map(x=>'<li>'+escape(x)+'</li>').join('')+'</ul></details>':'');
  }
  window.toast?.(updated?updated+' preco(s) preenchido(s). Revise antes de publicar.':'Nao houve correspondencias seguras. Os precos foram preservados.');
