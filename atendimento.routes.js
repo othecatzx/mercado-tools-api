@@ -471,24 +471,44 @@ module.exports = function registerAtendimentoRoutes(app, { supabase, jwt, bcrypt
     return { info, payload, conv };
   }
   const buyerBackfillCursor = new Map();
+  const conversationSyncCursor = new Map();
   async function syncLicenseConversations(license, includeRecent = true) {
     const info = await mlAccountForLicense(license);
     const discovered = new Map();
+    let failures = 0;
     try {
       const unread = await mlRequest(info.accessToken, '/messages/unread?role=seller&tag=post_sale');
       for (const result of unread.results || []) {
         const match = String(result.resource || '').match(/\/packs\/(\d+)\/sellers\/(\d+)/);
         if (match) discovered.set(match[1], null);
       }
-    } catch (e) { console.warn('Unread ML messages sync:', e.message); }
-    // Busca pedidos recentes apenas na sincronização manual inicial; o polling periódico usa só unread.
+    } catch (e) { failures++; console.warn('Unread ML messages sync:', e.message); }
+    // Mensagens respondidas diretamente no ML nao aparecem em /messages/unread.
+    // Reconsulta conversas conhecidas em lotes rotativos, mesmo quando nao ha nao lidas.
+    try {
+      const { data: known, error: knownError } = await supabase.from('support_conversations')
+        .select('pack_id,seller_id').eq('license_id', license.id)
+        .eq('seller_id', info.sellerId).order('last_message_at', { ascending: false }).limit(150);
+      if (knownError) throw knownError;
+      const eligible = (known || []).filter(c => c.pack_id);
+      if (eligible.length) {
+        const key = String(license.id) + ':' + info.sellerId;
+        const start = (conversationSyncCursor.get(key) || 0) % eligible.length;
+        const count = Math.min(includeRecent ? 12 : 6, eligible.length);
+        // Prioriza conversas recentes e percorre as demais sem sobrecarregar a API.
+        const batch = [eligible[0], ...Array.from({ length: count - 1 }, (_, i) => eligible[(start + i) % eligible.length])];
+        for (const c of batch) if (!discovered.has(String(c.pack_id))) discovered.set(String(c.pack_id), null);
+        conversationSyncCursor.set(key, (start + Math.max(1, count - 1)) % eligible.length);
+      }
+    } catch (e) { failures++; console.warn('Known conversations sync:', e.message); }
+    // Busca pedidos recentes apenas na sincronizacao manual inicial.
     if (includeRecent) try {
       const now = new Date(); const from = new Date(Date.now() - 30*86400000);
       const params = new URLSearchParams({ seller: info.sellerId, 'order.date_created.from': from.toISOString(), 'order.date_created.to': now.toISOString(), limit: '50', offset: '0', sort: 'date_desc' });
       const orders = await mlRequest(info.accessToken, '/orders/search?' + params.toString());
       for (const order of (orders.results || []).slice(0, 25)) discovered.set(String(order.pack_id || order.id), order);
-    } catch (e) { console.warn('Recent orders sync:', e.message); }
-    let synced = 0, failures = 0;
+    } catch (e) { failures++; console.warn('Recent orders sync:', e.message); }
+    let synced = 0;
     for (const [packId, order] of [...discovered.entries()].slice(0, 35)) {
       try {
         const payload = await mlRequest(info.accessToken, `/messages/packs/${encodeURIComponent(packId)}/sellers/${encodeURIComponent(info.sellerId)}?tag=post_sale&limit=50&offset=0&mark_as_read=false`);
