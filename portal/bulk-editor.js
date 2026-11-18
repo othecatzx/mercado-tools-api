@@ -226,13 +226,58 @@ function matchingTableItems(row,items){
  });
  return candidates;
 }
+// Desktop: titulo curto pode indicar "480gb 16gb" sem dizer RAM/SSD.
+// Exigir mesmo numero de discos da tabela; nao atribuir precos de kits mistos a unidade unica.
+function desktopSpecs(value){
+ const s=String(value||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase()
+  .replace(/\b(\d+)\s*TB\b/g,(_,n)=>String(Number(n)*1024)+'GB')
+  .replace(/\b(\d{1,4})\s*G\b/g,'$1GB').replace(/\bM[\s.-]*2\b/g,'M2')
+  .replace(/[^A-Z0-9]+/g,' ').trim();
+ const explicit=s.match(/\bRAM\s*(4|8|16|32|64)\s*GB\b/)||s.match(/\b(4|8|16|32|64)\s*GB\s*RAM\b/);
+ const ramCandidates=[...s.matchAll(/\b(4|8|16|32|64)\s*GB\b/g)];
+ if(!explicit&&ramCandidates.length!==1)return null;
+ const ram=explicit?Number(explicit[1]):Number(ramCandidates[0][1]);
+ const ramStart=explicit?(explicit[0].startsWith('RAM')?explicit.index+explicit[0].indexOf(explicit[1]):explicit.index):ramCandidates[0].index;
+ const capacities=[...s.matchAll(/\b(120|128|240|250|256|480|500|512|960|1000|1024|1920|2048)\s*GB\b/g)].filter(m=>m.index!==ramStart);
+ const disks=[];
+ for(const m of capacities){
+  const start=m.index,end=start+m[0].length;
+  const before=s.slice(0,start),after=s.slice(end,end+18);
+  const previous=[...before.matchAll(/\b(SSD|HD|HDD)\b/g)].at(-1);
+  const following=after.match(/^\s*(SSD|HD|HDD)\b/);
+  let kind=following?.[1]||previous?.[1]||'';
+  if(!kind&&capacities.length===1&&Number(m[1])<1000)kind='SSD';
+  if(!kind)return null;
+  const formAfter=after.match(/^\s*(SATA|M2|NVME)\b/)?.[1]||'';
+  const formBefore=previous&&!following?before.slice(previous.index).match(/\b(SATA|M2|NVME)\s*$/)?.[1]||'':'';
+  const formName=formAfter||formBefore;
+  disks.push({kind:kind==='SSD'?'SSD':'HD',size:Number(m[1])===1000?1024:Number(m[1]),
+   form:formName==='M2'||formName==='NVME'?'M2':formName==='SATA'?'SATA':''});
+ }
+ return disks.length?{ram,disks}:null;
+}
+function desktopMatches(row,items){
+ const specs=desktopSpecs(row.title+' '+row.sku);
+ if(!specs)return [];
+ return items.filter(item=>{
+  const ref=desktopSpecs(item.configuration);
+  if(!ref||ref.ram!==specs.ram||ref.disks.length!==specs.disks.length)return false;
+  const remaining=ref.disks.slice();
+  for(const disk of specs.disks){
+   const i=remaining.findIndex(x=>x.kind===disk.kind&&x.size===disk.size&&(!x.form||!disk.form||x.form===disk.form));
+   if(i<0)return false;
+   remaining.splice(i,1);
+  }
+  return !remaining.length;
+ });
+}
 function conditionConflict(text,condition){
  const s=String(text||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
  const categories={caixa_aberta:/caixa\s*aberta/,mostruario:/mostruario/,com_marcas:/com\s*marcas|com\s*marca/,recondicionado:/recondicionad/};
  return Object.entries(categories).some(([id,re])=>id!==condition&&re.test(s));
 }
 let scanSummary=null;
-function autoFillScan(data,condition){
+function autoFillScan(data,condition,productType='notebook'){
  const valid=[],ignored=[];
  const parsePrice=v=>{
   if(typeof v==='number')return v;
@@ -245,7 +290,7 @@ function autoFillScan(data,condition){
  };
  for(const item of data.items){
   const price=parsePrice(item.prices?.[0]);
-  if(!productSpecs(item.configuration)||!Number.isFinite(price)||price<=0){
+  if(!(productType==='desktop'?desktopSpecs(item.configuration):productSpecs(item.configuration))||!Number.isFinite(price)||price<=0){
    ignored.push(item.configuration+' (configuracao ou preco ilegivel)');continue;
   }
   valid.push({...item,parsedPrice:price});
@@ -254,7 +299,7 @@ function autoFillScan(data,condition){
  const updatedKeys=[],used=new Set();
  for(const row of rows){
   if(conditionConflict(row.title+' '+row.sku,condition)){conflicts++;continue}
-  const matches=matchingTableItems(row,valid);
+  const matches=productType==='desktop'?desktopMatches(row,valid):matchingTableItems(row,valid);
   // Mesmo tamanho de SSD/RAM pode corresponder a mais de uma configuracao; nunca escolher por proximidade.
   if(!matches.length){unmatched++;continue}
   if(matches.length!==1){ambiguous++;continue}
@@ -314,10 +359,12 @@ async function scanImage(file){
   markBusy(true);$('bulkScanOpen').disabled=true;$('bulkScanOpen').textContent='Analisando imagem...';
   const image=await prepareScanImage(file);
   const condition=$('bulkScanCondition')?.value;
+  const productType=$('bulkScanProductType')?.value||'notebook';
   if(!condition)throw new Error('Escolha primeiro a categoria de preco.');
-  const data=await api('/api/portal/bulk-editor/scan-image',{method:'POST',body:JSON.stringify({image,condition})});
+  const data=await api('/api/portal/bulk-editor/scan-image',{method:'POST',body:JSON.stringify({image,condition,productType})});
   if(!data.items?.length)throw new Error('Nenhuma configuracao encontrada.');
-  autoFillScan(data,condition);
+  autoFillScan(data,condition,productType);
+  if($('bulkAiSetup'))$('bulkAiSetup').hidden=true;
  }catch(e){const message=e.message||'Falha na leitura da imagem';window.toast?.(message);if($('bulkScanError')){$('bulkScanError').hidden=false;$('bulkScanError').textContent=message}}
  finally{markBusy(false);$('bulkScanOpen').disabled=false;$('bulkScanOpen').textContent='✦ Importar print com IA';$('bulkScanFile').value='';render()}
 }
@@ -332,18 +379,24 @@ function acceptScan(){
 function markup(){
  return pageHead('FERRAMENTAS','Ações em massa','Edite títulos, preços e descrições diretamente nas células, como no Excel.')+
  '<section class="panel bulk-panel"><div class="bulk-head"><div><h3>Editor de anúncios</h3><p class="small muted">Tabela de edição em massa, com identificação e estoque protegidos.</p></div><span class="bulk-tag">Mercado Livre</span></div>'+
- '<div class="bulk-toolbar"><button class="btn btn-primary bulk-add-btn" id="bulkOpen">+ Adicione os MLB&#39;s</button><span id="bulkCount">0 anúncios</span><div class="bulk-toolbar-right"><button class="btn btn-ghost bulk-clear-btn" id="bulkClear">Limpar lista</button><label class="bulk-price-condition-label" for="bulkScanCondition">Tipo de preço</label><select id="bulkScanCondition" class="bulk-price-condition"><option value="">Escolha a condição</option><option value="caixa_aberta">Caixa aberta</option><option value="mostruario">Mostruário</option><option value="com_marcas">Com marcas</option><option value="recondicionado">Recondicionado</option></select><button class="btn btn-ghost" id="bulkScanOpen">✦ Importar print com IA</button><input id="bulkScanFile" type="file" accept="image/png,image/jpeg,image/webp" hidden><button class="btn btn-ghost" id="bulkExport">↓ Baixar Excel</button><button class="btn btn-ghost" id="bulkImport">↑ Importar Excel</button><input id="bulkImportFile" type="file" accept=".xlsx,.xls" hidden></div></div>'+
+ '<div class="bulk-toolbar"><button class="btn btn-primary bulk-add-btn" id="bulkOpen">+ Adicione os MLB&#39;s</button><span id="bulkCount">0 anúncios</span><div class="bulk-toolbar-right"><button class="btn btn-ghost bulk-clear-btn" id="bulkClear">Limpar lista</button><button class="btn btn-ghost" id="bulkScanOpen">✦ Importar print com IA</button><input id="bulkScanFile" type="file" accept="image/png,image/jpeg,image/webp" hidden><button class="btn btn-ghost" id="bulkExport">↓ Baixar Excel</button><button class="btn btn-ghost" id="bulkImport">↑ Importar Excel</button><input id="bulkImportFile" type="file" accept=".xlsx,.xls" hidden></div></div>'+
  '<div id="bulkScanError" class="bulk-scan-error" role="alert" hidden></div><div id="bulkScanSummary" class="bulk-scan-summary" hidden></div>'+
  '<div class="bulk-grid"><table><thead><tr><th class="bulk-num">#</th><th>Foto</th>'+cols.map(c=>'<th style="min-width:'+c[2]+'px">'+escape(c[1])+(c[3]?' 🔒':'')+'</th>').join('')+'</tr></thead><tbody id="bulkRows"></tbody></table></div>'+
  '<div class="bulk-footer"><span class="small muted">As células alteradas ficam destacadas. Loja, MLB, SKU e Estoque são somente leitura.</span><button class="btn btn-primary" id="bulkApply" disabled>Revisar e aplicar alterações</button></div><div id="bulkFailures"></div><div id="bulkResults"></div></section>'+
  '<div id="bulkResultOverlay" class="bulk-result-overlay" hidden><aside class="bulk-result-panel" role="dialog" aria-modal="true" aria-labelledby="bulkResultTitle"><header class="bulk-result-top"><div><span class="bulk-result-eyebrow">ML SH SUPPORT / AÇÕES EM MASSA</span><h2 id="bulkResultTitle">Resumo das alterações</h2></div><button type="button" id="bulkResultClose" aria-label="Fechar resultados">×</button></header><div class="bulk-result-scroll"><div id="bulkResultSummary"></div><div class="bulk-result-section-title">Detalhes por situação</div><div class="bulk-result-groups" id="bulkResultGroups"></div></div><footer class="bulk-result-actions"><button class="btn btn-ghost" type="button" id="bulkResultDownload">↓ Exportar resultado</button><button class="btn btn-primary" type="button" id="bulkResultContinue">Concluir</button></footer></aside></div>'+
  '<div id="bulkScanOverlay" class="bulk-scan-overlay" hidden><section class="bulk-scan-modal" role="dialog" aria-modal="true" aria-labelledby="bulkScanTitle"><header class="bulk-scan-head"><div><small>ML SH SUPPORT · LEITURA POR IA</small><h2 id="bulkScanTitle">Conferir preços da imagem</h2><p>Selecione a coluna de preços, confira cada configuração e escolha os anúncios corretos. Nada será publicado agora.</p></div><button type="button" class="btn btn-ghost" id="bulkScanClose">Fechar</button></header><div class="bulk-scan-controls"><label for="bulkScanColumn">Coluna da imagem</label><select id="bulkScanColumn"></select><span id="bulkScanStatus"></span></div><div class="bulk-scan-scroll"><table><thead><tr><th>Usar</th><th>Configuração identificada</th><th>Preço da imagem</th><th>Anúncio vinculado</th><th>Preço atual → novo</th></tr></thead><tbody id="bulkScanRows"></tbody></table></div><footer class="bulk-scan-actions"><span>Revise os preços na imagem original. Sugestões automáticas não são selecionadas por padrão.</span><button class="btn btn-primary" id="bulkScanConfirm" disabled>Preencher preços selecionados</button></footer></section></div>'+
+ '<div id="bulkAiSetup" class="bulk-modal-overlay" hidden><section class="bulk-modal" role="dialog" aria-modal="true" aria-labelledby="bulkAiTitle"><div class="bulk-modal-top"><div><div class="bulk-modal-kicker">ML SH SUPPORT · IMPORTAÇÃO IA</div><h2 id="bulkAiTitle">Importar tabela de preços</h2><p>Escolha o produto e o tipo de preço. Depois selecione o print recortado.</p></div><button type="button" class="bulk-close" id="bulkAiClose" aria-label="Fechar">×</button></div><div class="bulk-modal-content"><label for="bulkScanProductType">Produto</label><select id="bulkScanProductType" class="bulk-price-condition"><option value="notebook">Notebook</option><option value="desktop">Desktop</option></select><label for="bulkScanCondition" style="margin-top:15px">Tipo de preço</label><select id="bulkScanCondition" class="bulk-price-condition"><option value="">Escolha a condição</option><option value="caixa_aberta">Caixa aberta</option><option value="mostruario">Mostruário</option><option value="com_marcas">Com marcas</option><option value="recondicionado">Recondicionado</option></select><p class="small muted" style="margin-top:12px">A coluna Adicional será ignorada. A importação apenas preenche os campos para conferência.</p></div><div class="bulk-modal-actions"><button type="button" class="btn btn-ghost" id="bulkAiCancel">Cancelar</button><button type="button" class="btn btn-primary" id="bulkAiChooseImage">Selecionar imagem / print</button></div></section></div>'+
  '<div id="bulkModal" class="bulk-modal-overlay" hidden><div class="bulk-modal" role="dialog" aria-modal="true" aria-labelledby="bulkModalTitle"><div class="bulk-modal-top"><div><div class="bulk-modal-kicker">MERCADO LIVRE · IMPORTAÇÃO</div><h2 id="bulkModalTitle">Adicionar anúncios</h2><p>Cole os códigos MLB ou SKU. Vamos procurar nas lojas vinculadas à sua conta.</p></div><button type="button" class="bulk-close" id="bulkClose" aria-label="Fechar">×</button></div>'+
  '<div class="bulk-modal-content"><label for="bulkInputs">MLBs ou SKUs dos anúncios</label><textarea id="bulkInputs" placeholder="MLB5360939846&#10;MLB5361165102&#10;SKU-EXEMPLO" rows="7" spellcheck="false"></textarea><div class="bulk-modal-hint"><span>Um código por linha, vírgula ou ponto e vírgula</span><strong>Até 100 códigos</strong></div></div>'+
  '<div class="bulk-modal-actions"><button type="button" class="btn btn-ghost" id="bulkCancel">Cancelar</button><button type="button" class="btn btn-primary" id="bulkSearch">Buscar anúncios</button></div></div></div>';
 }
 function init(){
- $('bulkScanOpen')?.addEventListener('click',()=>{if(!$('bulkScanCondition')?.value){window.toast?.('Escolha a categoria de preco antes de enviar o print.');$('bulkScanCondition')?.focus();return}$('bulkScanFile').click()});
+ $('bulkScanOpen')?.addEventListener('click',()=>{if(!rows.length){window.toast?.('Adicione primeiro os anuncios MLB ou SKU.');return}$('bulkAiSetup').hidden=false;$('bulkScanProductType').focus()});
+ const closeAi=()=>{if(!busy)$('bulkAiSetup').hidden=true};
+ $('bulkAiClose')?.addEventListener('click',closeAi);
+ $('bulkAiCancel')?.addEventListener('click',closeAi);
+ $('bulkAiSetup')?.addEventListener('click',e=>{if(e.target.id==='bulkAiSetup')closeAi()});
+ $('bulkAiChooseImage')?.addEventListener('click',()=>{if(!$('bulkScanCondition').value){window.toast?.('Escolha o tipo de preco.');$('bulkScanCondition').focus();return}$('bulkScanFile').click()});
  $('bulkScanFile')?.addEventListener('change',e=>scanImage(e.target.files[0]));
  $('bulkScanClose')?.addEventListener('click',closeScan);
  $('bulkScanColumn')?.addEventListener('change',()=>{if(scanned)scanned.items.forEach(x=>x.checked=false);renderScan()});

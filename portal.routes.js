@@ -739,6 +739,8 @@ const codes = [...companies.entries()].map(([companyId, company]) => {
       const image=String(req.body?.image||'');
       const allowedConditions=['caixa_aberta','mostruario','com_marcas','recondicionado'];
       const condition=String(req.body?.condition||'');
+      const productType=String(req.body?.productType||'notebook');
+      if(!['notebook','desktop'].includes(productType))return res.status(400).json({ok:false,message:'Tipo de produto invalido.'});
       if(!allowedConditions.includes(condition))return res.status(400).json({ok:false,message:'Selecione o tipo de preco antes da leitura.'});
       if(!/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(image)||image.length>5500000)return res.status(400).json({ok:false,message:'Envie PNG, JPG ou WebP com ate 4 MB.'});
       const actor=req.portalRole==='support_agent'?'agent:'+req.supportAgent?.id:'user:'+req.portalUserId;
@@ -748,7 +750,7 @@ const codes = [...companies.entries()].map(([companyId, company]) => {
       if(Date.now()-usage.last<8000)return res.status(429).json({ok:false,message:'Aguarde 8 segundos para tentar outra leitura.'});
       bulkVisionUsage.set(bucket,{count:usage.count+1,last:Date.now()});
       const conditionNames={caixa_aberta:'CAIXA ABERTA',mostruario:'MOSTRUARIO',com_marcas:'COM MARCAS',recondicionado:'RECONDICIONADO'};
-      const prompt='Extraia a tabela da imagem. Leia APENAS a coluna de preco '+conditionNames[condition]+', ignorando todas as outras colunas, inclusive Adicional. Responda somente JSON, sem markdown: {"columns":["'+conditionNames[condition]+'"],"items":[{"configuration":"texto original da configuracao","prices":[3300]}]}. Um item por linha, preserve a configuracao completa e a ordem. Precos sao numeros em reais: 3.300,00 vira 3300. Se um preco estiver ilegivel, use null. Se a coluna nao existir, retorne items vazio. Nao invente valores.';
+      const prompt='Extraia a tabela da imagem. Leia APENAS a coluna de preco '+conditionNames[condition]+', ignorando todas as outras colunas, inclusive Adicional. Responda somente JSON, sem markdown: {"columns":["'+conditionNames[condition]+'"],"items":[{"configuration":"texto original da configuracao","prices":[3300]}]}. Um item por linha, preserve a configuracao completa e a ordem. Precos sao numeros em reais: 3.300,00 vira 3300. Se um preco estiver ilegivel, use null. Se a coluna nao existir, retorne items vazio. Nao invente valores.'+(productType==='desktop'?' A imagem e uma tabela recortada de desktop. Preserve todos os discos SSD, HDD e formatos SATA/M2 da linha, sem completar unidades ausentes.':'');
       const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),55000);
       let response;
       console.info('[bulk-scan] enviando para Cloudflare Vision, categoria=',condition,'imagem_bytes=',Math.floor(image.length*3/4));

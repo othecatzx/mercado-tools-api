@@ -161,3 +161,8 @@ html[data-theme="dark"] .bulk-price-condition{background:#14213d;color:white;bor
 .bulk-scan-summary ul{padding-left:20px;max-height:140px;overflow:auto}
 html[data-theme="dark"] .bulk-scan-summary{background:#172640;border-color:#475979;color:#fff}
 html[data-theme="dark"] .bulk-scan-summary strong,html[data-theme="dark"] .bulk-scan-summary span{color:#fff}
+
+/* Configuracao da IA exibida somente apos abrir a importacao */
+#bulkAiSetup[hidden]{display:none!important}
+#bulkAiSetup .bulk-modal-content select{width:100%;max-width:none;min-width:0;height:44px;box-sizing:border-box;border-radius:9px;padding:8px 12px;background:var(--panel-2);color:var(--ink);border:1px solid var(--line)}
+#bulkAiSetup .bulk-modal-content label{margin-top:12px}
