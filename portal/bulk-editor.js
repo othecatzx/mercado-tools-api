@@ -282,17 +282,26 @@ function desktopSpecs(value){
 }
 function desktopMatches(row,items){
  const specs=desktopSpecs(row.title+' '+row.sku);
- if(!specs)return [];
- return items.filter(item=>{
-  const ref=desktopSpecs(item.configuration);
-  if(!ref||ref.ram!==specs.ram||ref.disks.length!==specs.disks.length)return false;
-  const remaining=ref.disks.slice();
-  for(const disk of specs.disks){
-   const i=remaining.findIndex(x=>x.kind===disk.kind&&x.size===disk.size&&(!x.form||!disk.form||x.form===disk.form));
-   if(i<0)return false;
-   remaining.splice(i,1);
-  }
-  return !remaining.length;
+ if(!specs||specs.disks.length!==1)return [];
+ // Na tabela, "SSD SATA 240GB SATA 256GB M2 / 1TB HDD" significa
+ // tres ALTERNATIVAS com o mesmo preco, nao tres discos instalados.
+ // O anuncio deve ter somente um armazenamento identificavel para preencher.
+ const disk=specs.disks[0];
+ const found=items.filter(item=>{
+  const table=desktopSpecs(item.configuration);
+  if(!table||table.ram!==specs.ram)return false;
+  return table.disks.some(option=>option.kind===disk.kind&&option.size===disk.size&&
+   (!option.form||!disk.form||option.form===disk.form));
+ });
+ // A IA pode repetir a mesma linha com ordem diferente (RAM 8GB / 8GB RAM).
+ // Eliminar duplicatas apenas quando configuracao normalizada E preco sao iguais.
+ const keys=new Set();
+ return found.filter(item=>{
+  const table=desktopSpecs(item.configuration);
+  const key=table.ram+'|'+table.disks.map(x=>x.kind+':'+x.size+':'+x.form).sort().join(',')+'|'+item.parsedPrice;
+  if(keys.has(key))return false;
+  keys.add(key);
+  return true;
  });
 }
 function conditionConflict(text,condition){
