@@ -3788,40 +3788,13 @@ app.get("/api/mercadolivre/rx", async (req, res) => {
 
         let itemResponse;
 
-if (
-    anuncio_publico &&
-    anuncio_publico.id &&
-    /^MLB\d+$/i.test(
-        String(anuncio_publico.id)
-    )
-) {
-    console.log(
-        "🌐 Usando anúncio público recebido:",
-        anuncio_publico.id
+// Rota GET: consultar o anúncio pelo item_id autenticado.
+    itemResponse = await axios.get(
+        "https://api.mercadolibre.com/items/" + itemId,
+        { headers }
     );
 
-    itemResponse = {
-        data: anuncio_publico
-    };
-
-} else {
-
-    console.log(
-        "🔎 Buscando anúncio pela API:",
-        itemId
-    );
-
-    itemResponse =
-        await axios.get(
-            `https://api.mercadolibre.com/items/${itemId}`,
-            {
-                headers
-            }
-        );
-}
-
-
-        const item =
+const item =
             itemResponse.data;
 
 
@@ -5960,10 +5933,10 @@ app.get("/api/mercadolivre/pos-venda", async (req, res) => {
 
 
         const inicio =
-            new Date(`${data_inicio}T00:00:00.000Z`);
+            new Date(`${data_inicio}T00:00:00.000-03:00`);
 
         const fim =
-            new Date(`${data_fim}T23:59:59.999Z`);
+            new Date(`${data_fim}T23:59:59.999-03:00`);
 
 
         if (
@@ -6761,7 +6734,8 @@ switch (categoria) {
 
                             cancelamentos: 0,
 
-                            reembolsos: 0
+                            reembolsos: 0,
+                            ocorrencias_reais: 0
 
                         }
                     );
@@ -6800,6 +6774,8 @@ switch (categoria) {
 
                 }
 
+                if (pedidoCancelado || reembolsado) skuData.ocorrencias_reais++;
+
             }
 
         }
@@ -6816,17 +6792,14 @@ switch (categoria) {
             .map(item => {
 
                 const ocorrencias =
-    Math.max(
-        item.cancelamentos,
-        item.reembolsos
-    );
+    item.ocorrencias_reais;
 
 
                 const taxa =
-                    item.quantidade > 0
+                    item.pedidos > 0
                         ? (
                             ocorrencias /
-                            item.quantidade
+                            item.pedidos
                         ) * 100
                         : 0;
 
@@ -6992,6 +6965,8 @@ switch (categoria) {
 
                 pedidos_processados:
                     pedidosProcessados.length,
+                dados_parciais: Number(totalPedidos || 0) > pedidosProcessados.length,
+                limite_pedidos: MAX_PEDIDOS,
 
                 total_vendido:
                     Number(
