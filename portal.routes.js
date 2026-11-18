@@ -750,11 +750,13 @@ const codes = [...companies.entries()].map(([companyId, company]) => {
       if(Date.now()-usage.last<8000)return res.status(429).json({ok:false,message:'Aguarde 8 segundos para tentar outra leitura.'});
       bulkVisionUsage.set(bucket,{count:usage.count+1,last:Date.now()});
       const conditionNames={caixa_aberta:'CAIXA ABERTA',mostruario:'MOSTRUARIO',com_marcas:'COM MARCAS',recondicionado:'RECONDICIONADO'};
-      const prompt='Leia esta tabela de precos de '+(productType==='desktop'?'DESKTOP':'NOTEBOOK')+'. O usuario envia a tabela ja recortada: leia todas as linhas da unica tabela visivel, sem exigir identificacao do bloco com ou sem monitor. Se houver multiplos blocos distintos na imagem, retorne items vazio para evitar misturar precos. Leia APENAS a coluna '+conditionNames[condition]+'. Ignore completamente a coluna ADICIONAL e outras colunas de preco. Retorne somente JSON valido: {"columns":["'+conditionNames[condition]+'"],"items":[{"configuration":"texto literal e completo da configuracao","prices":[2309]}]}. Preserve RAM, todos os SSD e HDD, capacidades e SATA/M2; uma linha por configuracao. Valores em reais: 2.309,00 vira 2309. Se a coluna nao existir ou um preco estiver ilegivel use items vazio ou null, nunca invente.';
+      // Resposta compacta: menos tokens gerados pelo modelo visual e menor risco de timeout.
+      // Nao mudar a coluna nem usar valores da coluna ADICIONAL.
+      const prompt='Tabela de '+(productType==='desktop'?'DESKTOP':'NOTEBOOK')+' recortada. Extraia somente a coluna '+conditionNames[condition]+'. Ignore ADICIONAL e todas as demais colunas. Responda exclusivamente JSON: {"columns":["'+conditionNames[condition]+'"],"items":[["8GB RAM / SSD SATA 480GB",2309],["16GB RAM / SSD 512GB M2",2489]]}. Substitua os exemplos pelos valores reais; nao copie exemplos. Cada item e [configuracao literal, preco numerico em reais]. Todas as linhas visiveis, RAM, SSD, HDD, SATA/M2 completos. 2.309,00 = 2309. Valores ilegiveis: null. Se houver dois blocos de produto na mesma imagem, retorne items vazio. Nao explique.';
       const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),55000);
       let response;
       console.info('[bulk-scan] enviando para Cloudflare Vision, categoria=',condition,'imagem_bytes=',Math.floor(image.length*3/4));
-      try {response=await fetch('https://api.cloudflare.com/client/v4/accounts/'+encodeURIComponent(accountId)+'/ai/run/@cf/meta/llama-3.2-11b-vision-instruct',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({messages:[{role:'user',content:[{type:'text',text:prompt},{type:'image_url',image_url:{url:image}}]}],max_tokens:2200,temperature:0}),signal:controller.signal});}
+      try {response=await fetch('https://api.cloudflare.com/client/v4/accounts/'+encodeURIComponent(accountId)+'/ai/run/@cf/meta/llama-3.2-11b-vision-instruct',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({messages:[{role:'user',content:[{type:'text',text:prompt},{type:'image_url',image_url:{url:image}}]}],max_tokens:1150,temperature:0}),signal:controller.signal});}
       finally{clearTimeout(timer)}
       const payload=await response.json().catch(()=>({}));
       console.info('[bulk-scan] Cloudflare Vision respondeu',response.status,'em_ms=',Date.now()-started);
@@ -793,7 +795,8 @@ const codes = [...companies.entries()].map(([companyId, company]) => {
         const price=Number(s);
         return Number.isFinite(price)&&price>0&&price<1000000?Math.round(price*100)/100:null;
       }
-      const items=parsed.items.slice(0,100).filter(x=>x&&typeof x.configuration==='string'&&x.configuration.trim()).map(x=>({
+      const items=parsed.items.slice(0,100).map(x=>Array.isArray(x)?{configuration:x[0],prices:[x[1]]}:x)
+        .filter(x=>x&&typeof x.configuration==='string'&&x.configuration.trim()).map(x=>({
         configuration:x.configuration.slice(0,240),
         prices:columns.map((_,i)=>parseVisionPrice(x.prices?.[i]))
       }));

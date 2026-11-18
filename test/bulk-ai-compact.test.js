@@ -1,0 +1,10 @@
+'use strict';
+const assert=require('node:assert/strict');
+const parse=(items,columns)=>items.slice(0,100).map(x=>Array.isArray(x)?{configuration:x[0],prices:[x[1]]}:x).filter(x=>x&&typeof x.configuration==='string'&&x.configuration.trim()).map(x=>({configuration:x.configuration.slice(0,240),prices:columns.map((_,i)=>x.prices?.[i])}));
+const compact=parse([['8GB RAM / SSD SATA 480GB',2309],['16GB RAM / SSD 512GB M2',2489]],['MOSTRUARIO']);
+const legacy=parse([{configuration:'8GB RAM / SSD SATA 480GB',prices:[2309]}],['MOSTRUARIO']);
+assert.equal(compact.length,2);
+assert.equal(compact[0].prices[0],2309);
+assert.equal(legacy[0].prices[0],2309);
+assert.equal(parse([[null,100],['',100]],['MOSTRUARIO']).length,0);
+console.log('PASS: formatos compacto e anterior reconhecidos; linhas invalidas rejeitadas');
