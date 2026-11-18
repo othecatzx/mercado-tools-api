@@ -2,7 +2,7 @@
 const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
 const src=fs.readFileSync(require('node:path').join(__dirname,'../portal/bulk-editor.js'),'utf8');
 const code=src.slice(src.indexOf('function desktopSpecs('),src.indexOf('function conditionConflict('));
-const {desktopSpecs,desktopCompatible,desktopMonitorCompatible}=vm.runInNewContext(code+';({desktopSpecs,desktopCompatible,desktopMonitorCompatible})');
+const {desktopSpecs,desktopCompatible}=vm.runInNewContext(code+';({desktopSpecs,desktopCompatible})');
 const table=[
  ['RAM 8GB / SSD 240GB SATA 256GB M2/ 1TB HDD (500hdd)',2549],
  ['8GB RAM / SSD SATA 480GB',2809],
@@ -18,7 +18,6 @@ assert.ok(desktopCompatible('Desktop 16GB RAM SSD SATA 240GB SSD M2 256GB','16GB
 assert.ok(!desktopCompatible('Desktop 8GB RAM SSD SATA 480GB','16GB RAM / SSD SATA 480GB'));
 assert.ok(!desktopCompatible('Desktop 8GB RAM SSD SATA 480GB','8GB RAM / SSD SATA 960GB'));
 assert.ok(!desktopCompatible('Desktop 4GB RAM SSD 120GB','4GB RAM / HDD 500GB /SSD 120GB'));
-assert.ok(desktopMonitorCompatible({title:'Computador 8GB SSD com monitor',sku:''},'com_monitor'));
-assert.ok(!desktopMonitorCompatible({title:'Computador 8GB SSD sem monitor',sku:''},'com_monitor'));
-assert.ok(!desktopMonitorCompatible({title:'Computador 8GB SSD com monitor',sku:''},'sem_monitor'));
-console.log('PASS: cinco configuracoes desktop, armazenamento multiplo, RAM, monitor e divergencias');
+assert.ok(desktopCompatible('Computador com monitor 8GB RAM SSD SATA 480GB','8GB RAM / SSD SATA 480GB'));
+assert.ok(desktopCompatible('Computador sem monitor 8GB RAM SSD SATA 480GB','8GB RAM / SSD SATA 480GB'));
+console.log('PASS: cinco configuracoes desktop, armazenamento multiplo e prints recortados sem selecao de monitor');

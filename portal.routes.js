@@ -740,10 +740,7 @@ const codes = [...companies.entries()].map(([companyId, company]) => {
       const allowedConditions=['caixa_aberta','mostruario','com_marcas','recondicionado'];
       const condition=String(req.body?.condition||'');
       const productType=String(req.body?.productType||'notebook');
-      const desktopVariant=String(req.body?.desktopVariant||'');
       if(!['notebook','desktop'].includes(productType))return res.status(400).json({ok:false,message:'Tipo de produto invalido.'});
-      if(productType==='desktop'&&!['sem_monitor','com_monitor'].includes(desktopVariant))return res.status(400).json({ok:false,message:'Selecione Somente desktop ou Desktop + monitor.'});
-      if(productType==='desktop'&&!['mostruario','com_marcas'].includes(condition))return res.status(400).json({ok:false,message:'Para desktop, escolha Mostruario ou Com marcas.'});
       if(!allowedConditions.includes(condition))return res.status(400).json({ok:false,message:'Selecione o tipo de preco antes da leitura.'});
       if(!/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(image)||image.length>5500000)return res.status(400).json({ok:false,message:'Envie PNG, JPG ou WebP com ate 4 MB.'});
       const actor=req.portalRole==='support_agent'?'agent:'+req.supportAgent?.id:'user:'+req.portalUserId;
@@ -753,10 +750,7 @@ const codes = [...companies.entries()].map(([companyId, company]) => {
       if(Date.now()-usage.last<8000)return res.status(429).json({ok:false,message:'Aguarde 8 segundos para tentar outra leitura.'});
       bulkVisionUsage.set(bucket,{count:usage.count+1,last:Date.now()});
       const conditionNames={caixa_aberta:'CAIXA ABERTA',mostruario:'MOSTRUARIO',com_marcas:'COM MARCAS',recondicionado:'RECONDICIONADO'};
-      const block=productType==='desktop'?(desktopVariant==='sem_monitor'?'SOMENTE DESKTOP':'DESKTOP + MONITOR'):null;
-      const prompt=productType==='desktop'?
-        'Leia somente as linhas do bloco '+block+' da tabela de DESKTOP. Nao misture com o outro bloco, mesmo que as configuracoes se repitam. Extraia APENAS a coluna '+conditionNames[condition]+'. Ignore completamente a coluna ADICIONAL. Retorne apenas JSON valido: {"columns":["'+conditionNames[condition]+'"],"items":[{"configuration":"RAM 8GB / SSD 480GB SATA","prices":[2309],"block":"'+desktopVariant+'"}]}. Preserve todas as unidades SSD e HDD, tamanhos e SATA/M2. Uma linha por configuracao do bloco escolhido; nao invente preco ou unidade ilegivel (use null). Precos em reais como 2.309,00 devem ser 2309. Se nao houver bloco ou coluna, retorne items vazio.' :
-        'Extraia a tabela de NOTEBOOK. Leia APENAS a coluna '+conditionNames[condition]+', ignorando todas as outras colunas, inclusive Adicional. Retorne somente JSON valido: {"columns":["'+conditionNames[condition]+'"],"items":[{"configuration":"texto original da configuracao","prices":[3300]}]}. Um item por linha, preserve configuracoes completas. 3.300,00 vira 3300. Se ilegivel use null; nao invente valores.';
+      const prompt='Leia esta tabela de precos de '+(productType==='desktop'?'DESKTOP':'NOTEBOOK')+'. O usuario envia a tabela ja recortada: leia todas as linhas da unica tabela visivel, sem exigir identificacao do bloco com ou sem monitor. Se houver multiplos blocos distintos na imagem, retorne items vazio para evitar misturar precos. Leia APENAS a coluna '+conditionNames[condition]+'. Ignore completamente a coluna ADICIONAL e outras colunas de preco. Retorne somente JSON valido: {"columns":["'+conditionNames[condition]+'"],"items":[{"configuration":"texto literal e completo da configuracao","prices":[2309]}]}. Preserve RAM, todos os SSD e HDD, capacidades e SATA/M2; uma linha por configuracao. Valores em reais: 2.309,00 vira 2309. Se a coluna nao existir ou um preco estiver ilegivel use items vazio ou null, nunca invente.';
       const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),55000);
       let response;
       console.info('[bulk-scan] enviando para Cloudflare Vision, categoria=',condition,'imagem_bytes=',Math.floor(image.length*3/4));
@@ -801,7 +795,6 @@ const codes = [...companies.entries()].map(([companyId, company]) => {
       }
       const items=parsed.items.slice(0,100).filter(x=>x&&typeof x.configuration==='string'&&x.configuration.trim()).map(x=>({
         configuration:x.configuration.slice(0,240),
-        block:typeof x.block==='string'?(function(){const b=x.block.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[_+\-]/g,' ').replace(/\s+/g,' ').trim();return b==='sem monitor'||b==='somente desktop'?'sem_monitor':b==='com monitor'||b==='desktop monitor'?'com_monitor':''})():'',
         prices:columns.map((_,i)=>parseVisionPrice(x.prices?.[i]))
       }));
       console.info('[bulk-scan] leitura estruturada', 'linhas=',items.length,'valores_validos=',items.flatMap(x=>x.prices).filter(v=>v!==null).length);
@@ -810,9 +803,7 @@ const codes = [...companies.entries()].map(([companyId, company]) => {
         return condition==='caixa_aberta'?text.includes('CAIXA ABERTA'):condition==='mostruario'?text.includes('MOSTRUARIO'):condition==='com_marcas'?text.includes('COM MARCAS')||text.includes('COM MARCA'):text.includes('RECONDICIONADO');
       });
       if(chosen<0)return res.status(422).json({ok:false,message:'A coluna '+conditionNames[condition]+' nao foi identificada na imagem. Confira o tipo de tabela e tente novamente.'});
-      const selected=productType==='desktop'?items.filter(item=>item.block===desktopVariant):items;
-      if(productType==='desktop'&&!selected.length)return res.status(422).json({ok:false,message:'A IA nao identificou com seguranca o bloco '+block+'. Nenhum preco foi alterado.'});
-      res.json({ok:true,productType,desktopVariant:productType==='desktop'?desktopVariant:null,columns:[columns[chosen]],items:selected.map(item=>({...item,prices:[item.prices[chosen]]})),requires_review:true});
+      res.json({ok:true,productType,columns:[columns[chosen]],items:items.map(item=>({configuration:item.configuration,prices:[item.prices[chosen]]})),requires_review:true});
     }catch(err){
       console.error('[bulk-scan] erro',err.name,'duracao_ms=',Date.now()-started,'motivo=',String(err.message||'falha').slice(0,220));
       if(res.headersSent)return;
