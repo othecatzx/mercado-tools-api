@@ -22,7 +22,7 @@ function render(){
  $('bulkViewDetails')?.addEventListener('click',openResultPanel);
  $('bulkApply').disabled=busy||!rows.some(r=>changed(r).length);
 }
-function markBusy(v){busy=v;['bulkSearch','bulkApply','bulkExport','bulkImport'].forEach(id=>{if($(id))$(id).disabled=v});}
+function markBusy(v){busy=v;['bulkSearch','bulkApply','bulkExport','bulkImport','bulkClear'].forEach(id=>{if($(id))$(id).disabled=v});}
 async function lookup(){
  const input=String($('bulkInputs').value||'').split(/[\n\r,;]+/).map(x=>x.trim()).filter(Boolean);
  if(!input.length){window.toast?.('Informe ao menos um MLB ou SKU.');return}
@@ -31,6 +31,7 @@ async function lookup(){
  try{
  const data=await api('/api/portal/bulk-editor/preview',{method:'POST',body:JSON.stringify({inputs:[...new Set(input)]})});
  rows=(data.items||[]).map(r=>({...r,original:Object.fromEntries(permitted.map(k=>[k,r[k]??'']))}));
+ scanSummary=null;if($('bulkScanSummary'))$('bulkScanSummary').hidden=true;
  closeBulkModal();
  failures=data.failed||[];results=[];render();window.toast?.(rows.length+' anuncio(s) encontrado(s).');
  }catch(e){window.toast?.(e.message||'Erro na consulta.')}
@@ -41,6 +42,7 @@ function edit(ev){
  if(!field||!tr)return;
  const row=rows.find(r=>key(r)===tr.dataset.key);if(!row)return;
  row[field]=ev.target.value;
+ if(field==='price')row.aiImported=false;
  tr.querySelectorAll('[data-field]').forEach(el=>el.closest('td').classList.toggle('bulk-changed',changed(row).includes(el.dataset.field)));
  $('bulkCount').textContent=rows.length+' anuncio(s) · '+rows.filter(r=>changed(r).length).length+' alterado(s)';
  $('bulkApply').disabled=!rows.some(r=>changed(r).length);
@@ -123,7 +125,8 @@ function closeBulkModal(){
 }
 function clearBulkList(){
  if(busy)return;
- rows=[];failures=[];results=[];term='';inputDraft='';closeResultPanel();
+ rows=[];failures=[];results=[];term='';inputDraft='';scanSummary=null;closeResultPanel();
+ if($('bulkScanSummary'))$('bulkScanSummary').hidden=true;
  if($('bulkInputs'))$('bulkInputs').value='';
  if($('bulkImportFile'))$('bulkImportFile').value='';
  render();
@@ -183,16 +186,71 @@ function downloadResultReport(){
 }
 let scanned=null;
 const formatPrice=v=>Number(v).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
+// Combina apenas especificacoes completas, nao um titulo genericamente parecido.
 function specKey(s){
- const t=String(s||'').toUpperCase().replace(/[^A-Z0-9]+/g,' '),ram=t.match(/\b(4|8|16|32|64)\s*GB\s*(?:RAM)?\b/);
- const disks=[...t.matchAll(/\b(SSD|HDD|HD)\s*(?:SATA|M2|NVME|M 2)?\s*(\d{2,4})\s*(GB|TB)?\b/g)].map(m=>m[1].replace('HDD','HD')+':'+Number(m[2])*(m[3]==='TB'?1024:1)).sort();
- return ram&&disks.length?ram[1]+'GB|'+disks.join('|'):null;
+ const t=String(s||'').toUpperCase().replace(/(\d+)\s*T(B)?\b/g,(_,n)=>String(Number(n)*1024)+'GB')
+   .replace(/(\d+)\s*G(B)?\b/g,(_,n)=>n+'GB').replace(/\bM[\s.-]*2\b/g,'M2').replace(/[^A-Z0-9]+/g,' ').trim();
+ const ram=t.match(/\b(4|8|16|32|64)\s*GB\s*RAM\b/)||t.match(/^(4|8|16|32|64)\s*GB\b/);
+ if(!ram)return null;
+ const tokens=[...t.matchAll(/\b(SSD|HDD|HD)\b/g)];
+ const disks=[];
+ for(let i=0;i<tokens.length;i++){
+  const m=tokens[i],end=tokens[i+1]?.index??t.length,chunk=t.slice(m.index,end);
+  const sizes=[...chunk.matchAll(/\b(\d{2,4})\s*GB\b/g)].map(x=>Number(x[1]));
+  // Se nao for possivel determinar o armazenamento, a associacao e insegura.
+  if(!sizes.length)return null;
+  const matches=[...chunk.matchAll(/\b(\d{2,4})\s*GB\b/g)];
+  for(const sizeMatch of matches){
+   const size=Number(sizeMatch[1]),medium=m[1]==='HD'||m[1]==='HDD'?'HD':'SSD';
+   const local=chunk.slice(Math.max(0,sizeMatch.index-12),Math.min(chunk.length,sizeMatch.index+sizeMatch[0].length+8));
+   const form=medium==='HD'?'':(/\bM2\b/.test(local)?':M2':/\bSATA\b/.test(local)?':SATA':':TIPO_NAO_INFORMADO');
+   disks.push(medium+':'+size+form);
+  }
+ }
+ if(!disks.length)return null;
+ return ram[1]+'GB|'+disks.sort().join('|');
 }
-function suggestedTarget(item){
- const sig=specKey(item.configuration);
- if(!sig)return '';
- const found=rows.filter(r=>specKey(r.title+' '+r.sku)===sig);
- return found.length===1?key(found[0]):'';
+function conditionConflict(text,condition){
+ const s=String(text||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
+ const categories={caixa_aberta:/caixa\s*aberta/,mostruario:/mostruario/,com_marcas:/com\s*marcas|com\s*marca/,recondicionado:/recondicionad/};
+ return Object.entries(categories).some(([id,re])=>id!==condition&&re.test(s));
+}
+let scanSummary=null;
+function autoFillScan(data,condition){
+ const groups=new Map(),ignored=[];
+ for(const item of data.items){
+  const sig=specKey(item.configuration),price=Number(item.prices?.[0]);
+  if(!sig||!Number.isFinite(price)||price<=0){ignored.push(item.configuration+' (leitura incompleta)');continue}
+  const entries=groups.get(sig)||[];entries.push({item,price});groups.set(sig,entries);
+ }
+ let updated=0,already=0,unmatched=0,ambiguous=0,conflicts=0,manual=0;
+ const updatedKeys=[];
+ for(const row of rows){
+  const label=row.title+' '+row.sku;
+  const sig=specKey(label);
+  const options=sig?groups.get(sig):null;
+  if(!options){unmatched++;continue}
+  if(options.length!==1){ambiguous++;continue}
+  if(conditionConflict(label,condition)){conflicts++;continue}
+  if(changed(row).includes('price')){manual++;continue}
+  const price=options[0].price;
+  if(Number(row.price)===price){already++;continue}
+  row.price=String(price);
+  row.aiImported=true;
+  updatedKeys.push(key(row));updated++;
+ }
+ const matchedSignatures=new Set(rows.map(r=>specKey(r.title+' '+r.sku)).filter(Boolean));
+ for(const [sig,group] of groups)if(!matchedSignatures.has(sig))ignored.push(...group.map(x=>x.item.configuration+' (sem anuncio correspondente)'));
+ scanSummary={updated,already,unmatched,ambiguous,conflicts,manual,ignored,condition,updatedKeys};
+ results=[];render();
+ const panel=$('bulkScanSummary');
+ if(panel){
+  panel.hidden=false;
+  panel.innerHTML='<strong>IA: '+updated+' preco(s) preenchido(s) automaticamente</strong><span>'+already+' ja corretos · '+unmatched+' sem correspondencia · '+ambiguous+' ambiguos · '+conflicts+' condicao divergente · '+manual+' edicoes manuais preservadas</span>'+
+   '<small>Somente valores associados a configuracoes identificaveis foram preenchidos. Confira os campos laranja antes de publicar.</small>'+
+   (ignored.length?'<details><summary>Ver '+ignored.length+' configuracao(oes) da imagem nao aplicadas</summary><ul>'+ignored.slice(0,50).map(x=>'<li>'+escape(x)+'</li>').join('')+'</ul></details>':'');
+ }
+ window.toast?.(updated?updated+' preco(s) preenchido(s). Confira os campos destacados.':'Nenhum anuncio correspondeu com seguranca a tabela. Precos mantidos.');
 }
 function closeScan(){if($('bulkScanOverlay'))$('bulkScanOverlay').hidden=true;}
 function renderScan(){
@@ -229,17 +287,15 @@ async function scanImage(file){
  if(!/^image\/(png|jpeg|webp)$/.test(file.type)||file.size>4*1024*1024){window.toast?.('Use PNG, JPG ou WebP de ate 4 MB.');$('bulkScanFile').value='';return}
  try{
   if($('bulkScanError')){$('bulkScanError').hidden=true;$('bulkScanError').textContent=''}
-  $('bulkScanOpen').disabled=true;$('bulkScanOpen').textContent='Analisando imagem...';
+  markBusy(true);$('bulkScanOpen').disabled=true;$('bulkScanOpen').textContent='Analisando imagem...';
   const image=await prepareScanImage(file);
   const condition=$('bulkScanCondition')?.value;
   if(!condition)throw new Error('Escolha primeiro a categoria de preco.');
   const data=await api('/api/portal/bulk-editor/scan-image',{method:'POST',body:JSON.stringify({image,condition})});
   if(!data.items?.length)throw new Error('Nenhuma configuracao encontrada.');
-  scanned={columns:data.columns,items:data.items.map(x=>({...x,target:suggestedTarget(x),checked:false}))};
-  $('bulkScanColumn').innerHTML=scanned.columns.map((s,i)=>'<option value="'+i+'">'+escape(s)+'</option>').join('');
-  $('bulkScanOverlay').hidden=false;renderScan();
+  autoFillScan(data,condition);
  }catch(e){const message=e.message||'Falha na leitura da imagem';window.toast?.(message);if($('bulkScanError')){$('bulkScanError').hidden=false;$('bulkScanError').textContent=message}}
- finally{$('bulkScanOpen').disabled=false;$('bulkScanOpen').textContent='✦ Importar print com IA';$('bulkScanFile').value=''}
+ finally{markBusy(false);$('bulkScanOpen').disabled=false;$('bulkScanOpen').textContent='✦ Importar print com IA';$('bulkScanFile').value='';render()}
 }
 function acceptScan(){
  if(!scanned)return;
@@ -253,7 +309,7 @@ function markup(){
  return pageHead('FERRAMENTAS','Ações em massa','Edite títulos, preços e descrições diretamente nas células, como no Excel.')+
  '<section class="panel bulk-panel"><div class="bulk-head"><div><h3>Editor de anúncios</h3><p class="small muted">Tabela de edição em massa, com identificação e estoque protegidos.</p></div><span class="bulk-tag">Mercado Livre</span></div>'+
  '<div class="bulk-toolbar"><button class="btn btn-primary bulk-add-btn" id="bulkOpen">+ Adicione os MLB&#39;s</button><span id="bulkCount">0 anúncios</span><div class="bulk-toolbar-right"><button class="btn btn-ghost bulk-clear-btn" id="bulkClear">Limpar lista</button><label class="bulk-price-condition-label" for="bulkScanCondition">Tipo de preço</label><select id="bulkScanCondition" class="bulk-price-condition"><option value="">Escolha a condição</option><option value="caixa_aberta">Caixa aberta</option><option value="mostruario">Mostruário</option><option value="com_marcas">Com marcas</option><option value="recondicionado">Recondicionado</option></select><button class="btn btn-ghost" id="bulkScanOpen">✦ Importar print com IA</button><input id="bulkScanFile" type="file" accept="image/png,image/jpeg,image/webp" hidden><button class="btn btn-ghost" id="bulkExport">↓ Baixar Excel</button><button class="btn btn-ghost" id="bulkImport">↑ Importar Excel</button><input id="bulkImportFile" type="file" accept=".xlsx,.xls" hidden></div></div>'+
- '<div id="bulkScanError" class="bulk-scan-error" role="alert" hidden></div>'+
+ '<div id="bulkScanError" class="bulk-scan-error" role="alert" hidden></div><div id="bulkScanSummary" class="bulk-scan-summary" hidden></div>'+
  '<div class="bulk-grid"><table><thead><tr><th class="bulk-num">#</th><th>Foto</th>'+cols.map(c=>'<th style="min-width:'+c[2]+'px">'+escape(c[1])+(c[3]?' 🔒':'')+'</th>').join('')+'</tr></thead><tbody id="bulkRows"></tbody></table></div>'+
  '<div class="bulk-footer"><span class="small muted">As células alteradas ficam destacadas. Loja, MLB, SKU e Estoque são somente leitura.</span><button class="btn btn-primary" id="bulkApply" disabled>Revisar e aplicar alterações</button></div><div id="bulkFailures"></div><div id="bulkResults"></div></section>'+
  '<div id="bulkResultOverlay" class="bulk-result-overlay" hidden><aside class="bulk-result-panel" role="dialog" aria-modal="true" aria-labelledby="bulkResultTitle"><header class="bulk-result-top"><div><span class="bulk-result-eyebrow">ML SH SUPPORT / AÇÕES EM MASSA</span><h2 id="bulkResultTitle">Resumo das alterações</h2></div><button type="button" id="bulkResultClose" aria-label="Fechar resultados">×</button></header><div class="bulk-result-scroll"><div id="bulkResultSummary"></div><div class="bulk-result-section-title">Detalhes por situação</div><div class="bulk-result-groups" id="bulkResultGroups"></div></div><footer class="bulk-result-actions"><button class="btn btn-ghost" type="button" id="bulkResultDownload">↓ Exportar resultado</button><button class="btn btn-primary" type="button" id="bulkResultContinue">Concluir</button></footer></aside></div>'+

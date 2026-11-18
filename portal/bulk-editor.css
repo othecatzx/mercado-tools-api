@@ -149,3 +149,15 @@ html[data-theme="dark"] .bulk-result-actions .btn-ghost{background:#26364c;color
 html[data-theme="dark"] .bulk-price-condition-label{color:#e5e5e5}
 html[data-theme="dark"] .bulk-price-condition{background:#14213d;color:white;border-color:#455875}
 .bulk-scan-error[hidden]{display:none!important}.bulk-scan-error{padding:13px 16px;margin:12px 20px;background:#fff1eb;border:1px solid #e8ac88;border-radius:10px;color:#813417;font-size:13px;white-space:pre-wrap;overflow-wrap:anywhere}
+
+/* Retorno automatico da IA na propria tabela, sem modal */
+.bulk-scan-summary[hidden]{display:none!important}
+.bulk-scan-summary{display:flex;flex-direction:column;gap:7px;background:#f3f7fd;border:1px solid #cdd9e9;border-left:4px solid #fca311;border-radius:10px;padding:14px 17px;margin:12px 18px;color:#14213d;font-size:13px}
+.bulk-scan-summary strong{font-size:14px;color:#14213d}
+.bulk-scan-summary span{color:#364966;font-weight:600}
+.bulk-scan-summary small{color:#60718c}
+.bulk-scan-summary details{margin-top:5px;font-size:12px}
+.bulk-scan-summary summary{cursor:pointer;font-weight:650}
+.bulk-scan-summary ul{padding-left:20px;max-height:140px;overflow:auto}
+html[data-theme="dark"] .bulk-scan-summary{background:#172640;border-color:#475979;color:#fff}
+html[data-theme="dark"] .bulk-scan-summary strong,html[data-theme="dark"] .bulk-scan-summary span{color:#fff}
