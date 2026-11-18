@@ -733,7 +733,8 @@ const codes = [...companies.entries()].map(([companyId, company]) => {
     const started=Date.now();
     try {
       if(!scopedMenuAllowed(req,'bulk-editor'))return res.status(403).json({ok:false,message:'Sem permissao para Acoes em massa.'});
-      const accountId=process.env.CLOUDFLARE_ACCOUNT_ID, token=process.env.CLOUDFLARE_AI_API_TOKEN;
+      const accountId=String(process.env.CLOUDFLARE_ACCOUNT_ID||'').trim();
+      const token=String(process.env.CLOUDFLARE_AI_API_TOKEN||'').trim().replace(/^Bearer\s+/i,'');
       if(!accountId||!token)return res.status(503).json({ok:false,message:'Configure CLOUDFLARE_ACCOUNT_ID e CLOUDFLARE_AI_API_TOKEN no Render.'});
       const image=String(req.body?.image||'');
       const allowedConditions=['caixa_aberta','mostruario','com_marcas','recondicionado'];
@@ -756,6 +757,17 @@ const codes = [...companies.entries()].map(([companyId, company]) => {
       const payload=await response.json().catch(()=>({}));
       console.info('[bulk-scan] Cloudflare Vision respondeu',response.status,'em_ms=',Date.now()-started);
       if(!response.ok||payload.success===false){
+        if(response.status===401){
+          let verification='unknown';
+          try{
+            const checked=await fetch('https://api.cloudflare.com/client/v4/user/tokens/verify',{headers:{Authorization:'Bearer '+token},signal:AbortSignal.timeout(8000)});
+            const data=await checked.json().catch(()=>({}));
+            verification=checked.ok&&data.success&&data.result?.status==='active'?'active':'rejected_http_'+checked.status;
+          }catch(e){verification='unavailable'}
+          console.warn('[bulk-scan] Cloudflare token verification:',verification,'account_id_format:',/^[a-f0-9]{32}$/i.test(accountId)?'valid':'invalid');
+          const message=verification==='active'?'Token do Render esta ativo, mas Cloudflare recusou o acesso a este modelo/conta (401). Confira permissoes Workers AI e Account ID.':'O token carregado pelo Render foi recusado pela Cloudflare (401). Verifique a variavel CLOUDFLARE_AI_API_TOKEN e publique o ambiente.';
+          return res.status(502).json({ok:false,message,diagnostic:'cloudflare_auth_401',token_verification:verification});
+        }
         const detail=String(payload.errors?.[0]?.message||payload.error||payload.message||'').slice(0,220);
         throw new Error('Cloudflare Vision HTTP '+response.status+(detail?': '+detail:'')+'. Se o modelo exigir aceite da licenca Meta, autorize no painel da Cloudflare.');
       }
