@@ -114,7 +114,8 @@ console.log('PASS: validation, clone payload, seller package dimensions, permiss
   assert.equal(events.length,0,'no publication without explicit confirmation');
   const preview=await call('/api/portal/bulk-tools/clone/preview',{item_id:'MLB123456789',source_id:'11',target_id:'22',stock:1});
   assert.equal(preview.response.preview.stock,1);
-  assert.equal(events.length,0,'preview must not publish');
+  assert.equal(events.filter(e=>e.url.endsWith('/items')).length,0,'preview must not publish');
+  assert.equal(events.filter(e=>e.url.endsWith('/items/validate')).length,1,'preview must validate publication');
   const cloned=await call('/api/portal/bulk-tools/clone/apply',{item_id:'MLB123456789',source_id:'11',target_id:'22',stock:1,confirm:true});
   assert.equal(cloned.response.created_id,'MLB999123456');
   assert.equal(events.filter(e=>e.url.endsWith('/items')&&e.method==='POST').length,1);

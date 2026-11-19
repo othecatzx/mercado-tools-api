@@ -47,10 +47,15 @@ function prepareClone(item,stock,title){
   condition:item.condition||'new',pictures:sourcePictures.map(source=>({source})),
   attributes:attrs
  };
- if(item.catalog_listing===true){
-  // Publicação direta em catálogo: preserva o produto canônico. Não transfere
-  // user_product_id / family_name entre vendedores.
+ if(/^MLB\d+$/.test(String(item.catalog_product_id||''))){
+  // Mesmo anúncios tradicionais podem precisar do catalog_product_id quando
+  // a categoria é productizada. Preservar a identificação do produto original.
+  // Isso NÃO transforma o anúncio em catálogo sem catalog_listing=true.
   payload.catalog_product_id=String(item.catalog_product_id);
+ }
+ if(item.catalog_listing===true){
+  // Publicação direta em catálogo. Não transfere os vínculos de família
+  // exclusivos do vendedor original para a conta de destino.
   payload.catalog_listing=true;
  }
  if(item.seller_custom_field)payload.seller_custom_field=String(item.seller_custom_field).slice(0,255);
@@ -62,11 +67,35 @@ module.exports={validItem,validCategory,validDims,packageAttributes,buildDimensi
  register(app,{authPortalOrAgent,scopedMenuAllowed,getShippingAccounts,ensureMlToken,shippingFreeFetchItem}){
  const gate = name => (req,res,next)=>scopedMenuAllowed(req,name)?next():res.status(403).json({ok:false,message:'Permissão não liberada para esta ferramenta.'});
  const guardAccounts = (req,res,next)=>(scopedMenuAllowed(req,'clone-listings')||scopedMenuAllowed(req,'bulk-dimensions'))?next():res.status(403).json({ok:false,message:'Sem permissão para consultar contas.'});
+ // Preserve as causas devolvidas pelo ML, inclusive campos faltantes.
+ // Não expor cabeçalhos, tokens, payloads nem respostas inteiras ao cliente.
+ function mlErrorMessage(data,status){
+  const causes=Array.isArray(data?.cause)?data.cause:[];
+  const messages=causes.slice(0,8).map(c=>{
+   const code=String(c?.code||'').slice(0,90);
+   const message=String(c?.message||'').slice(0,300);
+   const refs=Array.isArray(c?.references)?c.references.filter(x=>typeof x==='string').slice(0,5).join(', ').slice(0,160):'';
+   return [code,message,refs?'Campos: '+refs:''].filter(Boolean).join(' — ');
+  }).filter(Boolean);
+  return (messages.length?messages.join(' | '):String(data?.message||data?.error||'Erro HTTP '+status)).slice(0,1400);
+ }
  async function ml(token,path,method='GET',body){
   const r=await fetch(API+path,{method,headers:{Authorization:'Bearer '+token,Accept:'application/json',...(body?{'Content-Type':'application/json'}:{})},...(body?{body:JSON.stringify(body)}:{})});
   const data=await r.json().catch(()=>({}));
-  if(!r.ok)throw new Error(String(data.message||data.error||'HTTP '+r.status).slice(0,350));
+  if(!r.ok){
+   const err=new Error(mlErrorMessage(data,r.status));
+   err.status=r.status;
+   err.code=String(data?.error||'').slice(0,70);
+   throw err;
+  }
   return data;
+ }
+ async function validateBeforePublish(token,payload){
+  try{
+   await ml(token,'/items/validate','POST',payload);
+  }catch(e){
+   throw new Error('Validação de publicação: '+String(e.message).slice(0,1400));
+  }
  }
  async function selectedAccount(req,id){
   const matches=(await getShippingAccounts(req)).filter(a=>String(a.ml_user_id)===String(id));
@@ -88,9 +117,12 @@ module.exports={validItem,validCategory,validDims,packageAttributes,buildDimensi
    const token=await ensureMlToken(source);
    const item=await shippingFreeFetchItem(id,token);
    if(String(item.seller_id)!==String(source.ml_user_id))return res.status(403).json({ok:false,message:'Anúncio não pertence à conta de origem.'});
-   await ensureMlToken(target);
+   const targetToken=await ensureMlToken(target);
    const stock=Number(req.body?.stock),title=String(req.body?.title||item.title||'');
    const candidate=prepareClone(item,stock,title);
+   // Validação sem publicação. Se a conta de destino exigir campos extras,
+   // o anúncio não será marcado como apto nem oferecerá confirmação.
+   await validateBeforePublish(targetToken,candidate);
    res.json({ok:true,preview:{item_id:id,source_name:source.nickname||source.company_name,
     target_name:target.nickname||target.company_name,title:candidate.title,category_id:candidate.category_id,
     price:candidate.price,stock:candidate.available_quantity,pictures:candidate.pictures.length,
@@ -119,6 +151,8 @@ module.exports={validItem,validCategory,validDims,packageAttributes,buildDimensi
       String(req.body?.expected_catalog_product_id||'')!==String(payload.catalog_product_id)){
      return res.status(409).json({ok:false,message:'Confirme novamente o produto de catálogo na prévia antes de publicar.'});
    }
+   // Valida novamente: as regras da categoria/conta podem ter mudado após a prévia.
+   await validateBeforePublish(targetToken,payload);
    // A operação é explícita, limitada a um anúncio por requisição e só após confirmação.
    const created=await ml(targetToken,'/items','POST',payload);
    const newId=String(created.id||'');

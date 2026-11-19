@@ -35,13 +35,14 @@ async function run(item,expectType){
   const preview=await req('/api/portal/bulk-tools/clone/preview',request);
   assert.equal(preview.status,200);
   assert.equal(preview.result.preview.clone_type,expectType);
-  assert.equal(calls.length,0,'preview read only');
+  assert.equal(calls.filter(c=>c.url.endsWith('/items')).length,0,'preview must not create items');
+  assert.equal(calls.filter(c=>c.url.endsWith('/items/validate')).length,1,'preview must validate before publication');
   if(expectType==='catalog'){
    assert.equal(preview.result.preview.catalog_product_id,'MLB987654');
    assert.match(preview.result.preview.warning,/confirme que o item físico/);
    const missing=await req('/api/portal/bulk-tools/clone/apply',{...request,confirm:true});
    assert.equal(missing.status,409,'must match catalog product that appeared at preview');
-   assert.equal(calls.length,0);
+   assert.equal(calls.filter(c=>c.url.endsWith('/items')).length,0);
   }
   const confirmation={...request,confirm:true,expected_catalog_product_id:preview.result.preview.catalog_product_id};
   const applied=await req('/api/portal/bulk-tools/clone/apply',confirmation);
@@ -50,7 +51,7 @@ async function run(item,expectType){
   const post=calls.find(c=>c.method==='POST'&&c.url.endsWith('/items'));
   assert.ok(post,'item must be created in destination');
   assert.equal(post.body.catalog_listing,expectType==='catalog'?true:undefined);
-  assert.equal(post.body.catalog_product_id,expectType==='catalog'?'MLB987654':undefined);
+  assert.equal(post.body.catalog_product_id,'MLB987654','Product association must be preserved on traditional and catalog items');
   assert.equal(post.body.user_product_id,undefined);
   assert.equal(post.body.family_name,undefined);
   if(expectType==='catalog')assert.equal(applied.result.description_status,'gerenciada pelo catálogo');
