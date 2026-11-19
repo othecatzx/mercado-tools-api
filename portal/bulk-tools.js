@@ -18,7 +18,7 @@ function markup(mode){
 '<button type="button" id="mlbtCloneApply" class="btn btn-primary" hidden disabled>Confirmar clonagem</button></section>',
 '<section class="mlsh-tool-card"><h4>▣ Dimensões em massa por categoria</h4><p>Defina as dimensões da embalagem real. Não inclui anúncios Full.</p>',
 '<label>Conta Mercado Livre<select id="mlbtDimAccount"><option value="">Carregando contas...</option></select></label>',
-'<label>ID da categoria<input id="mlbtCategory" placeholder="Ex.: MLB1234" autocomplete="off"></label>',
+'<div class="mlbt-dim-category"><label>Categoria dos produtos<select id="mlbtCategory" disabled><option value="">Selecione primeiro uma conta</option></select></label><div id="mlbtCategoryPath" class="mlbt-category-path"></div><small id="mlbtCategoryHint">Escolha as categorias pelos nomes até chegar à categoria final dos anúncios.</small></div>',
 '<div class="mlsh-tool-dimgrid">',
 '<label>Altura (cm)<input id="mlbtHeight" type="number" min="1" max="300" placeholder="15"></label>',
 '<label>Largura (cm)<input id="mlbtWidth" type="number" min="1" max="300" placeholder="20"></label>',
@@ -27,7 +27,8 @@ function markup(mode){
 '<label>Limite da busca<select id="mlbtLimit"><option value="20">20 anúncios</option><option value="50" selected>50 anúncios</option><option value="100">100 anúncios</option></select></label>',
 '<button type="button" id="mlbtDimPreview" class="btn btn-primary">Buscar anúncios da categoria</button>',
 '<div id="mlbtDimStatus" class="mlsh-tools-status" aria-live="polite"></div>',
-'<div id="mlbtDimList" class="mlsh-tools-selection" hidden></div>',
+'<div id="mlbtDimSelectionBar" class="mlbt-dim-selection-bar" hidden><strong id="mlbtDimSelectedCount">0 selecionados</strong><div><button type="button" id="mlbtDimSelectAll" class="mlbt-dim-secondary">Selecionar até 50</button><button type="button" id="mlbtDimSelectNone" class="mlbt-dim-secondary">Desmarcar todos</button><button type="button" id="mlbtDimClear" class="mlbt-dim-secondary">Limpar resultados</button></div></div>',
+'<div id="mlbtDimList" class="mlsh-tools-selection mlbt-dim-list" hidden></div>',
 '<label class="mlsh-tools-confirm" id="mlbtDimConsentWrap" hidden><input type="checkbox" id="mlbtDimConsent"> Confirmo as medidas e os anúncios selecionados.</label>',
 '<button type="button" id="mlbtDimApply" class="btn btn-primary" hidden disabled>Aplicar dimensões</button></section></div></section>'
  ].join('');
@@ -35,7 +36,7 @@ function markup(mode){
 function setStatus(id,value,error){const el=q(id);if(el){el.textContent=String(value||'');el.dataset.error=error?'true':'false'}}
 function value(id){return String(q(id)?.value||'').trim()}
 function resetClone(){state.clone=null;q('mlbtCloneConsent').checked=false;q('mlbtCloneApply').hidden=true;q('mlbtCloneApply').disabled=true;q('mlbtCloneConsentWrap').hidden=true;setStatus('mlbtCloneStatus','')}
-function resetDim(){state.dimensions=null;q('mlbtDimConsent').checked=false;q('mlbtDimApply').hidden=true;q('mlbtDimApply').disabled=true;q('mlbtDimConsentWrap').hidden=true;q('mlbtDimList').hidden=true;q('mlbtDimList').replaceChildren();setStatus('mlbtDimStatus','')}
+function resetDim(){state.dimensions=null;q('mlbtDimConsent').checked=false;q('mlbtDimApply').hidden=true;q('mlbtDimApply').disabled=true;q('mlbtDimConsentWrap').hidden=true;q('mlbtDimSelectionBar').hidden=true;q('mlbtDimList').hidden=true;q('mlbtDimList').replaceChildren();setStatus('mlbtDimStatus','')}
 function disableWhile(button,busy,text){button.disabled=busy;button.textContent=busy?text:button.dataset.original}
 function init(config){
  const root=document.querySelector('.mlsh-bulk-tools');if(!root||!config?.api)return;
@@ -59,11 +60,52 @@ function init(config){
   }catch(e){setStatus('mlbtCloneStatus',e.message,true);setStatus('mlbtDimStatus',e.message,true)}
  })();
  const cloneReq=()=>({source_id:value('mlbtSource'),target_id:value('mlbtTarget'),item_id:value('mlbtItem').toUpperCase(),stock:Number(value('mlbtStock'))});
- const dimReq=()=>({account_id:value('mlbtDimAccount'),category_id:value('mlbtCategory').toUpperCase(),dimensions:{height:Number(value('mlbtHeight')),width:Number(value('mlbtWidth')),length:Number(value('mlbtLength')),weight:Number(value('mlbtWeight'))}});
+ const dimReq=()=>({account_id:value('mlbtDimAccount'),category_id:state.dimCategory||'',dimensions:{height:Number(value('mlbtHeight')),width:Number(value('mlbtWidth')),length:Number(value('mlbtLength')),weight:Number(value('mlbtWeight'))}});
  for(const id of ['mlbtSource','mlbtTarget','mlbtItem','mlbtStock'])q(id).addEventListener('input',resetClone);
- for(const id of ['mlbtDimAccount','mlbtCategory','mlbtHeight','mlbtWidth','mlbtLength','mlbtWeight','mlbtLimit'])q(id).addEventListener('input',resetDim);
+ q('mlbtLimit').addEventListener('input',resetDim);
+ for(const id of ['mlbtHeight','mlbtWidth','mlbtLength','mlbtWeight'])q(id).addEventListener('input',resetDim);
+ let categoryEpoch=0;
+ async function loadCategorySelect(select,parentId,epoch){
+  select.disabled=true;select.replaceChildren();
+  const loading=document.createElement('option');loading.value='';loading.textContent='Carregando categorias...';select.append(loading);
+  const url='/api/portal/bulk-tools/dimensions/categories?account_id='+encodeURIComponent(value('mlbtDimAccount'))+(parentId?'&parent_id='+encodeURIComponent(parentId):'');
+  const data=await api(url);
+  if(epoch!==categoryEpoch||!root.isConnected)return null;
+  select.replaceChildren();
+  const empty=document.createElement('option');empty.value='';empty.textContent='Selecione uma categoria';select.append(empty);
+  for(const category of data.categories||[]){const opt=document.createElement('option');opt.value=category.id;opt.textContent=category.name;select.append(opt)}
+  select.disabled=false;return data.categories||[];
+ }
+ function attachCategorySelect(select){
+  select.onchange=async()=>{
+   const epoch=++categoryEpoch;resetDim();state.dimCategory='';
+   const next=q('mlbtCategoryPath');
+   while(select!==q('mlbtCategory')&&select.parentElement?.nextElementSibling)select.parentElement.nextElementSibling.remove();
+   if(select===q('mlbtCategory'))next.replaceChildren();
+   if(!select.value)return;
+   const parentId=select.value;
+   const choice=select.options[select.selectedIndex]?.textContent||'';
+   q('mlbtCategoryHint').textContent='Consultando subcategorias de '+choice+'...';
+   try{
+    const child=document.createElement('select');
+    const options=await loadCategorySelect(child,parentId,epoch);
+    if(!options||epoch!==categoryEpoch)return;
+    if(!options.length){state.dimCategory=parentId;q('mlbtCategoryHint').textContent='Categoria final selecionada: '+choice+'. Agora defina as medidas e busque.';return}
+    const label=document.createElement('label');label.textContent='Subcategoria';label.append(child);next.append(label);attachCategorySelect(child);
+    q('mlbtCategoryHint').textContent='Continue escolhendo até chegar à categoria final.';
+   }catch(e){if(epoch===categoryEpoch)q('mlbtCategoryHint').textContent='Falha ao carregar subcategorias: '+e.message}
+  };
+ }
+ attachCategorySelect(q('mlbtCategory'));
+ q('mlbtDimAccount').onchange=async()=>{
+  const epoch=++categoryEpoch;resetDim();state.dimCategory='';q('mlbtCategoryPath').replaceChildren();
+  if(!value('mlbtDimAccount')){q('mlbtCategory').disabled=true;q('mlbtCategoryHint').textContent='Selecione primeiro uma conta.';return}
+  q('mlbtCategoryHint').textContent='Carregando categorias do Mercado Livre...';
+  try{await loadCategorySelect(q('mlbtCategory'),'',epoch);if(epoch===categoryEpoch)q('mlbtCategoryHint').textContent='Escolha pelos nomes; não é preciso digitar IDs.'}
+  catch(e){if(epoch===categoryEpoch)q('mlbtCategoryHint').textContent='Erro: '+e.message}
+ };
  q('mlbtCloneConsent').onchange=()=>q('mlbtCloneApply').disabled=!q('mlbtCloneConsent').checked;
- q('mlbtDimConsent').onchange=()=>q('mlbtDimApply').disabled=!q('mlbtDimConsent').checked;
+ q('mlbtDimConsent').onchange=()=>updateDimSelected();
  previewClone.onclick=async()=>{
   await accountTask;resetClone();const req=cloneReq();
   if(!req.source_id||!req.target_id||req.source_id===req.target_id){setStatus('mlbtCloneStatus','Selecione origem e destino diferentes.',true);return}
@@ -89,24 +131,41 @@ function init(config){
   }catch(e){setStatus('mlbtCloneStatus',e.message,true);btn.disabled=false}
   finally{btn.textContent='Confirmar clonagem'}
  };
+ function updateDimSelected(){
+  const selected=root.querySelectorAll('.mlbtDimItem:checked').length;
+  q('mlbtDimSelectedCount').textContent=selected+' selecionado(s) · máximo 50';
+  q('mlbtDimApply').disabled=!state.dimensions||selected<1||selected>50||!q('mlbtDimConsent').checked;
+ }
+ q('mlbtDimList').addEventListener('change',e=>{if(e.target.matches('.mlbtDimItem'))updateDimSelected()});
+ q('mlbtDimSelectAll').onclick=()=>{q('mlbtDimList').querySelectorAll('.mlbtDimItem').forEach((el,i)=>el.checked=i<50);updateDimSelected()};
+ q('mlbtDimSelectNone').onclick=()=>{q('mlbtDimList').querySelectorAll('.mlbtDimItem').forEach(el=>el.checked=false);updateDimSelected()};
+ q('mlbtDimClear').onclick=resetDim;
  previewDim.onclick=async()=>{
   await accountTask;resetDim();const req=dimReq();
-  if(!req.account_id||!/^MLB\d+$/.test(req.category_id)){setStatus('mlbtDimStatus','Escolha a conta e informe um ID de categoria válido.',true);return}
+  if(!req.account_id||!/^MLB\d+$/.test(req.category_id)){setStatus('mlbtDimStatus','Selecione a conta e a categoria final pelo nome.',true);return}
   disableWhile(previewDim,true,'Consultando...');
   try{
    const response=await api('/api/portal/bulk-tools/dimensions/preview',{method:'POST',body:JSON.stringify({...req,limit:Number(value('mlbtLimit'))})});
    if(!root.isConnected)return;
+   if(JSON.stringify(req)!==JSON.stringify(dimReq()))return; // Dados alterados durante a consulta.
    state.dimensions=req;
    const list=q('mlbtDimList');list.replaceChildren();
+   const formatDims=d=>d?([d.height,d.width,d.length].join(' × ')+' cm · '+d.weight+' g'):'Não informadas';
    for(const [index,item] of (response.items||[]).entries()){
-    const label=document.createElement('label');label.className='mlsh-tools-item';
+    const label=document.createElement('label');label.className='mlsh-tools-item mlbt-dim-item';
     const checkbox=document.createElement('input');checkbox.type='checkbox';checkbox.value=item.id;checkbox.className='mlbtDimItem';checkbox.checked=index<50;
-    const text=document.createElement('span');text.textContent=item.id+' · '+item.title+' ('+item.status+')';
-    label.append(checkbox,text);list.append(label);
+    const content=document.createElement('span');content.className='mlbt-dim-item-main';
+    const title=document.createElement('strong');title.textContent=item.title||item.id;
+    const meta=document.createElement('small');meta.textContent=item.id+(item.sku?' · SKU '+item.sku:'')+' · '+(item.status==='active'?'Ativo':'Pausado');
+    const comparison=document.createElement('span');comparison.className='mlbt-dim-compare';
+    const before=document.createElement('span');before.textContent='Atual: '+formatDims(item.dimensions);
+    const after=document.createElement('span');after.textContent='Nova: '+formatDims(req.dimensions);
+    comparison.append(before,after);content.append(title,meta,comparison);label.append(checkbox,content);list.append(label);
    }
    const count=(response.items||[]).length;
-   setStatus('mlbtDimStatus',count+' anúncio(s) elegível(is), '+(response.skipped||[]).length+' ignorado(s). '+(response.limitReached?'Limite de busca atingido. ':'')+'Revise a seleção (máximo 50 por aplicação).');
-   list.hidden=!count;q('mlbtDimConsentWrap').hidden=!count;q('mlbtDimApply').hidden=!count;
+   setStatus('mlbtDimStatus',count+' anúncio(s) com medidas diferentes entre '+(response.scanned||0)+' consultado(s). '+(response.alreadyMatching||0)+' já estão corretos, '+(response.skipped||[]).length+' ignorados.'+(response.limitReached?' Busca limitada aos primeiros '+value('mlbtLimit')+' anúncios.':'')+' Selecione apenas os que deseja alterar.');
+   list.hidden=!count;q('mlbtDimSelectionBar').hidden=!count;q('mlbtDimConsentWrap').hidden=!count;q('mlbtDimApply').hidden=!count;
+   updateDimSelected();
   }catch(e){setStatus('mlbtDimStatus',e.message,true)}
   finally{if(root.isConnected)disableWhile(previewDim,false)}
  };

@@ -45,6 +45,12 @@ function sourcePackageDimensions(item){
  }
  return null;
 }
+function samePackageDimensions(actual,desired){
+ const a=validDims(actual),b=validDims(desired);
+ if(!a||!b)return false;
+ const sorted=d=>[d.height,d.width,d.length].sort((x,y)=>x-y);
+ return a.weight===b.weight&&sorted(a).every((v,i)=>v===sorted(b)[i]);
+}
 function clonePackageAttributes(dims){
  const validated=validDims(dims);
  if(!validated)return null;
@@ -683,6 +689,20 @@ module.exports={validItem,normalizeItemId,validCategory,validDims,packageAttribu
     message:'Anúncio criado. Confira os atributos e as condições de publicação no Mercado Livre.'});
   }catch(e){res.status(400).json({ok:false,message:e.message})}
  });
+ // Navegacao por nomes da arvore oficial de categorias do Mercado Livre.
+ app.get('/api/portal/bulk-tools/dimensions/categories',authPortalOrAgent,gate('bulk-dimensions'),async(req,res)=>{
+  try{
+   const parent=String(req.query?.parent_id||'').toUpperCase().trim();
+   if(parent&&!validCategory(parent))return res.status(400).json({ok:false,message:'Categoria invalida.'});
+   const token=await ensureMlToken(await selectedAccount(req,req.query?.account_id));
+   const data=parent?await ml(token,'/categories/'+encodeURIComponent(parent)):await ml(token,'/sites/MLB/categories');
+   const source=parent?data.children_categories:data;
+   if(!Array.isArray(source))throw new Error('Categorias indisponiveis para esta conta.');
+   const categories=source.filter(c=>validCategory(c?.id)).map(c=>({id:c.id,name:String(c.name||c.id).slice(0,140)}))
+    .sort((a,b)=>a.name.localeCompare(b.name,'pt-BR'));
+   res.json({ok:true,parent_id:parent||null,categories});
+  }catch(e){res.status(400).json({ok:false,message:'Falha ao buscar categorias: '+e.message})}
+ });
  app.post('/api/portal/bulk-tools/dimensions/preview',authPortalOrAgent,gate('bulk-dimensions'),async(req,res)=>{
   try{
    const category=String(req.body?.category_id||'').toUpperCase().trim();
@@ -698,7 +718,7 @@ module.exports={validItem,normalizeItemId,validCategory,validDims,packageAttribu
     if((batch.results||[]).length<Math.min(50,limit-offset))break;
    }
    ids=[...new Set(ids)].slice(0,limit);
-   const items=[],skipped=[];
+   const items=[],skipped=[];let alreadyMatching=0;
    for(const id of ids){
     try {
      const item=await shippingFreeFetchItem(id,token);
@@ -706,11 +726,14 @@ module.exports={validItem,normalizeItemId,validCategory,validDims,packageAttribu
      if(!['active','paused'].includes(item.status)){skipped.push({id,reason:'Status não suportado'});continue;}
      if(item.shipping?.logistic_type==='fulfillment'){skipped.push({id,reason:'Full gerenciado pelo ML'});continue;}
      if(item.shipping?.mode==='me1'){skipped.push({id,reason:'Envios 1 exige fluxo próprio de dimensões'});continue;}
-     items.push({id:item.id,title:item.title,category_id:item.category_id,status:item.status,
-      mode:item.shipping?.mode||'',dimensions:item.shipping?.dimensions||null});
+     const actual=sourcePackageDimensions(item);
+     if(samePackageDimensions(actual,req.body.dimensions)){alreadyMatching++;continue;}
+     items.push({id:item.id,title:item.title,sku:item.seller_custom_field||'',
+      category_id:item.category_id,status:item.status,
+      mode:item.shipping?.mode||'',dimensions:actual});
     }catch(e){skipped.push({id,reason:e.message.slice(0,130)})}
    }
-   res.json({ok:true,category_id:category,account_name:account.nickname||account.company_name,items,skipped,limitReached:ids.length===limit});
+   res.json({ok:true,category_id:category,account_name:account.nickname||account.company_name,items,skipped,alreadyMatching,scanned:ids.length,limitReached:ids.length===limit});
   }catch(e){res.status(400).json({ok:false,message:e.message})}
  });
  app.post('/api/portal/bulk-tools/dimensions/apply',authPortalOrAgent,gate('bulk-dimensions'),async(req,res)=>{
@@ -722,24 +745,26 @@ module.exports={validItem,normalizeItemId,validCategory,validDims,packageAttribu
    if(!validCategory(category)||!ids.length||ids.length>50||ids.some(id=>!validItem(id))||!dimensions)
     return res.status(400).json({ok:false,message:'Categoria, dimensões ou seleção inválidas (máx. 50 anúncios).'});
    const account=await selectedAccount(req,req.body?.account_id),token=await ensureMlToken(account);
-   const success=[],failed=[],pending=[];
+   const success=[],failed=[],pending=[],unchanged=[];
    for(const id of ids){
     try {
      const item=await shippingFreeFetchItem(id,token);
      if(String(item.seller_id)!==String(account.ml_user_id)||item.category_id!==category)throw new Error('Anúncio não pertence à conta/categoria.');
      if(!['active','paused'].includes(item.status))throw new Error('Status não permite edição.');
+     if(samePackageDimensions(sourcePackageDimensions(item),dimensions)){
+      unchanged.push({id,reason:'As medidas ja correspondem, independentemente da ordem.'});continue;
+     }
      const body=buildDimensionUpdate(item,dimensions);
      await ml(token,'/items/'+encodeURIComponent(id),'PUT',body);
      try {
       const current=await shippingFreeFetchItem(id,token);
-      const values=new Map((current.attributes||[]).map(a=>[String(a.id),String(a.value_name||'')]));
-      const matches=body.attributes.every(a=>values.get(a.id)===a.value_name);
+      const matches=samePackageDimensions(sourcePackageDimensions(current),dimensions);
       if(matches)success.push({id});
       else pending.push({id,reason:'A API aceitou a alteração, mas ainda não confirmou os atributos no anúncio.'});
      } catch {pending.push({id,reason:'A API aceitou a alteração; leitura de confirmação indisponível.'});}
     }catch(e){failed.push({id,error:e.message})}
    }
-   res.json({ok:true,success,pending,failed,message:'Revise as dimensões no Mercado Livre: algumas modalidades podem rejeitar ou substituir medidas.'});
+   res.json({ok:true,success,pending,failed,unchanged,message:'Revise as dimensões no Mercado Livre: algumas modalidades podem rejeitar ou substituir medidas.'});
   }catch(e){res.status(400).json({ok:false,message:e.message})}
  });
  }
