@@ -63,8 +63,11 @@ app.use('/api/portal/bulk-editor/scan-image', (req,res,next)=>{
   res.on('close',()=>{if(!res.writableEnded)console.warn('[bulk-scan]',requestId,'conexao encerrada antes da resposta','duracao_ms=',Date.now()-started)});
   next();
 });
-// Aceita imagens maiores somente nesta rota; demais rotas mantem limite original.
+// Aceita imagens maiores apenas nas rotas de imagem; demais rotas mantêm limite original.
 app.use('/api/portal/bulk-editor/scan-image', express.json({limit:'6mb'}));
+app.use('/api/portal/bulk-tools/clone/photo', express.json({limit:'6mb'}));
+app.use('/api/portal/bulk-tools/clone/preview', express.json({limit:'256kb'}));
+app.use('/api/portal/bulk-tools/clone/apply', express.json({limit:'256kb'}));
 app.use(express.json({
     type: ["application/json", "application/*+json", "text/plain"],
     verify: (req, res, buf) => { if (req.originalUrl?.startsWith("/api/webhooks/bling/")) req.rawBody = Buffer.from(buf); }

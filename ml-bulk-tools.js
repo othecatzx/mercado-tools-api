@@ -58,7 +58,17 @@ function buildDimensionUpdate(item,dimensions){
  if(item.shipping?.mode==='me1')throw new Error('Mercado Envios 1: edição automática de shipping.dimensions ainda não suportada nesta versão.');
  return {attributes:attrs};
 }
-function prepareClone(item,stock,title){
+function parseClonePictures(pictures){
+ if(!Array.isArray(pictures)||pictures.length<1||pictures.length>12)throw new Error('Selecione entre 1 e 12 fotos para clonar.');
+ return pictures.map(photo=>{
+  if(photo&&typeof photo==='object'&&typeof photo.source==='string'&&/^https:\/\//i.test(photo.source)&&photo.source.length<2000)
+   return {source:photo.source};
+  if(photo&&typeof photo==='object'&&typeof photo.id==='string'&&/^[0-9]{4,20}-[A-Z0-9_-]+$/i.test(photo.id))
+   return {id:photo.id};
+  throw new Error('Foto inválida. Selecione uma imagem original ou envie uma imagem nova.');
+ });
+}
+function prepareClone(item,stock,title,overrides){
  const qty=Number(stock);
  if(!Number.isSafeInteger(qty)||qty<1||qty>99999)throw new Error('Estoque inicial deve estar entre 1 e 99999.');
  // IDs de família / User Products identificam o agrupamento do vendedor e não
@@ -83,11 +93,15 @@ function prepareClone(item,stock,title){
      ...(typeof valueName==='string'&&valueName.trim()?{value_name:valueName.trim()}:{})};
   })
   .filter(a=>a.value_id||a.value_name);
+ const newPrice=overrides&&Object.prototype.hasOwnProperty.call(overrides,'price')?Number(overrides.price):Number(item.price);
+ if(!Number.isFinite(newPrice)||newPrice<=0||newPrice>100000000)throw new Error('Preço inválido. Informe valor positivo.');
+ const pictures=overrides&&Object.prototype.hasOwnProperty.call(overrides,'pictures')?parseClonePictures(overrides.pictures):sourcePictures.map(source=>({source}));
+ if(!pictures.length&&item.catalog_listing!==true)throw new Error('O anúncio precisa ter pelo menos uma foto válida.');
  const payload={
-  title:name,category_id:item.category_id,price:Number(item.price),currency_id:item.currency_id||'BRL',
+  title:name,category_id:item.category_id,price:newPrice,currency_id:item.currency_id||'BRL',
   available_quantity:qty,buying_mode:item.buying_mode||'buy_it_now',
   listing_type_id:item.listing_type_id||'gold_special',
-  condition:item.condition||'new',pictures:sourcePictures.map(source=>({source})),
+  condition:item.condition||'new',pictures,
   attributes:[...attrs,...(dims?clonePackageAttributes(dims):[])]
  };
  if(/^MLB\d+$/.test(String(item.catalog_product_id||''))){
@@ -217,7 +231,7 @@ module.exports={validItem,validCategory,validDims,packageAttributes,buildDimensi
   .slice(0,10);
  // Algumas contas usam User Products com family_name obrigatório.
  // Adaptar de maneira conservadora a cada validação, sem pular outras falhas.
- async function validateCloneCandidate(token,item,initial,targetId){
+ async function validateCloneCandidate(token,item,initial,targetId,overrideTitle){
   let candidate={...initial,attributes:[...(initial.attributes||[])]};
   const ignored=new Set();
   for(let attempt=0;attempt<5;attempt++){
@@ -261,7 +275,7 @@ module.exports={validItem,validCategory,validDims,packageAttributes,buildDimensi
     }
     const details=String(error?.message||'');
     if(!candidate.family_name&&/body\.required_fields/i.test(details)&&/\[family_name\]/i.test(details)){
-     const family=String(item.family_name||candidate.title||item.title||'').trim();
+     const family=String(overrideTitle||item.family_name||candidate.title||item.title||'').trim();
      if(!family||family.length>60)throw new Error('Nome da família obrigatório e inválido; revise o produto de origem.');
      candidate={...candidate,family_name:family};
      delete candidate.title;
@@ -295,8 +309,58 @@ module.exports={validItem,validCategory,validDims,packageAttributes,buildDimensi
    res.json({ok:true,accounts:accounts.map(a=>({ml_user_id:String(a.ml_user_id),company_id:a.company_id,name:a.nickname||a.company_name,company_name:a.company_name}))});
   }catch(e){res.status(500).json({ok:false,message:'Não foi possível carregar as contas.'})}
  });
+ // Upload pontual para conta de destino. Nunca salva base64 no banco.
+ app.post('/api/portal/bulk-tools/clone/photo',authPortalOrAgent,gate('clone-listings'),async(req,res)=>{
+  try{
+   const account=await selectedAccount(req,req.body?.target_id);
+   const mime=String(req.body?.mime||'');
+   const base64=String(req.body?.data||'');
+   if(!['image/jpeg','image/png'].includes(mime)||base64.length<100||base64.length>5500000||!/^[A-Za-z0-9+/]+={0,2}$/.test(base64))
+    return res.status(400).json({ok:false,message:'Envie uma imagem JPG ou PNG válida de até 4 MB.'});
+   const bytes=Buffer.from(base64,'base64');
+   if(bytes.length>4*1024*1024||bytes.length<100||
+      !(mime==='image/jpeg'&&bytes[0]===0xff&&bytes[1]===0xd8||
+        mime==='image/png'&&bytes.subarray(0,8).equals(Buffer.from('89504e470d0a1a0a','hex'))))
+    return res.status(400).json({ok:false,message:'Formato ou tamanho da imagem inválido.'});
+   const token=await ensureMlToken(account);
+   const form=new FormData();
+   form.append('file',new Blob([bytes],{type:mime}),mime==='image/jpeg'?'image.jpg':'image.png');
+   const response=await fetch(API+'/pictures/items/upload',{method:'POST',headers:{Authorization:'Bearer '+token},body:form});
+   const data=await response.json().catch(()=>({}));
+   if(!response.ok||!data.id)throw new Error('Mercado Livre não aceitou a imagem: '+String(data.message||data.error||response.status).slice(0,180));
+   res.json({ok:true,id:String(data.id),preview_url:typeof data.secure_url==='string'?data.secure_url:null});
+  }catch(e){res.status(400).json({ok:false,message:e.message})}
+ });
+ // Dados originais para o editor individual. A descrição nunca é
+ // enviada à conta destino até a confirmação explícita da clonagem.
+ app.get('/api/portal/bulk-tools/clone/source',authPortalOrAgent,gate('clone-listings'),async(req,res)=>{
+  try{
+   const id=String(req.query?.item_id||'').toUpperCase().trim();
+   if(!validItem(id))return res.status(400).json({ok:false,message:'Informe um MLB válido.'});
+   const account=await selectedAccount(req,req.query?.source_id);
+   const token=await ensureMlToken(account);
+   const item=await shippingFreeFetchItem(id,token);
+   if(String(item.seller_id)!==String(account.ml_user_id))return res.status(403).json({ok:false,message:'O anúncio não pertence à conta selecionada.'});
+   let description_text='',description_available=false,description_error=null;
+   try{
+    const description=await ml(token,'/items/'+encodeURIComponent(id)+'/description');
+    description_text=String(description.plain_text||description.text||'').slice(0,50000);
+    description_available=true;
+   }catch(e){
+    description_error='Não foi possível consultar a descrição original. Você pode informar uma nova descrição, mas confira a origem antes de salvar.';
+   }
+   return res.json({ok:true,item_id:id,title:String(item.title||'').slice(0,60),
+    family_name:String(item.family_name||'').slice(0,60),
+    pictures:(item.pictures||[]).map(x=>({source:x.secure_url||x.url||''})).filter(x=>/^https:\/\//i.test(x.source)).slice(0,12),
+    price:Number(item.price)||0,
+    description_text,description_available,description_error});
+  }catch(e){return res.status(400).json({ok:false,message:e.message})}
+ });
  app.post('/api/portal/bulk-tools/clone/preview',authPortalOrAgent,gate('clone-listings'),async(req,res)=>{
   try{
+   if(Object.prototype.hasOwnProperty.call(req.body||{},'description_text')&&
+      (typeof req.body.description_text!=='string'||req.body.description_text.length>50000))
+    return res.status(400).json({ok:false,message:'Descrição inválida: texto simples com até 50.000 caracteres.'});
    const id=String(req.body?.item_id||'').toUpperCase().trim();
    if(!validItem(id))return res.status(400).json({ok:false,message:'Informe um MLB válido.'});
    if(String(req.body?.source_id)===String(req.body?.target_id))return res.status(400).json({ok:false,message:'Origem e destino devem ser diferentes.'});
@@ -306,7 +370,7 @@ module.exports={validItem,validCategory,validDims,packageAttributes,buildDimensi
    if(String(item.seller_id)!==String(source.ml_user_id))return res.status(403).json({ok:false,message:'Anúncio não pertence à conta de origem.'});
    const targetToken=await ensureMlToken(target);
    const stock=Number(req.body?.stock),title=String(req.body?.title||item.title||'');
-   const candidate=await validateCloneCandidate(targetToken,item,prepareClone(item,stock,title),target.ml_user_id);
+   const candidate=await validateCloneCandidate(targetToken,item,prepareClone(item,stock,title,req.body),target.ml_user_id,req.body?.title);
    res.json({ok:true,preview:{item_id:id,source_name:source.nickname||source.company_name,
     target_name:target.nickname||target.company_name,title:candidate.title||item.title,category_id:candidate.category_id,
     price:candidate.price,stock:candidate.available_quantity,pictures:candidate.pictures.length,
@@ -331,13 +395,15 @@ module.exports={validItem,validCategory,validDims,packageAttributes,buildDimensi
  app.post('/api/portal/bulk-tools/clone/apply',authPortalOrAgent,gate('clone-listings'),async(req,res)=>{
   try{
    if(req.body?.confirm!==true)return res.status(400).json({ok:false,message:'Confirmação obrigatória.'});
+   const editedDescription=Object.prototype.hasOwnProperty.call(req.body||{},'description_text');
+   if(editedDescription&&(typeof req.body.description_text!=='string'||req.body.description_text.length>50000))return res.status(400).json({ok:false,message:'Descrição inválida: texto simples com até 50.000 caracteres.'});
    const id=String(req.body?.item_id||'').toUpperCase().trim();
    if(!validItem(id)||String(req.body?.source_id)===String(req.body?.target_id))return res.status(400).json({ok:false,message:'Origem ou destino inválidos.'});
    const source=await selectedAccount(req,req.body?.source_id),target=await selectedAccount(req,req.body?.target_id);
    const sourceToken=await ensureMlToken(source),targetToken=await ensureMlToken(target);
    const item=await shippingFreeFetchItem(id,sourceToken);
    if(String(item.seller_id)!==String(source.ml_user_id))return res.status(403).json({ok:false,message:'Conta de origem não é proprietária do anúncio.'});
-   const payload=await validateCloneCandidate(targetToken,item,prepareClone(item,req.body?.stock,req.body?.title),target.ml_user_id);
+   const payload=await validateCloneCandidate(targetToken,item,prepareClone(item,req.body?.stock,req.body?.title,req.body),target.ml_user_id,req.body?.title);
    // Reexamina os dados sempre antes da escrita para não usar preview obsoleto.
    if(payload.family_name && String(req.body?.expected_family_name||'')!==payload.family_name){
      return res.status(409).json({ok:false,message:'O nome da família deve ser confirmado novamente na prévia.'});
@@ -354,12 +420,19 @@ module.exports={validItem,validCategory,validDims,packageAttributes,buildDimensi
    let descriptionStatus='não disponível';
    if(/^MLB\d+$/.test(newId)&&payload.catalog_listing!==true){
     try {
-     const description=await ml(sourceToken,'/items/'+encodeURIComponent(id)+'/description');
-     const text=String(description.plain_text||description.text||'');
-     if(text) {await ml(targetToken,'/items/'+encodeURIComponent(newId)+'/description','POST',{plain_text:text});descriptionStatus='copiada';}
-    }catch{descriptionStatus='falhou: confira manualmente';}
+     let descriptionText='';
+     if(editedDescription)descriptionText=req.body.description_text;
+     else {
+      const description=await ml(sourceToken,'/items/'+encodeURIComponent(id)+'/description');
+      descriptionText=String(description.plain_text||description.text||'');
+     }
+     if(descriptionText){
+      await ml(targetToken,'/items/'+encodeURIComponent(newId)+'/description','POST',{plain_text:descriptionText});
+      descriptionStatus=editedDescription?'personalizada':'copiada';
+     }else descriptionStatus=editedDescription?'sem descrição por escolha do usuário':'origem sem descrição';
+    }catch{descriptionStatus='falhou: confira manualmente (o anúncio já foi criado)';}
    }
-   if(payload.catalog_listing===true)descriptionStatus='gerenciada pelo catálogo';
+   if(payload.catalog_listing===true)descriptionStatus=editedDescription?'catálogo: descrição personalizada não suportada':'gerenciada pelo catálogo';
    res.json({ok:true,created_id:newId,description_status:descriptionStatus,
     validation_warnings:payload._validationWarnings||[],
     message:'Anúncio criado. Confira os atributos e as condições de publicação no Mercado Livre.'});

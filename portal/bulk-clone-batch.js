@@ -8,13 +8,14 @@ function init({api}){
  const preview=q('mlbtClonePreview'),apply=q('mlbtCloneApply'),list=q('mlbtCloneList');
  const consent=q('mlbtCloneConsent'),consentLine=q('mlbtCloneConsentWrap');
  let approved=null,running=false;
+ const edits=new Map(),previews=new Map();
  const text=(value,error=false)=>{
    const node=q('mlbtCloneStatus');
    if(node){node.textContent=value;node.dataset.error=String(error)}
  };
  const reset=()=>{
    if(running)return;
-   approved=null;list.replaceChildren();list.hidden=true;
+   approved=null;edits.clear();previews.clear();list.replaceChildren();list.hidden=true;
    consent.checked=false;consentLine.hidden=true;apply.hidden=true;apply.disabled=true;
    text('');
  };
@@ -28,13 +29,69 @@ function init({api}){
  function addResult(title,details,checkable,error=false){
    const row=document.createElement('label');
    row.className='mlsh-tools-item'+(error?' mlsh-tools-error':'');
+   row.dataset.itemId=title;
    if(checkable){
      const cb=document.createElement('input');
      cb.type='checkbox';cb.className='mlbtBatchSelected';cb.value=title;cb.checked=true;
      row.append(cb);
    }
-   const span=document.createElement('span');span.textContent=details;row.append(span);list.append(row);
+   const span=document.createElement('span');span.className='mlbt-result-copy';span.textContent=details;row.append(span);
+   const editButton=document.createElement('button');editButton.type='button';editButton.className='mlbt-result-edit';editButton.textContent='✎ Editar anúncio';
+   editButton.onclick=()=>openEditor(title);
+   row.append(editButton);list.append(row);
    list.hidden=false;
+ }
+ function updateApproved(){
+  const eligible=[...previews.entries()].map(([item_id,p])=>({
+   item_id,catalog_product_id:p.catalog_product_id||null,
+   family_name:p.family_name||null
+  }));
+  approved=eligible.length?{...current(),eligible}:null;
+  consent.checked=false;consentLine.hidden=!eligible.length;
+  apply.hidden=!eligible.length;apply.disabled=true;
+ }
+ function previewDescription(id,p){
+  const kind=p.clone_type==='user_product'?'Família: '+p.family_name:
+    p.clone_type==='catalog'?'Catálogo: '+p.catalog_product_id:'Anúncio independente';
+  const selected=edits.get(id);
+  const marked=selected?' · Personalizado':'';
+  const warnings=p.free_shipping?' · Frete grátis obrigatório':'';
+  return id+' · '+p.title+' · '+kind+' · R$ '+Number(p.price).toFixed(2)+
+   ' · '+p.pictures+' foto(s)'+warnings+marked;
+ }
+ async function openEditor(item_id){
+  if(running){text('Aguarde a operação atual terminar.',true);return}
+  if(!window.mlshCloneEditor){text('Editor indisponível. Recarregue a página.',true);return}
+  const currentPreview=previews.get(item_id);
+  const saved=edits.get(item_id);
+  await window.mlshCloneEditor.open({
+   api,item_id,source_id:q('mlbtSource').value,target_id:q('mlbtTarget').value,
+   previous:{...(currentPreview||{}),...(saved||{}),...(currentPreview?{clone_type:currentPreview.clone_type}:{})},
+   onSave:async changes=>{
+    const req={...current(),...changes,item_id};
+    const data=await api('/api/portal/bulk-tools/clone/preview',{
+     method:'POST',body:JSON.stringify(req)
+    });
+    const p=data.preview;
+    // A edição só fica salva se a API confirmar os novos campos.
+    edits.set(item_id,changes);
+    previews.set(item_id,p);
+    const row=[...list.children].find(x=>x.dataset?.itemId===item_id);
+    if(row){
+     row.classList.remove('mlsh-tools-error');
+     let check=row.querySelector?.('.mlbtBatchSelected');
+     if(!check){
+      check=document.createElement('input');check.type='checkbox';
+      check.value=item_id;check.checked=true;check.className='mlbtBatchSelected';
+      row.prepend(check);
+     }
+     const textNode=row.querySelector?.('.mlbt-result-copy');
+     if(textNode)textNode.textContent=previewDescription(item_id,p);
+    }
+    updateApproved();
+    text(previews.size+' anúncio(s) validado(s). Confira as edições e confirme a publicação.');
+   }
+  });
  }
  preview.onclick=async()=>{
    if(running)return;reset();
@@ -60,6 +117,7 @@ function init({api}){
          if(!root.isConnected)return;
          const p=data.preview;
          eligible.push({item_id,catalog_product_id:p.catalog_product_id||null,family_name:p.family_name||null});
+         previews.set(item_id,p);
          const kind=p.clone_type==='catalog'
            ?'CATÁLOGO '+p.catalog_product_id+' · Confirme que é exatamente o mesmo produto'
            :p.clone_type==='user_product'?'FAMÍLIA '+p.family_name+' · Título gerado pelo Mercado Livre':'Anúncio independente';
@@ -80,8 +138,7 @@ function init({api}){
        text(eligible.length+' apto(s), '+failed.length+' com erro. '+(index+1)+' de '+items.length+' consultado(s).',failed.length>0);
      }
      if(eligible.length){
-       approved={...request,eligible};
-       consent.checked=false;consentLine.hidden=false;apply.hidden=false;apply.disabled=true;
+       updateApproved();
        text(eligible.length+' anúncio(s) apto(s) para publicação. Revise os selecionados e confirme. '+failed.length+' não elegível(is).');
      }else text('Nenhum anúncio apto para clonagem. Revise os erros e as contas.',true);
    }finally{
@@ -97,6 +154,7 @@ function init({api}){
    const request=approved;approved=null;
    const expectedCatalog=new Map(request.eligible.map(x=>[x.item_id,x.catalog_product_id]));
    const expectedFamily=new Map(request.eligible.map(x=>[x.item_id,x.family_name]));
+   const batchEdits=new Map(edits);
    running=true;preview.disabled=true;apply.disabled=true;
    const successful=[],errors=[];
    list.replaceChildren();list.hidden=false;
@@ -108,6 +166,7 @@ function init({api}){
          const result=await api('/api/portal/bulk-tools/clone/apply',{
            method:'POST',body:JSON.stringify({
              source_id:request.source_id,target_id:request.target_id,stock:request.stock,
+             ...(batchEdits.get(item_id)||{}),
              item_id,expected_catalog_product_id:expectedCatalog.get(item_id)||null,
              expected_family_name:expectedFamily.get(item_id)||null,confirm:true
            })
