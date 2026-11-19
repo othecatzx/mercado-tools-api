@@ -67,7 +67,8 @@ function init({api}){
          const cleanup=removed.length?' · '+removed.length+' atributo(s) interno(s) excluído(s) do envio: '+removed.join(', '):'';
          const dimensions=p.package_dimensions;
          const packing=dimensions?' · Embalagem original '+dimensions.height+'×'+dimensions.width+'×'+dimensions.length+' cm, '+dimensions.weight+' g':'';
-         addResult(item_id,item_id+' · '+p.title+' · '+kind+' · R$ '+Number(p.price).toFixed(2)+' · '+p.pictures+' foto(s)'+packing+cleanup+' · '+p.warning,true);
+         const shipping=p.shipping_mode==='me2'?' · Envio na conta de destino: Mercado Envios 2':' · Envio definido pelo Mercado Livre';
+         addResult(item_id,item_id+' · '+p.title+' · '+kind+' · R$ '+Number(p.price).toFixed(2)+' · '+p.pictures+' foto(s)'+packing+shipping+cleanup+' · '+p.warning,true);
        }catch(error){
          if(!root.isConnected)return;
          failed.push({item_id,error:String(error?.message||error)});

@@ -76,7 +76,12 @@ function prepareClone(item,stock,title){
  if(!sourcePictures.length&&item.catalog_listing!==true)throw new Error('Anúncio sem fotos reutilizáveis.');
  const dims=sourcePackageDimensions(item);
  const attrs=(item.attributes||[]).filter(a=>a&&typeof a.id==='string'&&!packageKeys.has(a.id))
-  .map(a=>({id:a.id,...(a.value_id?{value_id:a.value_id}:a.value_name?{value_name:a.value_name}:{})}))
+  .map(a=>{
+   const valueId=a.value_id??a.values?.[0]?.id;
+   const valueName=a.value_name||a.values?.[0]?.name||a.value_struct?.number?.toString();
+   return {id:a.id,...(valueId!=null&&String(valueId)!=='-1'?{value_id:String(valueId)}:{}),
+     ...(typeof valueName==='string'&&valueName.trim()?{value_name:valueName.trim()}:{})};
+  })
   .filter(a=>a.value_id||a.value_name);
  const payload={
   title:name,category_id:item.category_id,price:Number(item.price),currency_id:item.currency_id||'BRL',
@@ -157,9 +162,53 @@ module.exports={validItem,validCategory,validDims,packageAttributes,buildDimensi
   }
   return found;
  }
+ function invalidValueNameIds(error){
+  const ids=new Set();
+  for(const cause of error?.validationCauses||[]){
+   if(cause.code!=='item.attribute.invalid')continue;
+   const match=cause.message.match(/Value name of attribute ([A-Z0-9_]+) was not provided/i);
+   if(match)ids.add(match[1]);
+  }
+  return ids;
+ }
+ async function resolveAttributeNames(token,item,candidate,invalidIds){
+  // Somente consultar a ficha da categoria quando o ML rejeitar os IDs
+  // sem value_name; nunca fabricar nomes nem remover atributos obrigatórios.
+  let definitions=[];
+  try{
+   const response=await ml(token,'/categories/'+encodeURIComponent(item.category_id)+'/attributes');
+   definitions=Array.isArray(response)?response:response?.attributes||[];
+  }catch{/* Reportaremos os IDs que não puderam ser resolvidos. */}
+  const schemas=new Map(definitions.map(a=>[a.id,a]));
+  const unresolved=[];
+  const attributes=candidate.attributes.map(a=>{
+   if(!invalidIds.has(a.id))return a;
+   const fromSource=(item.attributes||[]).find(x=>x.id===a.id);
+   let name=a.value_name||fromSource?.value_name||fromSource?.values?.[0]?.name;
+   if(!name&&a.value_id){
+    const option=(schemas.get(a.id)?.values||[]).find(v=>String(v.id)===String(a.value_id));
+    name=option?.name;
+   }
+   if(typeof name!=='string'||!name.trim()){
+    unresolved.push(a.id);
+    return a;
+   }
+   return {...a,value_name:name.trim()};
+  });
+  if(unresolved.length){
+   throw new Error('O Mercado Livre exige os nomes dos valores destes atributos, mas a origem e a categoria não os forneceram: '+unresolved.join(', ')+'. Não é seguro publicar uma cópia sem esses dados.');
+  }
+  return {...candidate,attributes};
+ }
+ async function selectTargetShipping(token,targetId,candidate){
+  const preferences=await ml(token,'/users/'+encodeURIComponent(targetId)+'/shipping_preferences');
+  const modes=Array.isArray(preferences?.modes)?preferences.modes:[];
+  if(!modes.includes('me2'))throw new Error('A conta de destino não possui Mercado Envios 2 habilitado. Confira as preferências de envio antes de clonar.');
+  return {...candidate,shipping:{...(candidate.shipping||{}),mode:'me2'}};
+ }
  // Algumas contas usam User Products com family_name obrigatório.
  // Adaptar de maneira conservadora a cada validação, sem pular outras falhas.
- async function validateCloneCandidate(token,item,initial){
+ async function validateCloneCandidate(token,item,initial,targetId){
   let candidate={...initial,attributes:[...(initial.attributes||[])]};
   const ignored=new Set();
   for(let attempt=0;attempt<5;attempt++){
@@ -177,6 +226,19 @@ module.exports={validItem,validCategory,validDims,packageAttributes,buildDimensi
       candidate={...candidate,attributes:remaining};
       changed=true;
      }
+    }
+    const ids=invalidValueNameIds(error);
+    if(ids.size){
+     const repaired=await resolveAttributeNames(token,item,candidate,ids);
+     if(repaired.attributes.some((a,i)=>a.value_name!==candidate.attributes[i]?.value_name)){
+      candidate=repaired;
+      changed=true;
+     }
+    }
+    const shippingCause=(error.validationCauses||[]).some(c=>c.code==='shipping.lost_me1_by_user');
+    if(shippingCause&&candidate.shipping?.mode!=='me2'){
+     candidate=await selectTargetShipping(token,targetId,candidate);
+     changed=true;
     }
     const details=String(error?.message||'');
     if(!candidate.family_name&&/body\.required_fields/i.test(details)&&/\[family_name\]/i.test(details)){
@@ -218,7 +280,7 @@ module.exports={validItem,validCategory,validDims,packageAttributes,buildDimensi
    if(String(item.seller_id)!==String(source.ml_user_id))return res.status(403).json({ok:false,message:'Anúncio não pertence à conta de origem.'});
    const targetToken=await ensureMlToken(target);
    const stock=Number(req.body?.stock),title=String(req.body?.title||item.title||'');
-   const candidate=await validateCloneCandidate(targetToken,item,prepareClone(item,stock,title));
+   const candidate=await validateCloneCandidate(targetToken,item,prepareClone(item,stock,title),target.ml_user_id);
    res.json({ok:true,preview:{item_id:id,source_name:source.nickname||source.company_name,
     target_name:target.nickname||target.company_name,title:candidate.title||item.title,category_id:candidate.category_id,
     price:candidate.price,stock:candidate.available_quantity,pictures:candidate.pictures.length,
@@ -227,6 +289,7 @@ module.exports={validItem,validCategory,validDims,packageAttributes,buildDimensi
     family_name:candidate.family_name||null,
     package_dimensions:sourcePackageDimensions({attributes:candidate.attributes})||null,
     package_dimensions_source:'origem',
+    shipping_mode:candidate.shipping?.mode||'automático',
     removed_attributes:candidate._removedCloneAttributes||[],
     catalog_product_id:candidate.catalog_product_id||null,
     description:candidate.catalog_listing===true?'Descrição definida pelo catálogo quando aplicável.':'Descrição será copiada quando disponível.',
@@ -246,7 +309,7 @@ module.exports={validItem,validCategory,validDims,packageAttributes,buildDimensi
    const sourceToken=await ensureMlToken(source),targetToken=await ensureMlToken(target);
    const item=await shippingFreeFetchItem(id,sourceToken);
    if(String(item.seller_id)!==String(source.ml_user_id))return res.status(403).json({ok:false,message:'Conta de origem não é proprietária do anúncio.'});
-   const payload=await validateCloneCandidate(targetToken,item,prepareClone(item,req.body?.stock,req.body?.title));
+   const payload=await validateCloneCandidate(targetToken,item,prepareClone(item,req.body?.stock,req.body?.title),target.ml_user_id);
    // Reexamina os dados sempre antes da escrita para não usar preview obsoleto.
    if(payload.family_name && String(req.body?.expected_family_name||'')!==payload.family_name){
      return res.status(409).json({ok:false,message:'O nome da família deve ser confirmado novamente na prévia.'});
