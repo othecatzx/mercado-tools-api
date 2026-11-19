@@ -3,6 +3,7 @@
 'use strict';
 const q=id=>document.getElementById(id);
 const state={clone:null,dimensions:null};
+let dimSearchJob=null;
 function markup(mode){
  return [
 '<section class="mlsh-bulk-tools" data-tool="'+(mode||'clone')+'"><div class="mlsh-tools-head"><div><span>FERRAMENTAS MERCADO LIVRE</span><h3>'+ (mode==='clone'?'Clonagem entre contas':'Dimensões por categoria') +'</h3><p>'+ (mode==='clone'?'Revise os anúncios antes de publicar na conta de destino.':'Defina medidas reais e selecione os anúncios por categoria.') +'</p></div></div>',
@@ -26,7 +27,7 @@ function markup(mode){
 '<label>Comprimento (cm)<input id="mlbtLength" type="number" min="1" max="300" placeholder="30"></label>',
 '<label>Peso (g)<input id="mlbtWeight" type="number" min="1" max="100000" placeholder="800"></label></div>',
 '<p class="mlbt-dim-search-note">A busca consulta todos os anúncios disponíveis da conta e filtra a categoria escolhida, sem limite de 20, 50 ou 100.</p>',
-'<button type="button" id="mlbtDimPreview" class="btn btn-primary">Buscar anúncios da categoria</button>',
+'<div class="mlbt-dim-search-actions"><button type="button" id="mlbtDimPreview" class="btn btn-primary">Buscar anúncios da categoria</button><button type="button" id="mlbtDimCancel" class="mlbt-dim-secondary" hidden>Cancelar busca e mostrar encontrados</button><button type="button" id="mlbtDimClearTop" class="mlbt-dim-secondary">Limpar resultados</button></div>',
 '<div id="mlbtDimStatus" class="mlsh-tools-status" aria-live="polite"></div>',
 '<div id="mlbtDimSelectionBar" class="mlbt-dim-selection-bar" hidden><strong id="mlbtDimSelectedCount">0 selecionados</strong><div><button type="button" id="mlbtDimSelectAll" class="mlbt-dim-secondary">Selecionar até 50</button><button type="button" id="mlbtDimSelectNone" class="mlbt-dim-secondary">Desmarcar todos</button><button type="button" id="mlbtDimClear" class="mlbt-dim-secondary">Limpar resultados</button></div></div>',
 '<div id="mlbtDimList" class="mlsh-tools-selection mlbt-dim-list" hidden></div>',
@@ -38,7 +39,7 @@ function markup(mode){
 function setStatus(id,value,error){const el=q(id);if(el){el.textContent=String(value||'');el.dataset.error=error?'true':'false'}}
 function value(id){return String(q(id)?.value||'').trim()}
 function resetClone(){state.clone=null;q('mlbtCloneConsent').checked=false;q('mlbtCloneApply').hidden=true;q('mlbtCloneApply').disabled=true;q('mlbtCloneConsentWrap').hidden=true;setStatus('mlbtCloneStatus','')}
-function resetDim(){state.dimensions=null;q('mlbtDimConsent').checked=false;q('mlbtDimApply').hidden=true;q('mlbtDimApply').disabled=true;q('mlbtDimConsentWrap').hidden=true;q('mlbtDimSelectionBar').hidden=true;q('mlbtDimList').hidden=true;q('mlbtDimList').replaceChildren();q('mlbtDimReport').hidden=true;q('mlbtDimReportSummary').textContent='';q('mlbtDimReportItems').replaceChildren();setStatus('mlbtDimStatus','')}
+function resetDim(){if(dimSearchJob)dimSearchJob.invalid=true;q('mlbtDimCancel').hidden=true;state.dimensions=null;q('mlbtDimConsent').checked=false;q('mlbtDimApply').hidden=true;q('mlbtDimApply').disabled=true;q('mlbtDimConsentWrap').hidden=true;q('mlbtDimSelectionBar').hidden=true;q('mlbtDimList').hidden=true;q('mlbtDimList').replaceChildren();q('mlbtDimReport').hidden=true;q('mlbtDimReportSummary').textContent='';q('mlbtDimReportItems').replaceChildren();setStatus('mlbtDimStatus','')}
 function disableWhile(button,busy,text){button.disabled=busy;button.textContent=busy?text:button.dataset.original}
 function init(config){
  const root=document.querySelector('.mlsh-bulk-tools');if(!root||!config?.api)return;
@@ -169,30 +170,42 @@ function init(config){
  q('mlbtDimSelectAll').onclick=()=>{q('mlbtDimList').querySelectorAll('.mlbtDimItem').forEach((el,i)=>el.checked=i<50);updateDimSelected()};
  q('mlbtDimSelectNone').onclick=()=>{q('mlbtDimList').querySelectorAll('.mlbtDimItem').forEach(el=>el.checked=false);updateDimSelected()};
  q('mlbtDimClear').onclick=resetDim;
+ q('mlbtDimClearTop').onclick=resetDim;
+ q('mlbtDimCancel').onclick=()=>{
+  if(!dimSearchJob||dimSearchJob.invalid)return;
+  dimSearchJob.cancelled=true;
+  q('mlbtDimCancel').disabled=true;
+  setStatus('mlbtDimStatus','Cancelamento solicitado. Finalizando a página em andamento e preparando os anúncios já encontrados...');
+ };
  previewDim.onclick=async()=>{
   await accountTask;resetDim();const req=dimReq();
   if(!req.account_id||!/^MLB\d+$/.test(req.category_id)){setStatus('mlbtDimStatus','Selecione a conta e a categoria final pelo nome.',true);return}
   disableWhile(previewDim,true,'Consultando...');
+  const job={cancelled:false,invalid:false};dimSearchJob=job;
+  q('mlbtDimCancel').hidden=false;q('mlbtDimCancel').disabled=false;
   try{
    const response={items:[],skipped:[],alreadyMatching:0,scanned:0};
    let scrollId='',finished=false;
    const seen=new Set();
    for(let page=0;page<10000;page++){
-    if(!root.isConnected||JSON.stringify(req)!==JSON.stringify(dimReq()))return;
+    if(job.invalid||!root.isConnected||JSON.stringify(req)!==JSON.stringify(dimReq()))return;
+    if(job.cancelled)break;
     const batch=await api('/api/portal/bulk-tools/dimensions/preview',{
      method:'POST',body:JSON.stringify({...req,...(scrollId?{scroll_id:scrollId}:{})})
     });
-    if(!root.isConnected||JSON.stringify(req)!==JSON.stringify(dimReq()))return;
+    if(job.invalid||!root.isConnected||JSON.stringify(req)!==JSON.stringify(dimReq()))return;
     response.scanned+=Number(batch.scanned)||0;
     response.alreadyMatching+=Number(batch.alreadyMatching)||0;
     response.skipped.push(...(batch.skipped||[]));
     for(const item of batch.items||[])if(!seen.has(item.id)){seen.add(item.id);response.items.push(item)}
+    if(job.cancelled)break;
     setStatus('mlbtDimStatus','Consultando todos os anúncios... '+response.scanned+' verificados, '+response.items.length+' precisam de alteração.');
     if(!batch.has_more||!batch.next_scroll_id){finished=true;break}
     if(!batch.scanned)throw new Error('A paginação retornou uma página vazia sem encerrar a busca.');
     scrollId=batch.next_scroll_id;
    }
-   if(!finished)throw new Error('A busca ultrapassou a quantidade máxima de páginas por segurança. Nenhuma alteração foi liberada.');
+   if(!finished&&!job.cancelled)throw new Error('A busca ultrapassou a quantidade máxima de páginas por segurança. Nenhuma alteração foi liberada.');
+   if(job.invalid)return;
    state.dimensions=req;
    const list=q('mlbtDimList');list.replaceChildren();
    const formatDims=d=>d?([d.height,d.width,d.length].join(' × ')+' cm · '+d.weight+' g'):'Não informadas';
@@ -208,11 +221,14 @@ function init(config){
     comparison.append(before,after);content.append(title,meta,comparison);label.append(checkbox,content);list.append(label);
    }
    const count=(response.items||[]).length;
-   setStatus('mlbtDimStatus',count+' anúncio(s) com medidas diferentes entre '+(response.scanned||0)+' consultado(s). '+(response.alreadyMatching||0)+' já estão corretos, '+(response.skipped||[]).length+' ignorados.'+ ' Busca completa. Selecione apenas os que deseja alterar.');
+   setStatus('mlbtDimStatus',(job.cancelled?'Busca cancelada: resultados parciais. ':'Busca completa. ')+count+' anúncio(s) com medidas diferentes entre '+(response.scanned||0)+' consultado(s). '+(response.alreadyMatching||0)+' já estão corretos, '+(response.skipped||[]).length+' ignorados. Selecione apenas os que deseja alterar.');
    list.hidden=!count;q('mlbtDimSelectionBar').hidden=!count;q('mlbtDimConsentWrap').hidden=!count;q('mlbtDimApply').hidden=!count;
    updateDimSelected();
-  }catch(e){setStatus('mlbtDimStatus',e.message,true)}
-  finally{if(root.isConnected)disableWhile(previewDim,false)}
+  }catch(e){if(!job.invalid)setStatus('mlbtDimStatus',e.message,true)}
+  finally{
+   if(dimSearchJob===job){dimSearchJob=null;q('mlbtDimCancel').hidden=true;q('mlbtDimCancel').disabled=false;}
+   if(root.isConnected)disableWhile(previewDim,false);
+  }
  };
  q('mlbtDimApply').onclick=async()=>{
   if(!state.dimensions||!q('mlbtDimConsent').checked)return;

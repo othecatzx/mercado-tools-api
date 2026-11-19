@@ -25,6 +25,10 @@
 .mlbt-dim-item input{width:18px;height:18px;flex-shrink:0;margin:4px 0 0}
 .mlbt-dim-item-main{display:flex;flex-direction:column;gap:7px;flex:1}
 .mlbt-dim-search-note{font-size:12px;color:var(--muted,#71819a);margin:0!important}
+.mlbt-dim-search-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.mlbt-dim-search-actions #mlbtDimCancel{border-color:#c97b21;color:#a4600e;background:rgba(252,163,17,.09)}
+.mlbt-dim-search-actions #mlbtDimCancel:disabled{opacity:.55;cursor:wait}
+.mlbt-dim-search-actions #mlbtDimClearTop{margin-left:auto}
 .mlbt-dim-report{padding:20px;border-radius:14px;border:1px solid var(--line,#dce4ef);background:var(--panel-2,#f6f8fc);display:grid;gap:12px}
 .mlbt-dim-report[hidden]{display:none!important}
 .mlbt-dim-report>h4{font-size:16px;margin:0}

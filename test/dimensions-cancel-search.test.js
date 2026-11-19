@@ -1,0 +1,16 @@
+'use strict';
+const assert=require('node:assert/strict');
+const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
+const src=fs.readFileSync(path.join(__dirname,'..','portal','bulk-tools.js'),'utf8');
+const ctx={window:{},document:{}};vm.runInNewContext(src,ctx);
+const html=ctx.window.mlshBulkTools.markup('dimensions');
+assert.match(html,/id="mlbtDimCancel"/);
+assert.match(html,/id="mlbtDimClearTop"/);
+assert.match(src,/dimSearchJob\.cancelled=true/);
+assert.match(src,/if\(job\.cancelled\)break/);
+assert.match(src,/Busca cancelada: resultados parciais/);
+assert.match(src,/if\(!finished&&!job\.cancelled\)/);
+assert.match(src,/q\('mlbtDimClearTop'\)\.onclick=resetDim/);
+assert.match(src,/if\(dimSearchJob\)dimSearchJob\.invalid=true/);
+assert.match(src,/if\(job\.invalid\)return;/);
+console.log('PASS: cancellation retains partial results, clear invalidates pending search, actions visible');

@@ -12,5 +12,5 @@ assert.match(code,/id="mlbtDimReportItems"/,'report must list per-item results')
 assert.match(code,/for\(let i=0;i<item_ids\.length;i\+=5\)/,'apply should use short batches');
 for(const kind of ['success','unchanged','pending','failed','unattempted'])
  assert.match(code,new RegExp('addEntries\\('+kind+','));
-assert.match(html,/all-items-report-4/,'script caches should refresh');
+assert.match(html,/\/portal\/bulk-tools\.js\?v=20261119-[a-z0-9-]+/,'script caches should refresh');
 console.log('PASS: no search cap, scrolling progress, short confirmation batches, per-item result report');
