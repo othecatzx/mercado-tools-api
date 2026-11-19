@@ -24,7 +24,7 @@ assert.equal(payload.seller_custom_field,'TEST-SKU');
 assert.deepEqual(payload.pictures,[{source:'https://example.com/image.jpg'}]);
 assert.equal(payload.attributes.find(a=>a.id==='BRAND').value_name,'Exemplo');
 assert.equal(payload.price,95);
-assert.throws(()=>tools.prepareClone({...item,variations:[{id:1}]},1),/Variação 1.*atributos/);
+assert.equal(tools.prepareClone({...item,variations:[{id:1}]},1).variations,undefined,'single technical variation should not require fabricated attributes');
 // User Products / família sem catálogo: publicar de forma independente, sem
 // reaproveitar IDs exclusivos do vendedor de origem.
 const family=tools.prepareClone({...item,user_product_id:'MLBU555',family_name:'Minha família',catalog_product_id:'MLB123456'},1);

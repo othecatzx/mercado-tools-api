@@ -121,7 +121,25 @@ function cloneVariations(item,initialStock,priceOverride,pictures){
   throw new Error('As variações da origem não possuem os mesmos tipos de atributos (cor, tamanho etc.). Revise antes de clonar.');
  return mapped;
 }
+function singleTechnicalVariation(item){
+ const v=Array.isArray(item.variations)&&item.variations.length===1?item.variations[0]:null;
+ return v&&cloneVariationAttributes(v.attribute_combinations).length===0?v:null;
+}
+function mergedItemForTechnicalVariation(item){
+ const v=singleTechnicalVariation(item);
+ if(!v)return item;
+ // Para uma única entrada sem atributo diferenciador, não criar
+ // uma "variação" artificial. Preservar os atributos próprios do produto.
+ const known=new Set((item.attributes||[]).map(a=>a.id));
+ const attributes=[...(item.attributes||[])];
+ for(const a of v.attributes||[])if(a?.id&&!known.has(a.id)){attributes.push(a);known.add(a.id)}
+ return {...item,attributes,
+  seller_custom_field:item.seller_custom_field||v.seller_custom_field,
+  price:Number(v.price)>0?Number(v.price):item.price,
+  variations:[]};
+}
 function prepareClone(item,stock,title,overrides){
+ item=mergedItemForTechnicalVariation(item);
  const qty=Number(stock);
  if(!Number.isSafeInteger(qty)||qty<1||qty>99999)throw new Error('Estoque inicial deve estar entre 1 e 99999.');
  // IDs de família / User Products identificam o agrupamento do vendedor e não
@@ -352,6 +370,48 @@ module.exports={validItem,normalizeItemId,validCategory,validDims,packageAttribu
   }
   throw new Error('A validação retornou alterações sucessivas não resolvidas; revise os atributos obrigatórios antes de publicar.');
  }
+ async function hydrateSourceVariations(token,item){
+  const variations=Array.isArray(item.variations)?item.variations:[];
+  if(!variations.length||variations.every(v=>cloneVariationAttributes(v.attribute_combinations).length))return item;
+  if(variations.length===1)return item; // Uma variação sem combinação pode ser apenas técnica.
+  const fresh=[];
+  // Buscar informações próprias de cada variação usando acesso à origem.
+  // Nunca usar id da variação do vendedor original na publicação nova.
+  for(const v of variations){
+   if(cloneVariationAttributes(v.attribute_combinations).length){fresh.push(v);continue}
+   if(!v.id)throw new Error('Há múltiplas variações sem identificadores; a origem não disponibilizou as opções.');
+   try{
+    const full=await ml(token,'/items/'+encodeURIComponent(item.id||'')+'/variations/'+encodeURIComponent(v.id));
+    fresh.push({...v,...full});
+   }catch(e){
+    throw new Error('Não foi possível consultar os detalhes da variação '+String(v.id)+': '+e.message);
+   }
+  }
+  // Apenas atributos marcados como allow_variations pelo Mercado Livre
+  // podem diferenciar combinações; jamais inferir de SKU ou posição.
+  const needsMapping=fresh.some(v=>!cloneVariationAttributes(v.attribute_combinations).length);
+  if(needsMapping){
+   let definitions;
+   try{definitions=await ml(token,'/categories/'+encodeURIComponent(item.category_id)+'/attributes')}
+   catch(e){throw new Error('A categoria não forneceu os atributos de variação: '+e.message)}
+   const allowed=new Set((Array.isArray(definitions)?definitions:definitions?.attributes||[])
+    .filter(a=>a?.tags?.allow_variations===true).map(a=>a.id));
+   for(let index=0;index<fresh.length;index++){
+    const v=fresh[index];
+    if(cloneVariationAttributes(v.attribute_combinations).length)continue;
+    const found=cloneVariationAttributes(v.attributes).filter(a=>allowed.has(a.id));
+    if(found.length)fresh[index]={...v,attribute_combinations:found,
+     attributes:(v.attributes||[]).filter(a=>!allowed.has(a.id))};
+   }
+  }
+  if(fresh.some(v=>!cloneVariationAttributes(v.attribute_combinations).length)){
+   const userProducts=fresh.some(v=>!!v.user_product_id)||!!item.user_product_id;
+   throw new Error(userProducts
+    ?'Este anúncio usa variações do modelo User Products sem attribute_combinations. A API atual exige o fluxo de famílias de User Products para criar várias opções; não é seguro copiar como variações antigas.'
+    :'O anúncio possui várias variações sem atributo diferenciador disponível nos detalhes do Mercado Livre. Não foi possível identificar as opções sem inventar dados.');
+  }
+  return {...item,variations:fresh};
+ }
  async function selectedAccount(req,id){
   const matches=(await getShippingAccounts(req)).filter(a=>String(a.ml_user_id)===String(id));
   if(matches.length!==1)throw new Error('Selecione uma conta conectada e autorizada.');
@@ -420,7 +480,7 @@ module.exports={validItem,normalizeItemId,validCategory,validDims,packageAttribu
    if(String(req.body?.source_id)===String(req.body?.target_id))return res.status(400).json({ok:false,message:'Origem e destino devem ser diferentes.'});
    const source=await selectedAccount(req,req.body?.source_id),target=await selectedAccount(req,req.body?.target_id);
    const token=await ensureMlToken(source);
-   const item=await shippingFreeFetchItem(id,token);
+   const item=await hydrateSourceVariations(token,await shippingFreeFetchItem(id,token));
    if(String(item.seller_id)!==String(source.ml_user_id))return res.status(403).json({ok:false,message:'Anúncio não pertence à conta de origem.'});
    const targetToken=await ensureMlToken(target);
    const stock=Number(req.body?.stock),title=String(req.body?.title||item.title||'');
@@ -457,7 +517,7 @@ module.exports={validItem,normalizeItemId,validCategory,validDims,packageAttribu
    if(!validItem(id)||String(req.body?.source_id)===String(req.body?.target_id))return res.status(400).json({ok:false,message:'Origem ou destino inválidos.'});
    const source=await selectedAccount(req,req.body?.source_id),target=await selectedAccount(req,req.body?.target_id);
    const sourceToken=await ensureMlToken(source),targetToken=await ensureMlToken(target);
-   const item=await shippingFreeFetchItem(id,sourceToken);
+   const item=await hydrateSourceVariations(sourceToken,await shippingFreeFetchItem(id,sourceToken));
    if(String(item.seller_id)!==String(source.ml_user_id))return res.status(403).json({ok:false,message:'Conta de origem não é proprietária do anúncio.'});
    const payload=await validateCloneCandidate(targetToken,item,prepareClone(item,req.body?.stock,req.body?.title,req.body),target.ml_user_id,req.body?.title);
    // Reexamina os dados sempre antes da escrita para não usar preview obsoleto.
