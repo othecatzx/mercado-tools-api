@@ -689,6 +689,22 @@ module.exports={validItem,normalizeItemId,validCategory,validDims,packageAttribu
     message:'Anúncio criado. Confira os atributos e as condições de publicação no Mercado Livre.'});
   }catch(e){res.status(400).json({ok:false,message:e.message})}
  });
+ // Sugestoes de categorias por texto, usando o preditor oficial de dominios.
+ app.get('/api/portal/bulk-tools/dimensions/category-search',authPortalOrAgent,gate('bulk-dimensions'),async(req,res)=>{
+  try{
+   const query=String(req.query?.q||'').trim();
+   if(query.length<2||query.length>100)return res.status(400).json({ok:false,message:'Digite de 2 a 100 caracteres para buscar.'});
+   const token=await ensureMlToken(await selectedAccount(req,req.query?.account_id));
+   const data=await ml(token,'/sites/MLB/domain_discovery/search?limit=8&q='+encodeURIComponent(query));
+   if(!Array.isArray(data))throw new Error('Resposta inesperada da pesquisa de categorias.');
+   const seen=new Set();
+   const categories=data.filter(v=>validCategory(v?.category_id)).map(v=>({
+    id:v.category_id,name:String(v.category_name||v.category_id).slice(0,140),
+    domain_name:String(v.domain_name||'').slice(0,140)
+   })).filter(v=>{if(seen.has(v.id))return false;seen.add(v.id);return true});
+   res.json({ok:true,categories});
+  }catch(e){res.status(400).json({ok:false,message:'Falha ao sugerir categorias: '+e.message})}
+ });
  // Navegacao por nomes da arvore oficial de categorias do Mercado Livre.
  app.get('/api/portal/bulk-tools/dimensions/categories',authPortalOrAgent,gate('bulk-dimensions'),async(req,res)=>{
   try{

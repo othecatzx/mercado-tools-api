@@ -27,6 +27,10 @@ const call=async(path,body={},query={})=>{
  const oldFetch=global.fetch,puts=[];
  global.fetch=async(url,options={})=>{
   const method=options.method||'GET';
+  if(url.includes('/sites/MLB/domain_discovery/search'))return {ok:true,json:async()=>[
+   {category_id:'MLB1055',category_name:'Celulares e Smartphones',domain_name:'Celulares'},
+   {category_id:'MLB1055',category_name:'Celulares e Smartphones',domain_name:'Celulares'}
+  ]};
   if(url.endsWith('/sites/MLB/categories'))return {ok:true,json:async()=>[{id:'MLB1000',name:'Eletrônicos'}]};
   if(url.endsWith('/categories/MLB1000'))return {ok:true,json:async()=>({children_categories:[{id:'MLB1055',name:'Celulares'}]})};
   if(url.includes('/items/search'))return {ok:true,json:async()=>({results:Object.keys(items)})};
@@ -38,6 +42,10 @@ const call=async(path,body={},query={})=>{
   throw new Error('Unexpected '+method+' '+url);
  };
  try{
+  const suggestions=await call('/api/portal/bulk-tools/dimensions/category-search',{}, {account_id:'11',q:'celular'});
+  assert.equal(suggestions.code,200,JSON.stringify(suggestions.result));
+  assert.deepEqual(suggestions.result.categories.map(c=>c.id),['MLB1055']);
+  assert.equal(suggestions.result.categories[0].name,'Celulares e Smartphones');
   const root=await call('/api/portal/bulk-tools/dimensions/categories',{}, {account_id:'11'});
   assert.equal(root.code,200);assert.equal(root.result.categories[0].name,'Eletrônicos');
   const nested=await call('/api/portal/bulk-tools/dimensions/categories',{}, {account_id:'11',parent_id:'MLB1000'});

@@ -18,7 +18,7 @@ function markup(mode){
 '<button type="button" id="mlbtCloneApply" class="btn btn-primary" hidden disabled>Confirmar clonagem</button></section>',
 '<section class="mlsh-tool-card"><h4>▣ Dimensões em massa por categoria</h4><p>Defina as dimensões da embalagem real. Não inclui anúncios Full.</p>',
 '<label>Conta Mercado Livre<select id="mlbtDimAccount"><option value="">Carregando contas...</option></select></label>',
-'<div class="mlbt-dim-category"><label>Categoria dos produtos<select id="mlbtCategory" disabled><option value="">Selecione primeiro uma conta</option></select></label><div id="mlbtCategoryPath" class="mlbt-category-path"></div><small id="mlbtCategoryHint">Escolha as categorias pelos nomes até chegar à categoria final dos anúncios.</small></div>',
+'<div class="mlbt-dim-category"><label>Buscar categoria<input id="mlbtCategory" type="search" autocomplete="off" placeholder="Digite: celular, fonte, notebook..." disabled></label><div id="mlbtCategoryPath" class="mlbt-category-suggestions" role="listbox" hidden></div><small id="mlbtCategoryHint">Selecione a conta e digite pelo menos 2 letras para ver sugestões.</small></div>',
 '<div class="mlsh-tool-dimgrid">',
 '<label>Altura (cm)<input id="mlbtHeight" type="number" min="1" max="300" placeholder="15"></label>',
 '<label>Largura (cm)<input id="mlbtWidth" type="number" min="1" max="300" placeholder="20"></label>',
@@ -64,45 +64,39 @@ function init(config){
  for(const id of ['mlbtSource','mlbtTarget','mlbtItem','mlbtStock'])q(id).addEventListener('input',resetClone);
  q('mlbtLimit').addEventListener('input',resetDim);
  for(const id of ['mlbtHeight','mlbtWidth','mlbtLength','mlbtWeight'])q(id).addEventListener('input',resetDim);
- let categoryEpoch=0;
- async function loadCategorySelect(select,parentId,epoch){
-  select.disabled=true;select.replaceChildren();
-  const loading=document.createElement('option');loading.value='';loading.textContent='Carregando categorias...';select.append(loading);
-  const url='/api/portal/bulk-tools/dimensions/categories?account_id='+encodeURIComponent(value('mlbtDimAccount'))+(parentId?'&parent_id='+encodeURIComponent(parentId):'');
-  const data=await api(url);
-  if(epoch!==categoryEpoch||!root.isConnected)return null;
-  select.replaceChildren();
-  const empty=document.createElement('option');empty.value='';empty.textContent='Selecione uma categoria';select.append(empty);
-  for(const category of data.categories||[]){const opt=document.createElement('option');opt.value=category.id;opt.textContent=category.name;select.append(opt)}
-  select.disabled=false;return data.categories||[];
- }
- function attachCategorySelect(select){
-  select.onchange=async()=>{
-   const epoch=++categoryEpoch;resetDim();state.dimCategory='';
-   const next=q('mlbtCategoryPath');
-   while(select!==q('mlbtCategory')&&select.parentElement?.nextElementSibling)select.parentElement.nextElementSibling.remove();
-   if(select===q('mlbtCategory'))next.replaceChildren();
-   if(!select.value)return;
-   const parentId=select.value;
-   const choice=select.options[select.selectedIndex]?.textContent||'';
-   q('mlbtCategoryHint').textContent='Consultando subcategorias de '+choice+'...';
+ let categoryEpoch=0,categoryTimer=null;
+ const categoryInput=q('mlbtCategory'),suggestions=q('mlbtCategoryPath'),hint=q('mlbtCategoryHint');
+ function clearCategorySuggestions(){suggestions.replaceChildren();suggestions.hidden=true}
+ categoryInput.oninput=()=>{
+  const epoch=++categoryEpoch;
+  if(categoryTimer)clearTimeout(categoryTimer);
+  state.dimCategory='';resetDim();clearCategorySuggestions();
+  const query=categoryInput.value.trim();
+  if(!value('mlbtDimAccount')||query.length<2){hint.textContent='Digite pelo menos 2 letras para buscar categorias.';return}
+  hint.textContent='Procurando sugestões...';
+  categoryTimer=setTimeout(async()=>{
    try{
-    const child=document.createElement('select');
-    const options=await loadCategorySelect(child,parentId,epoch);
-    if(!options||epoch!==categoryEpoch)return;
-    if(!options.length){state.dimCategory=parentId;q('mlbtCategoryHint').textContent='Categoria final selecionada: '+choice+'. Agora defina as medidas e busque.';return}
-    const label=document.createElement('label');label.textContent='Subcategoria';label.append(child);next.append(label);attachCategorySelect(child);
-    q('mlbtCategoryHint').textContent='Continue escolhendo até chegar à categoria final.';
-   }catch(e){if(epoch===categoryEpoch)q('mlbtCategoryHint').textContent='Falha ao carregar subcategorias: '+e.message}
-  };
- }
- attachCategorySelect(q('mlbtCategory'));
- q('mlbtDimAccount').onchange=async()=>{
-  const epoch=++categoryEpoch;resetDim();state.dimCategory='';q('mlbtCategoryPath').replaceChildren();
-  if(!value('mlbtDimAccount')){q('mlbtCategory').disabled=true;q('mlbtCategoryHint').textContent='Selecione primeiro uma conta.';return}
-  q('mlbtCategoryHint').textContent='Carregando categorias do Mercado Livre...';
-  try{await loadCategorySelect(q('mlbtCategory'),'',epoch);if(epoch===categoryEpoch)q('mlbtCategoryHint').textContent='Escolha pelos nomes; não é preciso digitar IDs.'}
-  catch(e){if(epoch===categoryEpoch)q('mlbtCategoryHint').textContent='Erro: '+e.message}
+    const url='/api/portal/bulk-tools/dimensions/category-search?account_id='+encodeURIComponent(value('mlbtDimAccount'))+'&q='+encodeURIComponent(query);
+    const data=await api(url);
+    if(epoch!==categoryEpoch||!root.isConnected)return;
+    for(const category of data.categories||[]){
+     const option=document.createElement('button');option.type='button';option.className='mlbt-category-option';option.setAttribute('role','option');
+     const title=document.createElement('strong');title.textContent=category.name;
+     const subtitle=document.createElement('small');subtitle.textContent=[category.domain_name,category.id].filter(Boolean).join(' · ');
+     option.append(title,subtitle);
+     option.onclick=()=>{++categoryEpoch;categoryInput.value=category.name;state.dimCategory=category.id;clearCategorySuggestions();resetDim();hint.textContent='Categoria selecionada: '+category.name+'. Pronto para buscar anúncios.'};
+     suggestions.append(option);
+    }
+    suggestions.hidden=!suggestions.children.length;
+    hint.textContent=suggestions.hidden?'Nenhuma sugestão encontrada. Tente um termo mais específico.':'Selecione uma das categorias sugeridas.';
+   }catch(e){if(epoch===categoryEpoch)hint.textContent='Não foi possível buscar categorias: '+e.message}
+  },300);
+ };
+ q('mlbtDimAccount').onchange=()=>{
+  ++categoryEpoch;if(categoryTimer)clearTimeout(categoryTimer);
+  resetDim();state.dimCategory='';categoryInput.value='';clearCategorySuggestions();
+  categoryInput.disabled=!value('mlbtDimAccount');
+  hint.textContent=categoryInput.disabled?'Selecione primeiro uma conta.':'Digite o nome da categoria e escolha uma sugestão.';
  };
  q('mlbtCloneConsent').onchange=()=>q('mlbtCloneApply').disabled=!q('mlbtCloneConsent').checked;
  q('mlbtDimConsent').onchange=()=>updateDimSelected();
