@@ -1,0 +1,15 @@
+
+/* ML SH Support — identidade visual do portal para integrações */
+.mlsh-integrations-health{margin-top:18px!important;border:1px solid #dce4ef!important;border-radius:15px!important;background:var(--panel,#fff)!important}
+.mlsh-integrations-health .panel-head{display:flex;align-items:center;justify-content:space-between;gap:15px;flex-wrap:wrap}
+.mlsh-integrations-health .eyebrow{color:#fca311;font-weight:850}
+.mlsh-integrations-health h3{color:var(--ink,#14213d);margin:5px 0;font-weight:850}
+.mlsh-health-items{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:11px;margin:18px 0 13px}
+.mlsh-health-item{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px;border:1px solid #dce4ef;background:var(--panel,#fff);border-radius:11px;min-width:0}
+.mlsh-health-item strong{color:var(--ink,#14213d);font-size:13px}
+.mlsh-health-item span{font-size:11px;color:#78869e;text-align:right}
+.mlsh-health-item span[data-state=ok]{color:#18835b;font-weight:750}
+.mlsh-health-item span[data-state=error]{color:#b94d37;font-weight:750}
+#mlshIntegrationsRefresh{background:#fca311!important;color:#14213d!important;border-color:#fca311!important;font-weight:800}
+#mlshIntegrationsRefresh:disabled{opacity:.6}
+@media(max-width:660px){.mlsh-health-items{grid-template-columns:1fr}.mlsh-integrations-health .panel-head{align-items:flex-start}}

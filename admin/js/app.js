@@ -419,6 +419,10 @@ const pageTitles = {
     logs: {
         title: "Logs",
         description: "Histórico de atividades do sistema"
+    },
+    diagnostics: {
+        title: "Diagnóstico",
+        description: "Saúde dos serviços e integrações"
     }
 
 };
@@ -657,6 +661,7 @@ function navegar(page) {
     }
 
 
+    if (page === "diagnostics") {adminDiagnosticsPage.render();return;}
     if (page === "billing") {adminBillingPage.render();return;}
 
     if (page === "companies") {

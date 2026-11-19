@@ -213,6 +213,41 @@ app.patch('/api/admin/portal-access/:type/:id', verificarAdmin, async(req,res) =
     }
 });
 
+// Diagnostico administrativo somente-leitura. Nenhum token ou dado pessoal na resposta.
+app.get("/api/admin/diagnostics", verificarAdmin, async (_req, res) => {
+    res.set("Cache-Control", "no-store");
+    const checkedAt = new Date().toISOString();
+    const start = Date.now();
+    const counts = async (table) => {
+        try {
+            const { count, error } = await supabase.from(table)
+                .select("id", { head: true, count: "exact" });
+            if (error) return { status: "error", count: null };
+            return { status: "ok", count: count ?? 0 };
+        } catch {
+            return { status: "error", count: null };
+        }
+    };
+    const [database, mercadoLivre, bling, devices] = await Promise.all([
+        counts("companies"),
+        counts("mercadolivre_accounts"),
+        counts("bling_connections"),
+        counts("devices")
+    ]);
+    res.json({
+        ok: true, checkedAt,
+        api: { status: "ok", responseMs: Date.now() - start },
+        database: { status: database.status },
+        integrations: {
+            mercadolivre: { status: mercadoLivre.status, registeredAccounts: mercadoLivre.count, tokenValidated: false },
+            bling: { status: bling.status, registeredAccounts: bling.count, tokenValidated: false },
+            shopee: { status: "not_monitored" },
+            websocket: { status: "not_monitored" }
+        },
+        devices: { status: devices.status, registered: devices.count }
+    });
+});
+
 app.get("/api/admin/test", verificarAdmin, (req, res) => {
     res.json({
         authorized: true,

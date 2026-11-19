@@ -1,0 +1,26 @@
+/* ML SH Support /admin — design tokens e telas administrativas reutilizáveis */
+:root{--mlsh-navy:#14213d;--mlsh-orange:#fca311;--mlsh-ink:#14213d;--mlsh-bg:#f7f9fc;--mlsh-border:#dce4ef;--mlsh-muted:#72819a;--mlsh-radius:14px}
+#adminDiagnostics{color:var(--mlsh-ink);max-width:1200px;margin:0 auto}
+#adminDiagnostics *{box-sizing:border-box}
+#adminDiagnostics .diag-header{display:flex;align-items:center;justify-content:space-between;gap:15px;flex-wrap:wrap;margin-bottom:20px}
+#adminDiagnostics .diag-kicker{color:#a36700;font-size:11px;letter-spacing:1px;font-weight:850}
+#adminDiagnostics h2{margin:5px 0;font-size:23px;color:var(--mlsh-ink)}
+#adminDiagnostics .diag-subtitle{color:var(--mlsh-muted);margin:0;font-size:13px;line-height:1.55}
+#adminDiagnostics .diag-button{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:43px;padding:10px 18px;border:1px solid var(--mlsh-orange);border-radius:11px;background:var(--mlsh-orange);color:var(--mlsh-navy);cursor:pointer;font-size:13px;font-weight:800}
+#adminDiagnostics .diag-button:hover{background:#ffb838}
+#adminDiagnostics .diag-button:disabled{opacity:.65;cursor:wait}
+#adminDiagnostics .diag-button:focus-visible{outline:3px solid var(--mlsh-orange);outline-offset:2px}
+#adminDiagnostics .diag-notice{border:1px solid #e7d1aa;background:#fff8e9;border-radius:12px;padding:13px 15px;color:#745018;font-size:12px;line-height:1.55;margin-bottom:18px}
+#adminDiagnostics .diag-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+#adminDiagnostics .diag-card{background:#fff;border:1px solid var(--mlsh-border);border-radius:var(--mlsh-radius);padding:17px;box-shadow:0 5px 17px #14213d0b;min-width:0}
+#adminDiagnostics .diag-card-top{display:flex;justify-content:space-between;gap:8px;align-items:center;margin-bottom:12px}
+#adminDiagnostics .diag-card h3{font-size:14px;color:var(--mlsh-ink);margin:0}
+#adminDiagnostics .diag-tag{border-radius:20px;background:#eef1f6;color:#627087;padding:5px 9px;font-size:10px;font-weight:750;white-space:nowrap}
+#adminDiagnostics .diag-tag[data-state=ok]{color:#16744f;background:#e4f7eb}
+#adminDiagnostics .diag-tag[data-state=error]{color:#ac5700;background:#fff1d9}
+#adminDiagnostics .diag-main{font-size:21px;line-height:1.2;color:var(--mlsh-ink);font-weight:850;margin:8px 0}
+#adminDiagnostics .diag-info{font-size:11.5px;color:var(--mlsh-muted);line-height:1.55;margin:0}
+#adminDiagnostics .diag-footer{margin-top:18px;padding:14px 16px;border:1px solid var(--mlsh-border);border-radius:11px;color:#53647e;background:#fff;font-size:12px;line-height:1.55}
+#adminDiagnostics .diag-message[data-error=true]{color:#b43d36}
+@media(max-width:960px){#adminDiagnostics .diag-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:620px){#adminDiagnostics .diag-grid{grid-template-columns:1fr}#adminDiagnostics .diag-header{align-items:flex-start}#adminDiagnostics .diag-button{width:100%}}
