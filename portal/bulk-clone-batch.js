@@ -63,7 +63,9 @@ function init({api}){
          const kind=p.clone_type==='catalog'
            ?'CATÁLOGO '+p.catalog_product_id+' · Confirme que é exatamente o mesmo produto'
            :p.clone_type==='user_product'?'FAMÍLIA '+p.family_name+' · Título gerado pelo Mercado Livre':'Anúncio independente';
-         addResult(item_id,item_id+' · '+p.title+' · '+kind+' · R$ '+Number(p.price).toFixed(2)+' · '+p.pictures+' foto(s) · '+p.warning,true);
+         const removed=Array.isArray(p.removed_attributes)?p.removed_attributes:[];
+         const cleanup=removed.length?' · '+removed.length+' atributo(s) interno(s) excluído(s) do envio: '+removed.join(', '):'';
+         addResult(item_id,item_id+' · '+p.title+' · '+kind+' · R$ '+Number(p.price).toFixed(2)+' · '+p.pictures+' foto(s)'+cleanup+' · '+p.warning,true);
        }catch(error){
          if(!root.isConnected)return;
          failed.push({item_id,error:String(error?.message||error)});

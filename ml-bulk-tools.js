@@ -86,6 +86,10 @@ module.exports={validItem,validCategory,validDims,packageAttributes,buildDimensi
    const err=new Error(mlErrorMessage(data,r.status));
    err.status=r.status;
    err.code=String(data?.error||'').slice(0,70);
+   err.validationCauses=Array.isArray(data?.cause)?data.cause.map(c=>({
+     code:String(c?.code||'').slice(0,120),
+     message:String(c?.message||'').slice(0,400)
+   })): [];
    throw err;
   }
   return data;
@@ -94,26 +98,56 @@ module.exports={validItem,validCategory,validDims,packageAttributes,buildDimensi
   try{
    await ml(token,'/items/validate','POST',payload);
   }catch(e){
-   throw new Error('Validação de publicação: '+String(e.message).slice(0,1400));
+   const err=new Error('Validação de publicação: '+String(e.message).slice(0,1400));
+   err.validationCauses=e.validationCauses||[];
+   throw err;
   }
  }
- // Algumas contas usam o novo modelo User Products, que exige
- // family_name em vez de title. Só adaptar após a validação indicar
- // explicitamente essa regra; não vincular IDs de família entre vendedores.
- async function validateCloneCandidate(token,item,initial){
-  try{
-   await validateBeforePublish(token,initial);
-   return initial;
-  }catch(firstError){
-   const msg=String(firstError?.message||'');
-   if(!/body\.required_fields/i.test(msg)||!/family_name/i.test(msg))throw firstError;
-   const family=String(item.family_name||initial.title||item.title||'').trim();
-   if(!family||family.length>60)throw new Error('Nome da família obrigatório e inválido; revise o produto de origem.');
-   const adapted={...initial,family_name:family};
-   delete adapted.title; // Novo modelo UP gera o título automaticamente.
-   await validateBeforePublish(token,adapted);
-   return adapted;
+ // Um anúncio existente traz atributos inferidos e de uso interno que não
+ // devem ser enviados a /items. Corrigir somente IDs que a API identificou
+ // explicitamente como "ignored/not modifiable", sem retirar os demais.
+ function ignoredAttributeIds(error){
+  const found=new Set();
+  for(const cause of error?.validationCauses||[]){
+   if(cause.code!=='item.attributes.ignored')continue;
+   const match=cause.message.match(/Attribute\s*\[([A-Z0-9_]+)\]\s*ignored\s+because\s+it\s+is\s+not\s+modifiable/i);
+   if(match)found.add(match[1].toUpperCase());
   }
+  return found;
+ }
+ // Algumas contas usam User Products com family_name obrigatório.
+ // Adaptar de maneira conservadora a cada validação, sem pular outras falhas.
+ async function validateCloneCandidate(token,item,initial){
+  let candidate={...initial,attributes:[...(initial.attributes||[])]};
+  const ignored=new Set();
+  for(let attempt=0;attempt<5;attempt++){
+   try{
+    await validateBeforePublish(token,candidate);
+    if(ignored.size)Object.defineProperty(candidate,'_removedCloneAttributes',{value:[...ignored],enumerable:false});
+    return candidate;
+   }catch(error){
+    let changed=false;
+    const rejected=ignoredAttributeIds(error);
+    if(rejected.size){
+     const remaining=candidate.attributes.filter(a=>!rejected.has(a.id));
+     if(remaining.length<candidate.attributes.length){
+      for(const attr of candidate.attributes)if(rejected.has(attr.id))ignored.add(attr.id);
+      candidate={...candidate,attributes:remaining};
+      changed=true;
+     }
+    }
+    const details=String(error?.message||'');
+    if(!candidate.family_name&&/body\.required_fields/i.test(details)&&/\[family_name\]/i.test(details)){
+     const family=String(item.family_name||candidate.title||item.title||'').trim();
+     if(!family||family.length>60)throw new Error('Nome da família obrigatório e inválido; revise o produto de origem.');
+     candidate={...candidate,family_name:family};
+     delete candidate.title;
+     changed=true;
+    }
+    if(!changed)throw error;
+   }
+  }
+  throw new Error('A validação retornou alterações sucessivas não resolvidas; revise os atributos obrigatórios antes de publicar.');
  }
  async function selectedAccount(req,id){
   const matches=(await getShippingAccounts(req)).filter(a=>String(a.ml_user_id)===String(id));
@@ -144,6 +178,7 @@ module.exports={validItem,validCategory,validDims,packageAttributes,buildDimensi
     listing_type_id:candidate.listing_type_id,
     clone_type:candidate.catalog_listing===true?'catalog':candidate.family_name?'user_product':'standard',
     family_name:candidate.family_name||null,
+    removed_attributes:candidate._removedCloneAttributes||[],
     catalog_product_id:candidate.catalog_product_id||null,
     description:candidate.catalog_listing===true?'Descrição definida pelo catálogo quando aplicável.':'Descrição será copiada quando disponível.',
     warning:candidate.catalog_listing===true?
