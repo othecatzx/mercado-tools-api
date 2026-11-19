@@ -815,7 +815,7 @@ const codes = [...companies.entries()].map(([companyId, company]) => {
 
   // Clonagem entre contas e dimensões por categoria — mesma permissão do editor em massa.
   require('./ml-bulk-tools').register(app, {
-    authPortalOrAgent, scopedMenuAllowed, getShippingAccounts, ensureMlToken, shippingFreeFetchItem
+    authPortalOrAgent, scopedMenuAllowed, getShippingAccounts, ensureMlToken, shippingFreeFetchItem, supabase
   });
 
   // Vendas reais das contas do Mercado Livre conectadas às empresas licenciadas.

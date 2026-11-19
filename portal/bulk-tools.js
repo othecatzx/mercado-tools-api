@@ -19,6 +19,7 @@ function markup(mode){
 '<section class="mlsh-tool-card"><h4>▣ Dimensões em massa por categoria</h4><p>Defina as dimensões da embalagem real. Não inclui anúncios Full.</p>',
 '<label>Conta Mercado Livre<select id="mlbtDimAccount"><option value="">Carregando contas...</option></select></label>',
 '<div class="mlbt-dim-category"><label>Buscar categoria<input id="mlbtCategory" type="search" autocomplete="off" placeholder="Digite: celular, fonte, notebook..." disabled></label><div id="mlbtCategoryPath" class="mlbt-category-suggestions" role="listbox" hidden></div><small id="mlbtCategoryHint">Selecione a conta e digite pelo menos 2 letras para ver sugestões.</small></div>',
+'<div id="mlbtBlingPresetWrap" class="mlbt-bling-preset" hidden><label>Embalagem cadastrada no Bling<select id="mlbtBlingPreset"><option value="">Escolha um modelo para preencher as medidas</option></select></label><small id="mlbtBlingPresetHint">As medidas são copiadas para os campos abaixo e podem ser editadas antes da busca.</small></div>',
 '<div class="mlsh-tool-dimgrid">',
 '<label>Altura (cm)<input id="mlbtHeight" type="number" min="1" max="300" placeholder="15"></label>',
 '<label>Largura (cm)<input id="mlbtWidth" type="number" min="1" max="300" placeholder="20"></label>',
@@ -92,11 +93,45 @@ function init(config){
    }catch(e){if(epoch===categoryEpoch)hint.textContent='Não foi possível buscar categorias: '+e.message}
   },300);
  };
+ let blingPresetEpoch=0,blingPresets=new Map();
+ const presetSelect=q('mlbtBlingPreset'),presetWrap=q('mlbtBlingPresetWrap'),presetHint=q('mlbtBlingPresetHint');
+ async function loadBlingPresets(){
+  const epoch=++blingPresetEpoch,accountId=value('mlbtDimAccount');
+  presetWrap.hidden=true;presetSelect.replaceChildren();blingPresets.clear();
+  if(!accountId)return;
+  try{
+   const result=await api('/api/portal/bulk-tools/dimensions/bling-presets?account_id='+encodeURIComponent(accountId));
+   if(epoch!==blingPresetEpoch||!root.isConnected||accountId!==value('mlbtDimAccount'))return;
+   if(!result.connected||!Array.isArray(result.items)||!result.items.length)return;
+   const empty=document.createElement('option');empty.value='';empty.textContent='Selecionar embalagem do Bling (opcional)';presetSelect.append(empty);
+   for(const item of result.items){
+    if(!item.id||!item.dimensions)continue;
+    blingPresets.set(String(item.id),item.dimensions);
+    const option=document.createElement('option');option.value=String(item.id);
+    const d=item.dimensions;
+    option.textContent=item.name+' · '+d.height+' × '+d.width+' × '+d.length+' cm · '+d.weight+' g';
+    presetSelect.append(option);
+   }
+   presetHint.textContent='Modelos de embalagem vinculados à empresa desta conta. Você pode alterar as medidas preenchidas.';
+   presetWrap.hidden=blingPresets.size===0;
+  }catch(error){
+   if(epoch===blingPresetEpoch&&accountId===value('mlbtDimAccount')){
+    presetHint.textContent='Não foi possível carregar os modelos do Bling. Você ainda pode digitar as medidas manualmente.';
+    presetWrap.hidden=false;
+   }
+  }
+ }
+ presetSelect.onchange=()=>{
+  const dimensions=blingPresets.get(presetSelect.value);if(!dimensions)return;
+  for(const [field,key] of [['mlbtHeight','height'],['mlbtWidth','width'],['mlbtLength','length'],['mlbtWeight','weight']])q(field).value=String(dimensions[key]);
+  resetDim();presetHint.textContent='Medidas preenchidas a partir do Bling. Confira antes de buscar e aplicar.';
+ };
  q('mlbtDimAccount').onchange=()=>{
   ++categoryEpoch;if(categoryTimer)clearTimeout(categoryTimer);
   resetDim();state.dimCategory='';categoryInput.value='';clearCategorySuggestions();
   categoryInput.disabled=!value('mlbtDimAccount');
   hint.textContent=categoryInput.disabled?'Selecione primeiro uma conta.':'Digite o nome da categoria e escolha uma sugestão.';
+  void loadBlingPresets();
  };
  q('mlbtCloneConsent').onchange=()=>q('mlbtCloneApply').disabled=!q('mlbtCloneConsent').checked;
  q('mlbtDimConsent').onchange=()=>updateDimSelected();

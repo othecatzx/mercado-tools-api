@@ -203,7 +203,7 @@ function prepareClone(item,stock,title,overrides){
  return payload;
 }
 module.exports={validItem,normalizeItemId,validCategory,validDims,packageAttributes,buildDimensionUpdate,prepareClone,
- register(app,{authPortalOrAgent,scopedMenuAllowed,getShippingAccounts,ensureMlToken,shippingFreeFetchItem}){
+ register(app,{authPortalOrAgent,scopedMenuAllowed,getShippingAccounts,ensureMlToken,shippingFreeFetchItem,supabase}){
  const gate = name => (req,res,next)=>scopedMenuAllowed(req,name)?next():res.status(403).json({ok:false,message:'Permissão não liberada para esta ferramenta.'});
  const guardAccounts = (req,res,next)=>(scopedMenuAllowed(req,'clone-listings')||scopedMenuAllowed(req,'bulk-dimensions'))?next():res.status(403).json({ok:false,message:'Sem permissão para consultar contas.'});
  // Preserve as causas devolvidas pelo ML, inclusive campos faltantes.
@@ -688,6 +688,28 @@ module.exports={validItem,normalizeItemId,validCategory,validDims,packageAttribu
     validation_warnings:payload._validationWarnings||[],
     message:'Anúncio criado. Confira os atributos e as condições de publicação no Mercado Livre.'});
   }catch(e){res.status(400).json({ok:false,message:e.message})}
+ });
+ // Modelos de embalagem existentes no Bling, apenas da empresa dona da conta ML.
+ app.get('/api/portal/bulk-tools/dimensions/bling-presets',authPortalOrAgent,gate('bulk-dimensions'),async(req,res)=>{
+  try{
+   const account=await selectedAccount(req,req.query?.account_id);
+   const companyId=String(account.company_id||'');
+   if(!companyId||!supabase)return res.json({ok:true,connected:false,items:[]});
+   const {data:links,error:linkError}=await supabase.from('bling_connections')
+    .select('id').eq('company_id',companyId).eq('status','connected').limit(1);
+   if(linkError)throw linkError;
+   if(!links?.length)return res.json({ok:true,connected:false,items:[]});
+   const {data:presets,error:presetError}=await supabase.from('bling_dimension_presets')
+    .select('id,nome,peso,largura,altura,profundidade,ordem').eq('company_id',companyId)
+    .order('ordem',{ascending:true}).order('nome',{ascending:true});
+   if(presetError)throw presetError;
+   const items=(presets||[]).map(p=>({
+    id:String(p.id),name:String(p.nome||'').slice(0,100),
+    dimensions:validDims({height:Number(p.altura),width:Number(p.largura),
+     length:Number(p.profundidade),weight:Math.round(Number(p.peso)*1000)})
+   })).filter(p=>p.name&&p.dimensions);
+   res.json({ok:true,connected:true,items});
+  }catch(e){res.status(500).json({ok:false,message:'Não foi possível carregar as embalagens cadastradas no Bling.'})}
  });
  // Sugestoes de categorias por texto, usando o preditor oficial de dominios.
  app.get('/api/portal/bulk-tools/dimensions/category-search',authPortalOrAgent,gate('bulk-dimensions'),async(req,res)=>{
