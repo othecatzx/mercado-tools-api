@@ -18,12 +18,16 @@ function init({api}){
    consent.checked=false;consentLine.hidden=true;apply.hidden=true;apply.disabled=true;
    text('');
  };
- ['mlbtSource','mlbtTarget','mlbtItem','mlbtStock'].forEach(id=>q(id).addEventListener('input',reset));
- const current=()=>({
-   source_id:q('mlbtSource').value,
-   target_id:q('mlbtTarget').value,
-   stock:Number(q('mlbtStock').value)
- });
+ ['mlbtSource','mlbtTarget','mlbtItem','mlbtStock','mlbtCloneHeight','mlbtCloneWidth','mlbtCloneLength','mlbtCloneWeight'].forEach(id=>q(id)?.addEventListener('input',reset));
+ const current=()=>{
+   const fields=['mlbtCloneHeight','mlbtCloneWidth','mlbtCloneLength','mlbtCloneWeight'];
+   const entered=fields.map(id=>String(q(id)?.value||'').trim());
+   const dimensions=entered.some(Boolean)?{
+     height:Number(entered[0]),width:Number(entered[1]),length:Number(entered[2]),weight:Number(entered[3])
+   }:null;
+   return {source_id:q('mlbtSource').value,target_id:q('mlbtTarget').value,
+     stock:Number(q('mlbtStock').value),...(dimensions?{dimensions}:{})};
+ };
  const ids=()=>[...new Set(String(q('mlbtItem').value||'').toUpperCase().split(/[\s,;]+/).filter(Boolean))];
  function addResult(title,details,checkable,error=false){
    const row=document.createElement('label');
@@ -48,6 +52,12 @@ function init({api}){
    if(!Number.isSafeInteger(request.stock)||request.stock<1||request.stock>99999){
      text('Estoque inicial inválido (mínimo 1, máximo 99999).',true);return;
    }
+   if(request.dimensions){
+     const d=request.dimensions,nums=[d.height,d.width,d.length,d.weight];
+     if(!nums.every(n=>Number.isSafeInteger(n)&&n>0)||[d.height,d.width,d.length].some(n=>n>300)||d.weight>100000){
+       text('Preencha as quatro dimensões em valores inteiros positivos: altura, largura, comprimento (cm) e peso (g).',true);return;
+     }
+   }
    running=true;preview.disabled=true;
    const eligible=[],failed=[];
    try{
@@ -65,7 +75,9 @@ function init({api}){
            :p.clone_type==='user_product'?'FAMÍLIA '+p.family_name+' · Título gerado pelo Mercado Livre':'Anúncio independente';
          const removed=Array.isArray(p.removed_attributes)?p.removed_attributes:[];
          const cleanup=removed.length?' · '+removed.length+' atributo(s) interno(s) excluído(s) do envio: '+removed.join(', '):'';
-         addResult(item_id,item_id+' · '+p.title+' · '+kind+' · R$ '+Number(p.price).toFixed(2)+' · '+p.pictures+' foto(s)'+cleanup+' · '+p.warning,true);
+         const dimensions=p.package_dimensions;
+         const packing=dimensions?' · Embalagem '+dimensions.height+'×'+dimensions.width+'×'+dimensions.length+' cm, '+dimensions.weight+' g ('+(p.package_dimensions_source==='manual'?'informada':'origem')+')':'';
+         addResult(item_id,item_id+' · '+p.title+' · '+kind+' · R$ '+Number(p.price).toFixed(2)+' · '+p.pictures+' foto(s)'+packing+cleanup+' · '+p.warning,true);
        }catch(error){
          if(!root.isConnected)return;
          failed.push({item_id,error:String(error?.message||error)});
@@ -103,6 +115,7 @@ function init({api}){
          const result=await api('/api/portal/bulk-tools/clone/apply',{
            method:'POST',body:JSON.stringify({
              source_id:request.source_id,target_id:request.target_id,stock:request.stock,
+             ...(request.dimensions?{dimensions:request.dimensions}:{}),
              item_id,expected_catalog_product_id:expectedCatalog.get(item_id)||null,
              expected_family_name:expectedFamily.get(item_id)||null,confirm:true
            })

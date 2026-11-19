@@ -15,13 +15,33 @@ function packageAttributes(dimensions){
   .map(([id,value_name])=>({id,value_name:String(value_name)+(id.endsWith('WEIGHT')?' g':' cm')}));
 }
 const packageKeys=new Set(['SELLER_PACKAGE_HEIGHT','SELLER_PACKAGE_WIDTH','SELLER_PACKAGE_LENGTH','SELLER_PACKAGE_WEIGHT']);
+function sourcePackageDimensions(item){
+ const values={};
+ const parts={SELLER_PACKAGE_HEIGHT:'height',SELLER_PACKAGE_WIDTH:'width',SELLER_PACKAGE_LENGTH:'length',SELLER_PACKAGE_WEIGHT:'weight'};
+ for(const a of item?.attributes||[]){
+  const field=parts[String(a?.id||'').toUpperCase()];
+  if(!field)continue;
+  const raw=a?.value_struct?.number??a?.value_name??a?.values?.[0]?.name;
+  // Não inferir unidades desconhecidas. Os atributos seller_package são cm/g.
+  const match=String(raw??'').trim().match(/^(\d+(?:[.,]\d+)?)(?:\s*(?:cm|g))?$/i);
+  if(match)values[field]=Number(match[1].replace(',','.'));
+ }
+ return validDims(values);
+}
+function clonePackageAttributes(dims){
+ const validated=validDims(dims);
+ if(!validated)return null;
+ // Valor numérico puro conforme regra de publicação da API.
+ return Object.entries({SELLER_PACKAGE_HEIGHT:validated.height,SELLER_PACKAGE_WIDTH:validated.width,SELLER_PACKAGE_LENGTH:validated.length,SELLER_PACKAGE_WEIGHT:validated.weight})
+  .map(([id,value_name])=>({id,value_name:String(value_name)}));
+}
 function buildDimensionUpdate(item,dimensions){
  const attrs=packageAttributes(dimensions);
  if(item.shipping?.logistic_type==='fulfillment')throw new Error('Anúncio Full: dimensões controladas pela logística.');
  if(item.shipping?.mode==='me1')throw new Error('Mercado Envios 1: edição automática de shipping.dimensions ainda não suportada nesta versão.');
  return {attributes:attrs};
 }
-function prepareClone(item,stock,title){
+function prepareClone(item,stock,title,dimensionsOverride){
  const qty=Number(stock);
  if(!Number.isSafeInteger(qty)||qty<1||qty>99999)throw new Error('Estoque inicial deve estar entre 1 e 99999.');
  // IDs de família / User Products identificam o agrupamento do vendedor e não
@@ -37,6 +57,8 @@ function prepareClone(item,stock,title){
  if(!/^MLB\d+$/.test(String(item.category_id)))throw new Error('Categoria inválida.');
  const sourcePictures=(item.pictures||[]).map(p=>p.secure_url||p.url).filter(s=>typeof s==='string'&&/^https:\/\//.test(s)).slice(0,12);
  if(!sourcePictures.length&&item.catalog_listing!==true)throw new Error('Anúncio sem fotos reutilizáveis.');
+ const dims=dimensionsOverride?validDims(dimensionsOverride):sourcePackageDimensions(item);
+ if(dimensionsOverride&&!dims)throw new Error('Dimensões incompletas: informe altura, largura, comprimento (cm) e peso (g), todos inteiros positivos.');
  const attrs=(item.attributes||[]).filter(a=>a&&typeof a.id==='string'&&!packageKeys.has(a.id))
   .map(a=>({id:a.id,...(a.value_id?{value_id:a.value_id}:a.value_name?{value_name:a.value_name}:{})}))
   .filter(a=>a.value_id||a.value_name);
@@ -45,7 +67,7 @@ function prepareClone(item,stock,title){
   available_quantity:qty,buying_mode:item.buying_mode||'buy_it_now',
   listing_type_id:item.listing_type_id||'gold_special',
   condition:item.condition||'new',pictures:sourcePictures.map(source=>({source})),
-  attributes:attrs
+  attributes:[...attrs,...(dims?clonePackageAttributes(dims):[])]
  };
  if(/^MLB\d+$/.test(String(item.catalog_product_id||''))){
   // Mesmo anúncios tradicionais podem precisar do catalog_product_id quando
@@ -59,7 +81,11 @@ function prepareClone(item,stock,title){
   payload.catalog_listing=true;
  }
  if(item.seller_custom_field)payload.seller_custom_field=String(item.seller_custom_field).slice(0,255);
- if(item.warranty)payload.warranty=item.warranty;
+ // item.warranty é legado e rejeitado nas publicações atuais.
+ // Termos de garantia compatíveis são enviados exclusivamente em sale_terms.
+ const warrantyTerms=(item.sale_terms||[]).filter(t=>['WARRANTY_TYPE','WARRANTY_TIME'].includes(t?.id)&&((t.value_id!=null)||(typeof t.value_name==='string'&&t.value_name.trim())))
+  .map(t=>({id:t.id,...(t.value_id!=null?{value_id:String(t.value_id)}:{value_name:String(t.value_name)})}));
+ if(warrantyTerms.length)payload.sale_terms=warrantyTerms;
  if(item.shipping?.local_pick_up===true)payload.shipping={local_pick_up:true};
  return payload;
 }
@@ -144,7 +170,12 @@ module.exports={validItem,validCategory,validDims,packageAttributes,buildDimensi
      delete candidate.title;
      changed=true;
     }
-    if(!changed)throw error;
+    if(!changed){
+     if(/item\.attribute\.missing\.seller\.package\.dimensions/i.test(details)){
+      throw new Error('Dimensões da embalagem exigidas pelo Mercado Livre. O anúncio de origem não forneceu medidas aceitas. Informe altura, largura, comprimento em cm e peso em g na clonagem e consulte novamente. Detalhes: '+details.slice(0,350));
+     }
+     throw error;
+    }
    }
   }
   throw new Error('A validação retornou alterações sucessivas não resolvidas; revise os atributos obrigatórios antes de publicar.');
@@ -171,13 +202,15 @@ module.exports={validItem,validCategory,validDims,packageAttributes,buildDimensi
    if(String(item.seller_id)!==String(source.ml_user_id))return res.status(403).json({ok:false,message:'Anúncio não pertence à conta de origem.'});
    const targetToken=await ensureMlToken(target);
    const stock=Number(req.body?.stock),title=String(req.body?.title||item.title||'');
-   const candidate=await validateCloneCandidate(targetToken,item,prepareClone(item,stock,title));
+   const candidate=await validateCloneCandidate(targetToken,item,prepareClone(item,stock,title,req.body?.dimensions));
    res.json({ok:true,preview:{item_id:id,source_name:source.nickname||source.company_name,
     target_name:target.nickname||target.company_name,title:candidate.title||item.title,category_id:candidate.category_id,
     price:candidate.price,stock:candidate.available_quantity,pictures:candidate.pictures.length,
     listing_type_id:candidate.listing_type_id,
     clone_type:candidate.catalog_listing===true?'catalog':candidate.family_name?'user_product':'standard',
     family_name:candidate.family_name||null,
+    package_dimensions:sourcePackageDimensions({attributes:candidate.attributes})||null,
+    package_dimensions_source:req.body?.dimensions?'manual':'origem',
     removed_attributes:candidate._removedCloneAttributes||[],
     catalog_product_id:candidate.catalog_product_id||null,
     description:candidate.catalog_listing===true?'Descrição definida pelo catálogo quando aplicável.':'Descrição será copiada quando disponível.',
@@ -197,7 +230,7 @@ module.exports={validItem,validCategory,validDims,packageAttributes,buildDimensi
    const sourceToken=await ensureMlToken(source),targetToken=await ensureMlToken(target);
    const item=await shippingFreeFetchItem(id,sourceToken);
    if(String(item.seller_id)!==String(source.ml_user_id))return res.status(403).json({ok:false,message:'Conta de origem não é proprietária do anúncio.'});
-   const payload=await validateCloneCandidate(targetToken,item,prepareClone(item,req.body?.stock,req.body?.title));
+   const payload=await validateCloneCandidate(targetToken,item,prepareClone(item,req.body?.stock,req.body?.title,req.body?.dimensions));
    // Reexamina os dados sempre antes da escrita para não usar preview obsoleto.
    if(payload.family_name && String(req.body?.expected_family_name||'')!==payload.family_name){
      return res.status(409).json({ok:false,message:'O nome da família deve ser confirmado novamente na prévia.'});
