@@ -1,0 +1,6 @@
+/* Ícones vetoriais consistentes no menu lateral */
+.sidebar .nav-item .ico,.sidebar .nav-item .nav-icon{display:inline-flex;align-items:center;justify-content:center;flex:none;width:32px;height:32px;border-radius:9px;color:#fca311;line-height:1}
+.sidebar .nav-item .mlsh-nav-svg{width:19px;height:19px;display:block;flex:none}
+.sidebar .nav-item.active .ico,.sidebar .nav-item.active .nav-icon{color:#14213d!important;background:rgba(20,33,61,.10)!important}
+.sidebar .nav-item:hover .ico,.sidebar .nav-item:hover .nav-icon{color:#fca311}
+.sidebar .nav-item.active:hover .ico,.sidebar .nav-item.active:hover .nav-icon{color:#14213d}
