@@ -36,14 +36,14 @@ function adjustmentHelp(){
  const input=$('bulkAdjustValue'),button=$('bulkAdjustApply'),preview=$('bulkAdjustPreview');
  if(!input||!button||!preview)return;
  const amount=parseAdjustmentValue(input.value),count=rows.length;
- const eligible=rows.filter(r=>calculateAdjustedPrice(orig(r).price,adjustmentMode,adjustmentUnit,amount)!==null);
+ const eligible=rows.filter(r=>calculateAdjustedPrice(r.price,adjustmentMode,adjustmentUnit,amount)!==null);
  button.disabled=busy||!count||!Number.isFinite(amount)||amount<=0||eligible.length!==count;
  const hint=adjustmentMode==='fixed'?'Preço único em R$':adjustmentUnit==='percent'?'Percentual (%)':'Valor em reais (R$)';
  input.placeholder=adjustmentMode==='fixed'?'Digite o preço final (R$)':adjustmentUnit==='percent'?'Digite o percentual':'Digite o valor (R$) '+(adjustmentMode==='discount'?'a descontar':'a acrescer');
  preview.textContent=!count?'Adicione anúncios para realizar um reajuste.':
-   !input.value.trim()?'O reajuste usa o preço original de cada anúncio; revise antes de aplicar.':
+   !input.value.trim()?'O reajuste usa o preço atual da tabela; revise antes de aplicar.':
    eligible.length!==count?'Valor inválido: algum anúncio ficaria com preço menor que R$ 0,01 ou acima do limite.':
-   count+' anúncio(s) elegível(is). Preços recalculados a partir dos valores originais.';
+   count+' anúncio(s) elegível(is). Reajuste calculado sobre os preços atuais da tabela.';
  preview.dataset.error=input.value.trim()&&eligible.length!==count?'true':'false';
  $('bulkAdjustUnit').hidden=adjustmentMode==='fixed';
  input.setAttribute('aria-label',hint);
@@ -51,7 +51,7 @@ function adjustmentHelp(){
 function applyAdjustment(){
  const input=$('bulkAdjustValue'),amount=parseAdjustmentValue(input?.value);
  if(busy||!rows.length||!Number.isFinite(amount)||amount<=0)return;
- const pending=rows.map(r=>({row:r,price:calculateAdjustedPrice(orig(r).price,adjustmentMode,adjustmentUnit,amount)}));
+ const pending=rows.map(r=>({row:r,price:calculateAdjustedPrice(r.price,adjustmentMode,adjustmentUnit,amount)}));
  if(pending.some(p=>p.price===null)){adjustmentHelp();window.toast?.('Reajuste inválido para um ou mais anúncios.');return}
  let changedCount=0;
  for(const item of pending){
@@ -118,6 +118,7 @@ function edit(ev){
  tr.querySelectorAll('[data-field]').forEach(el=>el.closest('td').classList.toggle('bulk-changed',changed(row).includes(el.dataset.field)));
  $('bulkCount').textContent=rows.length+' anuncio(s) · '+rows.filter(r=>changed(r).length).length+' alterado(s)';
  $('bulkApply').disabled=!rows.some(r=>changed(r).length);
+ adjustmentHelp();
 }
 async function apply(){
  const selection=rows.filter(r=>changed(r).length).map(r=>({id:r.id,company_id:r.company_id,changes:Object.fromEntries(changed(r).map(c=>[c,r[c]]))}));

@@ -26,7 +26,15 @@ const html=markup();
 for(const key of ['bulkAdjustModes','bulkAdjustValue','bulkAdjustUnit','bulkAdjustApply','data-adjust-mode="increase"','data-adjust-mode="discount"','data-adjust-mode="fixed"','data-adjust-unit="percent"'])assert.ok(html.includes(key),key);
 assert.ok(html.indexOf('bulkAdjustModes')<html.indexOf('bulk-grid'));
 assert.ok(html.includes('Loja, MLB, SKU e Estoque são somente leitura'));
-assert.ok(source.includes('orig(r).price'));
+assert.ok(!source.includes('calculateAdjustedPrice(orig(r).price'));
+assert.equal((source.match(/calculateAdjustedPrice\(r\.price,adjustmentMode,adjustmentUnit,amount\)/g)||[]).length,2);
+// Cadeia de reajustes deve usar o valor já calculado na etapa anterior.
+const fixed=calc(75,'fixed','brl',3000);
+assert.equal(calc(fixed,'discount','percent',10),2700);
+assert.equal(calc(2700,'increase','percent',10),2970);
+assert.equal(calc(2970,'increase','brl',30),3000);
+assert.equal(calc(3000,'discount','brl',150),2850);
+assert.ok(source.includes('adjustmentHelp();\n}\nasync function apply()'));
 assert.ok(source.includes('initAdjustment();render();'));
 assert.ok(!html.includes('Imediatamente publicar'));
-console.log('PASS: BRL, percent, fixed prices, validation, UI controls, original baseline and locked columns');
+console.log('PASS: chained adjustments use current table price, percent and BRL, validation, locked columns');

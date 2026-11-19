@@ -1,0 +1,13 @@
+'use strict';
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const path=require('node:path');
+const root=path.join(__dirname,'..');
+const css=fs.readFileSync(path.join(root,'portal','universal-search.css'),'utf8');
+const html=fs.readFileSync(path.join(root,'portal','index.html'),'utf8');
+assert.match(css,/\.mlsh-command-backdrop\{[^}]*background:rgba\(8,16,32,\.68\)/);
+assert.match(css,/\.mlsh-command-tabs button\.selected\{[^}]*color:#fca311/);
+assert.match(css,/\.mlsh-ai-msg\.user\{[^}]*background:#14213d/);
+assert.doesNotMatch(css,/#91c8b6|#0e1d18/i);
+assert.match(html,/universal-search\.css\?v=20261119-navy-1/);
+console.log('PASS: search and AI modal use navy/orange, not green');
