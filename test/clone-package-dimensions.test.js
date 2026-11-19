@@ -13,9 +13,8 @@ const source={id:'MLB4797008543',seller_id:'271180532',title:'Produto teste',sta
 const original=prepareClone(source,1);
 assert.equal(original.warranty,undefined,'deprecated warranty never forwarded');
 assert.deepEqual(original.sale_terms.map(t=>t.id),['WARRANTY_TYPE','WARRANTY_TIME']);
-assert.deepEqual(original.attributes.filter(a=>a.id.startsWith('SELLER_PACKAGE_')).map(a=>a.value_name),['12','22','32','750']);
-assert.deepEqual(prepareClone({...source,attributes:[{id:'BRAND',value_name:'Exemplo'}]},1,null,dims).attributes.filter(a=>a.id.startsWith('SELLER_PACKAGE_')).map(a=>a.value_name),['12','22','32','750']);
-assert.throws(()=>prepareClone(source,1,null,{height:12,width:22,length:32}),/Dimensões incompletas/);
+assert.deepEqual(original.attributes.filter(a=>a.id.startsWith('SELLER_PACKAGE_')).map(a=>a.value_name),['12 cm','22 cm','32 cm','750 g']);
+assert.deepEqual(prepareClone({...source,attributes:[{id:'BRAND',value_name:'Exemplo'}],shipping:{dimensions:'12x22x32,750'}},1).attributes.filter(a=>a.id.startsWith('SELLER_PACKAGE_')).map(a=>a.value_name),['12 cm','22 cm','32 cm','750 g']);
 const accounts=[{ml_user_id:'271180532',nickname:'4SHOW'},{ml_user_id:'220712533',nickname:'DAPHIE'}];
 const endpoints={};let currentSource=source;
 register({get(path,...handlers){endpoints[path]=handlers},post(path,...handlers){endpoints[path]=handlers}},
@@ -38,7 +37,7 @@ const request=async(path,body)=>{
     {code:'item.warranty.not_updatable',message:'Warranty field is deprecated and cannot be updated',references:['item.warranty']}
    ]})};
    assert.equal(body.warranty,undefined);
-   assert.equal(attrs.find(a=>a.id==='SELLER_PACKAGE_WEIGHT').value_name,'750');
+   assert.equal(attrs.find(a=>a.id==='SELLER_PACKAGE_WEIGHT').value_name,'750 g');
    return {ok:true,status:204,json:async()=>({})};
   }
   if(url.endsWith('/items'))return {ok:true,status:201,json:async()=>({id:'MLB987654321'})};
@@ -57,14 +56,15 @@ const request=async(path,body)=>{
   currentSource=missing;
   const incomplete=await request('/api/portal/bulk-tools/clone/preview',req);
   assert.equal(incomplete.status,400);
-  assert.match(incomplete.json.message,/Dimensões da embalagem exigidas/);
+  assert.match(incomplete.json.message,/exige dimensões da embalagem/);
   assert.equal(calls.filter(c=>c.url.endsWith('/items')).length,1,'missing dimensions must not create a new item');
-  const manual=await request('/api/portal/bulk-tools/clone/preview',{...req,dimensions:dims});
-  assert.equal(manual.status,200,JSON.stringify(manual.json));
-  assert.equal(manual.json.preview.package_dimensions_source,'manual');
-  assert.deepEqual(manual.json.preview.package_dimensions,dims);
+  currentSource={...missing,shipping:{dimensions:'12x22x32,750'}};
+  const fallback=await request('/api/portal/bulk-tools/clone/preview',req);
+  assert.equal(fallback.status,200,JSON.stringify(fallback.json));
+  assert.equal(fallback.json.preview.package_dimensions_source,'origem');
+  assert.deepEqual(fallback.json.preview.package_dimensions,dims);
   const noDims=prepareClone(missing,1);
   assert.equal(noDims.attributes.some(a=>a.id.startsWith('SELLER_PACKAGE_')),false);
-  console.log('PASS: dimensions copied if complete, never invented; numeric-only strings; deprecated warranty omitted; manual overrides');
+  console.log('PASS: source dimensions automatically copied, shipping fallback, unit suffixes, no invented values, warranty omitted');
  }finally{global.fetch=previous}
 })().catch(e=>{console.error(e);process.exitCode=1});
