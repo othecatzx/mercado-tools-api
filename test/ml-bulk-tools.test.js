@@ -25,7 +25,20 @@ assert.deepEqual(payload.pictures,[{source:'https://example.com/image.jpg'}]);
 assert.equal(payload.attributes.find(a=>a.id==='BRAND').value_name,'Exemplo');
 assert.equal(payload.price,95);
 assert.throws(()=>tools.prepareClone({...item,variations:[{id:1}]},1),/variações/);
-assert.throws(()=>tools.prepareClone({...item,catalog_product_id:'MLB000'},1),/catálogo/);
+// User Products / família sem catálogo: publicar de forma independente, sem
+// reaproveitar IDs exclusivos do vendedor de origem.
+const family=tools.prepareClone({...item,user_product_id:'MLBU555',family_name:'Minha família',catalog_product_id:'MLB123456'},1);
+assert.equal(family.catalog_listing,undefined);
+assert.equal(family.user_product_id,undefined);
+assert.equal(family.family_name,undefined);
+const catalog=tools.prepareClone({...item,catalog_listing:true,catalog_product_id:'MLB123456'},1);
+assert.equal(catalog.catalog_listing,true);
+assert.equal(catalog.catalog_product_id,'MLB123456');
+assert.equal(catalog.price,95);
+assert.equal(catalog.available_quantity,1);
+const catalogWithoutPics=tools.prepareClone({...item,catalog_listing:true,catalog_product_id:'MLB123456',pictures:[]},1);
+assert.deepEqual(catalogWithoutPics.pictures,[]);
+assert.throws(()=>tools.prepareClone({...item,catalog_listing:true,catalog_product_id:null},1),/catalog_product_id/);
 assert.throws(()=>tools.prepareClone(item,0),/Estoque/);
 const routes={},auth=()=>{},guard=()=>{};
 tools.register({get(route,...fns){routes[route]=fns},post(route,...fns){routes[route]=fns}},
@@ -48,7 +61,7 @@ assert.match(html,/data-tool="clone"/);
 assert.match(ctx.window.mlshBulkTools.markup('dimensions'),/data-tool="dimensions"/);
 for(const id of ['mlbtSource','mlbtTarget','mlbtClonePreview','mlbtCloneConsent','mlbtDimAccount','mlbtCategory','mlbtDimPreview','mlbtDimConsent'])
  assert.ok(html.includes('id="'+id+'"'),id);
-assert.ok(html.includes('Confirmo a criação'));
+assert.ok(html.includes('ficha técnica do catálogo'));
 assert.ok(html.includes('Confirmo as medidas'));
 assert.ok(!html.includes('Copiar diagnóstico'));
 const bulk=fs.readFileSync(path.join(root,'portal','bulk-editor.js'),'utf8');

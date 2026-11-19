@@ -39,8 +39,8 @@ const api=async (route,opt)=>{
  const body=JSON.parse(opt.body);
  calls.push({route,body});
  if(route.endsWith('/preview')){
-  if(body.item_id==='MLB123456781')throw Error('Anúncio de catálogo');
-  return {preview:{item_id:body.item_id,title:'Produto '+body.item_id,price:100,pictures:3}};
+  if(body.item_id==='MLB123456781')throw Error('Anúncio com variações');
+  return {preview:{item_id:body.item_id,title:'Produto '+body.item_id,price:100,pictures:3,clone_type:body.item_id==='MLB123456789'?'catalog':'standard',catalog_product_id:body.item_id==='MLB123456789'?'MLB987654':null,warning:'Conferir produto'}};
  }
  if(route.endsWith('/apply')){
   if(body.item_id==='MLB123456780')throw Error('Falha de publicação (verificar destino)');
@@ -64,7 +64,9 @@ window.mlshCloneBatch.init({api});
  const applied=calls.filter(x=>x.route.endsWith('/apply'));
  assert.equal(applied.length,2,'only eligible selected get one apply attempt');
  assert.equal(applied[0].body.confirm,true);
+ assert.equal(applied[0].body.expected_catalog_product_id,'MLB987654','catalog product ID from preview must be repeated at confirmation');
  assert.equal(applied[1].body.confirm,true);
+ assert.equal(applied[1].body.expected_catalog_product_id,null,'regular item must not pretend to belong to catalog');
  assert.equal(node('mlbtCloneApply').hidden,true,'batch cannot be repeated blindly');
  assert.match(node('mlbtCloneStatus').textContent,/1 anúncio\(s\) criado\(s\), 1 falha\(s\)/);
  assert.match(node('mlbtCloneStatus').textContent,/verifique/i);

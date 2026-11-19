@@ -59,8 +59,11 @@ function init({api}){
          });
          if(!root.isConnected)return;
          const p=data.preview;
-         eligible.push(item_id);
-         addResult(item_id,item_id+' · '+p.title+' · R$ '+Number(p.price).toFixed(2)+' · '+p.pictures+' foto(s)',true);
+         eligible.push({item_id,catalog_product_id:p.catalog_product_id||null});
+         const kind=p.clone_type==='catalog'
+           ?'CATÁLOGO '+p.catalog_product_id+' · Confirme que é exatamente o mesmo produto'
+           :'Anúncio independente';
+         addResult(item_id,item_id+' · '+p.title+' · '+kind+' · R$ '+Number(p.price).toFixed(2)+' · '+p.pictures+' foto(s) · '+p.warning,true);
        }catch(error){
          if(!root.isConnected)return;
          failed.push({item_id,error:String(error?.message||error)});
@@ -85,6 +88,7 @@ function init({api}){
    const selected=[...list.querySelectorAll('.mlbtBatchSelected:checked')].map(cb=>cb.value);
    if(!selected.length){text('Selecione pelo menos um anúncio.',true);return}
    const request=approved;approved=null;
+   const expectedCatalog=new Map(request.eligible.map(x=>[x.item_id,x.catalog_product_id]));
    running=true;preview.disabled=true;apply.disabled=true;
    const successful=[],errors=[];
    list.replaceChildren();list.hidden=false;
@@ -95,7 +99,8 @@ function init({api}){
        try{
          const result=await api('/api/portal/bulk-tools/clone/apply',{
            method:'POST',body:JSON.stringify({
-             ...request,item_id,confirm:true
+             source_id:request.source_id,target_id:request.target_id,stock:request.stock,
+             item_id,expected_catalog_product_id:expectedCatalog.get(item_id)||null,confirm:true
            })
          });
          if(!root.isConnected)return;

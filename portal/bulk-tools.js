@@ -14,7 +14,7 @@ function markup(mode){
 '<label>Estoque inicial<input id="mlbtStock" type="number" min="1" max="99999" value="1"></label>',
 '<button type="button" id="mlbtClonePreview" class="btn btn-primary">Consultar e revisar</button>',
 '<div id="mlbtCloneStatus" class="mlsh-tools-status" aria-live="polite"></div><div id="mlbtCloneList" class="mlsh-tools-selection" hidden></div>',
-'<label class="mlsh-tools-confirm" id="mlbtCloneConsentWrap" hidden><input type="checkbox" id="mlbtCloneConsent"> Confirmo a criação do anúncio na conta de destino.</label>',
+'<label class="mlsh-tools-confirm" id="mlbtCloneConsentWrap" hidden><input type="checkbox" id="mlbtCloneConsent"> Confirmo que os produtos selecionados correspondem aos anúncios e, quando houver catálogo, à ficha técnica do catálogo. Autorizo a publicação na conta de destino.</label>',
 '<button type="button" id="mlbtCloneApply" class="btn btn-primary" hidden disabled>Confirmar clonagem</button></section>',
 '<section class="mlsh-tool-card"><h4>▣ Dimensões em massa por categoria</h4><p>Defina as dimensões da embalagem real. Não inclui anúncios Full.</p>',
 '<label>Conta Mercado Livre<select id="mlbtDimAccount"><option value="">Carregando contas...</option></select></label>',

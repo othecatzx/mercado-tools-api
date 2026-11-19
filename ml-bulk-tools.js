@@ -24,7 +24,11 @@ function buildDimensionUpdate(item,dimensions){
 function prepareClone(item,stock,title){
  const qty=Number(stock);
  if(!Number.isSafeInteger(qty)||qty<1||qty>99999)throw new Error('Estoque inicial deve estar entre 1 e 99999.');
- if(item.catalog_listing||item.catalog_product_id||item.parent_item_id||item.family_name||item.user_product_id)throw new Error('Anúncios de catálogo/família precisam de fluxo específico; clonagem bloqueada.');
+ // IDs de família / User Products identificam o agrupamento do vendedor e não
+ // devem ser enviados à conta de destino. Sozinhos, não indicam catálogo.
+ // O catálogo verdadeiro exige catalog_product_id e catalog_listing=true.
+ if(item.parent_item_id)throw new Error('Anúncio vinculado a anúncio-pai: fluxo de clonagem específico necessário.');
+ if(item.catalog_listing===true && !/^MLB\d+$/.test(String(item.catalog_product_id||'')))throw new Error('Anúncio de catálogo sem catalog_product_id válido; revise o produto de catálogo antes de publicar.');
  if(item.variations?.length)throw new Error('Anúncio com variações precisa de revisão das variações e fotos; clonagem automática bloqueada.');
  if(!['active','paused'].includes(item.status))throw new Error('Status do anúncio de origem não permitido.');
  const name=String(title||item.title||'').trim();
@@ -32,7 +36,7 @@ function prepareClone(item,stock,title){
  if(!Number.isFinite(Number(item.price))||Number(item.price)<=0)throw new Error('Preço de origem inválido.');
  if(!/^MLB\d+$/.test(String(item.category_id)))throw new Error('Categoria inválida.');
  const sourcePictures=(item.pictures||[]).map(p=>p.secure_url||p.url).filter(s=>typeof s==='string'&&/^https:\/\//.test(s)).slice(0,12);
- if(!sourcePictures.length)throw new Error('Anúncio sem fotos reutilizáveis.');
+ if(!sourcePictures.length&&item.catalog_listing!==true)throw new Error('Anúncio sem fotos reutilizáveis.');
  const attrs=(item.attributes||[]).filter(a=>a&&typeof a.id==='string'&&!packageKeys.has(a.id))
   .map(a=>({id:a.id,...(a.value_id?{value_id:a.value_id}:a.value_name?{value_name:a.value_name}:{})}))
   .filter(a=>a.value_id||a.value_name);
@@ -43,6 +47,12 @@ function prepareClone(item,stock,title){
   condition:item.condition||'new',pictures:sourcePictures.map(source=>({source})),
   attributes:attrs
  };
+ if(item.catalog_listing===true){
+  // Publicação direta em catálogo: preserva o produto canônico. Não transfere
+  // user_product_id / family_name entre vendedores.
+  payload.catalog_product_id=String(item.catalog_product_id);
+  payload.catalog_listing=true;
+ }
  if(item.seller_custom_field)payload.seller_custom_field=String(item.seller_custom_field).slice(0,255);
  if(item.warranty)payload.warranty=item.warranty;
  if(item.shipping?.local_pick_up===true)payload.shipping={local_pick_up:true};
@@ -84,8 +94,13 @@ module.exports={validItem,validCategory,validDims,packageAttributes,buildDimensi
    res.json({ok:true,preview:{item_id:id,source_name:source.nickname||source.company_name,
     target_name:target.nickname||target.company_name,title:candidate.title,category_id:candidate.category_id,
     price:candidate.price,stock:candidate.available_quantity,pictures:candidate.pictures.length,
-    listing_type_id:candidate.listing_type_id,description:'Descrição será copiada quando disponível.',
-    warning:'Confirmar poderá publicar imediatamente um anúncio ativo com o estoque informado. Revise preço, fotos e condições antes de confirmar.'}});
+    listing_type_id:candidate.listing_type_id,
+    clone_type:candidate.catalog_listing===true?'catalog':'standard',
+    catalog_product_id:candidate.catalog_product_id||null,
+    description:candidate.catalog_listing===true?'Descrição definida pelo catálogo quando aplicável.':'Descrição será copiada quando disponível.',
+    warning:candidate.catalog_listing===true?
+      'CATÁLOGO: confirme que o item físico corresponde exatamente ao produto '+candidate.catalog_product_id+'. O Mercado Livre controla a ficha técnica e pode recusar a publicação. A confirmação pode criar anúncio ativo imediatamente.':
+      'Anúncio independente: título, preço, fotos e atributos serão enviados; vínculos de família do vendedor original não são transferidos. Confirme os dados antes de publicar.'}});
   }catch(e){res.status(400).json({ok:false,message:e.message})}
  });
  app.post('/api/portal/bulk-tools/clone/apply',authPortalOrAgent,gate('clone-listings'),async(req,res)=>{
@@ -98,17 +113,24 @@ module.exports={validItem,validCategory,validDims,packageAttributes,buildDimensi
    const item=await shippingFreeFetchItem(id,sourceToken);
    if(String(item.seller_id)!==String(source.ml_user_id))return res.status(403).json({ok:false,message:'Conta de origem não é proprietária do anúncio.'});
    const payload=prepareClone(item,req.body?.stock,req.body?.title);
+   // Reexamina os dados sempre antes da escrita para não usar preview obsoleto.
+   // Produtos de catálogo precisam coincidir exatamente com o item físico.
+   if(payload.catalog_listing===true &&
+      String(req.body?.expected_catalog_product_id||'')!==String(payload.catalog_product_id)){
+     return res.status(409).json({ok:false,message:'Confirme novamente o produto de catálogo na prévia antes de publicar.'});
+   }
    // A operação é explícita, limitada a um anúncio por requisição e só após confirmação.
    const created=await ml(targetToken,'/items','POST',payload);
    const newId=String(created.id||'');
    let descriptionStatus='não disponível';
-   if(/^MLB\d+$/.test(newId)){
+   if(/^MLB\d+$/.test(newId)&&payload.catalog_listing!==true){
     try {
      const description=await ml(sourceToken,'/items/'+encodeURIComponent(id)+'/description');
      const text=String(description.plain_text||description.text||'');
      if(text) {await ml(targetToken,'/items/'+encodeURIComponent(newId)+'/description','POST',{plain_text:text});descriptionStatus='copiada';}
     }catch{descriptionStatus='falhou: confira manualmente';}
    }
+   if(payload.catalog_listing===true)descriptionStatus='gerenciada pelo catálogo';
    res.json({ok:true,created_id:newId,description_status:descriptionStatus,
     message:'Anúncio criado. Confira os atributos e as condições de publicação no Mercado Livre.'});
   }catch(e){res.status(400).json({ok:false,message:e.message})}
