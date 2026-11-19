@@ -33,7 +33,9 @@ const call=async(path,body={},query={})=>{
   ]};
   if(url.endsWith('/sites/MLB/categories'))return {ok:true,json:async()=>[{id:'MLB1000',name:'Eletrônicos'}]};
   if(url.endsWith('/categories/MLB1000'))return {ok:true,json:async()=>({children_categories:[{id:'MLB1055',name:'Celulares'}]})};
-  if(url.includes('/items/search'))return {ok:true,json:async()=>({results:Object.keys(items)})};
+  if(url.includes('/items/search'))return {ok:true,json:async()=>url.includes('scroll_id=NEXT')
+   ?{results:['MLB100000003','MLB100000004']}
+   :{results:['MLB100000001','MLB100000002'],scroll_id:'NEXT'}};
   if(method==='PUT'){
    const id=url.match(/\/items\/(MLB\d+)/)?.[1];puts.push(id);
    if(id)items[id]={...items[id],attributes:JSON.parse(options.body).attributes};
@@ -53,9 +55,15 @@ const call=async(path,body={},query={})=>{
   const request={account_id:'11',category_id:'MLB1055',dimensions:{height:10,width:20,length:30,weight:500},limit:20};
   const preview=await call('/api/portal/bulk-tools/dimensions/preview',request);
   assert.equal(preview.code,200,JSON.stringify(preview.result));
-  assert.deepEqual(preview.result.items.map(i=>i.id),['MLB100000002','MLB100000003']);
+  assert.deepEqual(preview.result.items.map(i=>i.id),['MLB100000002']);
   assert.equal(preview.result.alreadyMatching,1);
-  assert.equal(preview.result.skipped.length,1);
+  assert.equal(preview.result.next_scroll_id,'NEXT');
+  assert.equal(preview.result.has_more,true);
+  const second=await call('/api/portal/bulk-tools/dimensions/preview',{...request,scroll_id:preview.result.next_scroll_id});
+  assert.equal(second.code,200,JSON.stringify(second.result));
+  assert.deepEqual(second.result.items.map(i=>i.id),['MLB100000003']);
+  assert.equal(second.result.skipped.length,1);
+  assert.equal(second.result.has_more,false);
   assert.equal(puts.length,0,'Preview must never write');
   const applied=await call('/api/portal/bulk-tools/dimensions/apply',{
    ...request,item_ids:['MLB100000001','MLB100000002'],confirm:true

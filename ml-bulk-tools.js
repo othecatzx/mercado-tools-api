@@ -725,31 +725,32 @@ module.exports={validItem,normalizeItemId,validCategory,validDims,packageAttribu
    if(!validCategory(category))return res.status(400).json({ok:false,message:'Categoria MLB inválida.'});
    if(!validDims(req.body?.dimensions))return res.status(400).json({ok:false,message:'Informe altura, largura, comprimento em cm e peso em g antes da prévia.'});
    const account=await selectedAccount(req,req.body?.account_id),token=await ensureMlToken(account);
-   const limit=Math.max(1,Math.min(100,Number(req.body?.limit)||50));
-   let ids=[];
-   for(let offset=0;offset<limit;offset+=50){
-    const url='/users/'+encodeURIComponent(account.ml_user_id)+'/items/search?category='+encodeURIComponent(category)+'&limit='+Math.min(50,limit-offset)+'&offset='+offset;
-    const batch=await ml(token,url);
-    ids.push(...(batch.results||[]));
-    if((batch.results||[]).length<Math.min(50,limit-offset))break;
-   }
-   ids=[...new Set(ids)].slice(0,limit);
+   // Uma pagina por chamada evita timeout e permite buscar mais de 1000 anuncios.
+   // O cursor de scan pertence a esta busca e nao deve ser usado em outra conta.
+   const scrollId=String(req.body?.scroll_id||'');
+   if(scrollId.length>3000)return res.status(400).json({ok:false,message:'Cursor de busca invalido.'});
+   const base='/users/'+encodeURIComponent(account.ml_user_id)+'/items/search?search_type=scan&limit=50';
+   const batch=await ml(token,base+(scrollId?'&scroll_id='+encodeURIComponent(scrollId):''));
+   const ids=[...new Set((Array.isArray(batch.results)?batch.results:[]).map(String))];
+   const nextScrollId=ids.length?String(batch.scroll_id||''):'';
    const items=[],skipped=[];let alreadyMatching=0;
-   for(const id of ids){
+   for(let i=0;i<ids.length;i+=10){
+    await Promise.all(ids.slice(i,i+10).map(async id=>{
     try {
      const item=await shippingFreeFetchItem(id,token);
-     if(String(item.seller_id)!==String(account.ml_user_id)||String(item.category_id)!==category)continue;
-     if(!['active','paused'].includes(item.status)){skipped.push({id,reason:'Status não suportado'});continue;}
-     if(item.shipping?.logistic_type==='fulfillment'){skipped.push({id,reason:'Full gerenciado pelo ML'});continue;}
-     if(item.shipping?.mode==='me1'){skipped.push({id,reason:'Envios 1 exige fluxo próprio de dimensões'});continue;}
+     if(String(item.seller_id)!==String(account.ml_user_id)||String(item.category_id)!==category)return;
+     if(!['active','paused'].includes(item.status)){skipped.push({id,reason:'Status não suportado'});return;}
+     if(item.shipping?.logistic_type==='fulfillment'){skipped.push({id,reason:'Full gerenciado pelo ML'});return;}
+     if(item.shipping?.mode==='me1'){skipped.push({id,reason:'Envios 1 exige fluxo próprio de dimensões'});return;}
      const actual=sourcePackageDimensions(item);
-     if(samePackageDimensions(actual,req.body.dimensions)){alreadyMatching++;continue;}
+     if(samePackageDimensions(actual,req.body.dimensions)){alreadyMatching++;return;}
      items.push({id:item.id,title:item.title,sku:item.seller_custom_field||'',
       category_id:item.category_id,status:item.status,
       mode:item.shipping?.mode||'',dimensions:actual});
     }catch(e){skipped.push({id,reason:e.message.slice(0,130)})}
+    }));
    }
-   res.json({ok:true,category_id:category,account_name:account.nickname||account.company_name,items,skipped,alreadyMatching,scanned:ids.length,limitReached:ids.length===limit});
+   res.json({ok:true,category_id:category,account_name:account.nickname||account.company_name,items,skipped,alreadyMatching,scanned:ids.length,next_scroll_id:nextScrollId,has_more:!!nextScrollId});
   }catch(e){res.status(400).json({ok:false,message:e.message})}
  });
  app.post('/api/portal/bulk-tools/dimensions/apply',authPortalOrAgent,gate('bulk-dimensions'),async(req,res)=>{
