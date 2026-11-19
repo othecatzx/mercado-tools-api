@@ -135,6 +135,7 @@ module.exports={validItem,validCategory,validDims,packageAttributes,buildDimensi
    err.code=String(data?.error||'').slice(0,70);
    err.validationCauses=Array.isArray(data?.cause)?data.cause.map(c=>({
      code:String(c?.code||'').slice(0,120),
+     type:String(c?.type||'').toLowerCase(),
      message:String(c?.message||'').slice(0,400)
    })): [];
    throw err;
@@ -206,6 +207,14 @@ module.exports={validItem,validCategory,validDims,packageAttributes,buildDimensi
   if(!modes.includes('me2'))throw new Error('A conta de destino não possui Mercado Envios 2 habilitado. Confira as preferências de envio antes de clonar.');
   return {...candidate,shipping:{...(candidate.shipping||{}),mode:'me2'}};
  }
+ const isExplicitWarningOnly=error=>{
+  const causes=error?.validationCauses;
+  return Array.isArray(causes)&&causes.length>0&&causes.every(c=>c.type==='warning');
+ };
+ const nonBlockingMessages=error=>(error?.validationCauses||[])
+  .filter(c=>c.type==='warning')
+  .map(c=>String(c.code||'')+(c.code==='item.shipping.mandatory_free_shipping'?' (frete grátis obrigatório)':''))
+  .slice(0,10);
  // Algumas contas usam User Products com family_name obrigatório.
  // Adaptar de maneira conservadora a cada validação, sem pular outras falhas.
  async function validateCloneCandidate(token,item,initial,targetId){
@@ -235,9 +244,19 @@ module.exports={validItem,validCategory,validDims,packageAttributes,buildDimensi
       changed=true;
      }
     }
-    const shippingCause=(error.validationCauses||[]).some(c=>c.code==='shipping.lost_me1_by_user');
+    const causes=error.validationCauses||[];
+    const shippingCause=causes.some(c=>c.code==='shipping.lost_me1_by_user');
+    const mandatoryFreeShipping=causes.some(c=>c.code==='item.shipping.mandatory_free_shipping');
     if(shippingCause&&candidate.shipping?.mode!=='me2'){
      candidate=await selectTargetShipping(token,targetId,candidate);
+     changed=true;
+    }
+    if(mandatoryFreeShipping&&candidate.shipping?.mode!=='me2'){
+     candidate=await selectTargetShipping(token,targetId,candidate);
+     changed=true;
+    }
+    if(mandatoryFreeShipping&&candidate.shipping?.mode==='me2'&&candidate.shipping.free_shipping!==true){
+     candidate={...candidate,shipping:{...candidate.shipping,free_shipping:true}};
      changed=true;
     }
     const details=String(error?.message||'');
@@ -249,6 +268,13 @@ module.exports={validItem,validCategory,validDims,packageAttributes,buildDimensi
      changed=true;
     }
     if(!changed){
+     // Somente 'type: warning' explícito é não bloqueante. Nunca ignorar
+     // causas 'error', sem type ou respostas de transporte/autorização.
+     if(isExplicitWarningOnly(error)){
+      if(ignored.size)Object.defineProperty(candidate,'_removedCloneAttributes',{value:[...ignored],enumerable:false});
+      Object.defineProperty(candidate,'_validationWarnings',{value:nonBlockingMessages(error),enumerable:false});
+      return candidate;
+     }
      if(/item\.attribute\.missing\.seller\.package\.dimensions/i.test(details)){
       throw new Error('O Mercado Livre exige dimensões da embalagem, mas não foi possível obtê-las completas do anúncio de origem. Verifique os dados de embalagem do anúncio original no Mercado Livre antes de clonar. Detalhes: '+details.slice(0,350));
      }
@@ -290,6 +316,8 @@ module.exports={validItem,validCategory,validDims,packageAttributes,buildDimensi
     package_dimensions:sourcePackageDimensions({attributes:candidate.attributes})||null,
     package_dimensions_source:'origem',
     shipping_mode:candidate.shipping?.mode||'automático',
+    free_shipping:candidate.shipping?.free_shipping===true,
+    validation_warnings:candidate._validationWarnings||[],
     removed_attributes:candidate._removedCloneAttributes||[],
     catalog_product_id:candidate.catalog_product_id||null,
     description:candidate.catalog_listing===true?'Descrição definida pelo catálogo quando aplicável.':'Descrição será copiada quando disponível.',
@@ -333,6 +361,7 @@ module.exports={validItem,validCategory,validDims,packageAttributes,buildDimensi
    }
    if(payload.catalog_listing===true)descriptionStatus='gerenciada pelo catálogo';
    res.json({ok:true,created_id:newId,description_status:descriptionStatus,
+    validation_warnings:payload._validationWarnings||[],
     message:'Anúncio criado. Confira os atributos e as condições de publicação no Mercado Livre.'});
   }catch(e){res.status(400).json({ok:false,message:e.message})}
  });

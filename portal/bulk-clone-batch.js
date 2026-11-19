@@ -68,7 +68,9 @@ function init({api}){
          const dimensions=p.package_dimensions;
          const packing=dimensions?' · Embalagem original '+dimensions.height+'×'+dimensions.width+'×'+dimensions.length+' cm, '+dimensions.weight+' g':'';
          const shipping=p.shipping_mode==='me2'?' · Envio na conta de destino: Mercado Envios 2':' · Envio definido pelo Mercado Livre';
-         addResult(item_id,item_id+' · '+p.title+' · '+kind+' · R$ '+Number(p.price).toFixed(2)+' · '+p.pictures+' foto(s)'+packing+shipping+cleanup+' · '+p.warning,true);
+         const freeShipping=p.free_shipping?' · FRETE GRÁTIS obrigatório: pode gerar custo ao vendedor':'';
+         const warnings=Array.isArray(p.validation_warnings)&&p.validation_warnings.length?' · Avisos não bloqueantes do ML: '+p.validation_warnings.join(', '):'';
+         addResult(item_id,item_id+' · '+p.title+' · '+kind+' · R$ '+Number(p.price).toFixed(2)+' · '+p.pictures+' foto(s)'+packing+shipping+freeShipping+warnings+cleanup+' · '+p.warning,true);
        }catch(error){
          if(!root.isConnected)return;
          failed.push({item_id,error:String(error?.message||error)});
