@@ -1,4 +1,5 @@
 const {activeLicense}=require('./portal-license-access');
+const { decodeMlMessageJson, shouldRepairMessageText } = require('./atendimento-encoding');
 // Primeira etapa do módulo de atendimento: equipe, escopo por licença e permissões.
 // As conversas/mensagens serão adicionadas nas próximas etapas usando o mesmo escopo.
 module.exports = function registerAtendimentoRoutes(app, { supabase, jwt, bcrypt }) {
@@ -395,7 +396,12 @@ module.exports = function registerAtendimentoRoutes(app, { supabase, jwt, bcrypt
   }
   async function mlRequest(accessToken, path, options = {}) {
     const response = await fetch('https://api.mercadolibre.com' + path, { ...options, headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/json', ...(options.headers || {}) } });
-    const body = await response.json().catch(() => ({}));
+    // Ler bytes das mensagens preserva acentos em respostas legadas Windows-1252.
+    // Para as demais APIs, manter o comportamento original.
+    const isMessagePayload = path.startsWith('/messages/packs/');
+    const body = isMessagePayload && typeof response.arrayBuffer === 'function'
+      ? await response.arrayBuffer().then(decodeMlMessageJson).catch(() => ({}))
+      : await response.json().catch(() => ({}));
     if (!response.ok) {
       const msg = body.message || body.error || `Mercado Livre respondeu HTTP ${response.status}`;
       const e = new Error(String(msg).slice(0, 450)); e.status = response.status; throw e;
@@ -682,6 +688,33 @@ module.exports = function registerAtendimentoRoutes(app, { supabase, jwt, bcrypt
       catch (e) { console.warn('Refresh messages failed:', e.message); }
       const { data, error } = await supabase.from('support_messages').select('id,external_message_id,sender_id,sender_role,text,status,attachments,raw,created_at').eq('license_id', conversation.license_id).eq('conversation_id', conversation.id).order('created_at', { ascending: true }).limit(500);
       if (error) throw error;
+      // Uma mensagem já persistida pode conter U+FFFD: o upsert com
+      // ignoreDuplicates não a repara. Substituir SOMENTE quando uma nova
+      // consulta ao Mercado Livre fornecer a mesma mensagem sem corrupção.
+      if (result?.payload?.messages?.length && data?.length) {
+        const freshMessages = new Map(
+          result.payload.messages.map(m => normalizeMlMessage(m, result.info.sellerId))
+            .map(m => [m.external_message_id, m.text])
+        );
+        for (const stored of data) {
+          const fresh = freshMessages.get(String(stored.external_message_id));
+          if (!shouldRepairMessageText(stored.text, fresh)) continue;
+          try {
+            const { error: repairError } = await supabase.from('support_messages')
+              .update({ text: fresh })
+              .eq('id', stored.id)
+              .eq('license_id', conversation.license_id)
+              .eq('conversation_id', conversation.id)
+              .eq('text', stored.text);
+            if (repairError) throw repairError;
+            stored.text = fresh;
+          } catch (repairError) {
+            console.warn('Repair of legacy message text unavailable:', repairError.code || 'database');
+            // A renderização ainda pode usar o texto íntegro retornado pelo ML.
+            stored.text = fresh;
+          }
+        }
+      }
       // Abrir a conversa marca como visualizadas, para TODA a equipe, apenas
       // as mensagens de comprador efetivamente retornadas nesta consulta.
       const newestBuyer = (data || []).filter(m => m.sender_role === 'buyer').reduce((latest, m) => {
