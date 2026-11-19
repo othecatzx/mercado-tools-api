@@ -29,3 +29,12 @@
 @media(max-width:620px){.mlsh-bulk-tools{padding:15px}.mlsh-tool-card{padding:14px}}
 
 .mlsh-bulk-tools [hidden]{display:none!important}
+
+/* Cada ferramenta agora possui sua própria página e menu. */
+.mlsh-bulk-tools[data-tool="clone"] .mlsh-tool-card:nth-child(2),
+.mlsh-bulk-tools[data-tool="dimensions"] .mlsh-tool-card:nth-child(1){display:none!important}
+.mlsh-bulk-tools .mlsh-tools-grid{grid-template-columns:minmax(0,1fr);max-width:900px}
+.mlsh-bulk-tools textarea{display:block;width:100%;min-height:128px;padding:12px;background:var(--panel,#fff);color:var(--ink,#14213d);border:1px solid var(--line,#dce4ef);border-radius:10px;font:13px/1.5 ui-monospace,monospace;resize:vertical}
+.mlsh-bulk-tools .mlsh-tools-note{padding:10px;border-radius:9px;background:rgba(252,163,17,.08);border:1px solid rgba(252,163,17,.2)}
+.mlsh-bulk-tools .mlsh-tools-error{color:#b94d37}
+.mlsh-bulk-tools .mlsh-tools-item:has(input:focus-visible){outline:2px solid #fca311}

@@ -50,7 +50,8 @@ function prepareClone(item,stock,title){
 }
 module.exports={validItem,validCategory,validDims,packageAttributes,buildDimensionUpdate,prepareClone,
  register(app,{authPortalOrAgent,scopedMenuAllowed,getShippingAccounts,ensureMlToken,shippingFreeFetchItem}){
- const guard = (req,res,next)=>scopedMenuAllowed(req,'bulk-editor')?next():res.status(403).json({ok:false,message:'Sem permissão para Ações em massa.'});
+ const gate = name => (req,res,next)=>scopedMenuAllowed(req,name)?next():res.status(403).json({ok:false,message:'Permissão não liberada para esta ferramenta.'});
+ const guardAccounts = (req,res,next)=>(scopedMenuAllowed(req,'clone-listings')||scopedMenuAllowed(req,'bulk-dimensions'))?next():res.status(403).json({ok:false,message:'Sem permissão para consultar contas.'});
  async function ml(token,path,method='GET',body){
   const r=await fetch(API+path,{method,headers:{Authorization:'Bearer '+token,Accept:'application/json',...(body?{'Content-Type':'application/json'}:{})},...(body?{body:JSON.stringify(body)}:{})});
   const data=await r.json().catch(()=>({}));
@@ -62,13 +63,13 @@ module.exports={validItem,validCategory,validDims,packageAttributes,buildDimensi
   if(matches.length!==1)throw new Error('Selecione uma conta conectada e autorizada.');
   return matches[0];
  }
- app.get('/api/portal/bulk-tools/accounts',authPortalOrAgent,guard,async(req,res)=>{
+ app.get('/api/portal/bulk-tools/accounts',authPortalOrAgent,guardAccounts,async(req,res)=>{
   try{
    const accounts=await getShippingAccounts(req);
    res.json({ok:true,accounts:accounts.map(a=>({ml_user_id:String(a.ml_user_id),company_id:a.company_id,name:a.nickname||a.company_name,company_name:a.company_name}))});
   }catch(e){res.status(500).json({ok:false,message:'Não foi possível carregar as contas.'})}
  });
- app.post('/api/portal/bulk-tools/clone/preview',authPortalOrAgent,guard,async(req,res)=>{
+ app.post('/api/portal/bulk-tools/clone/preview',authPortalOrAgent,gate('clone-listings'),async(req,res)=>{
   try{
    const id=String(req.body?.item_id||'').toUpperCase().trim();
    if(!validItem(id))return res.status(400).json({ok:false,message:'Informe um MLB válido.'});
@@ -87,7 +88,7 @@ module.exports={validItem,validCategory,validDims,packageAttributes,buildDimensi
     warning:'Confirmar poderá publicar imediatamente um anúncio ativo com o estoque informado. Revise preço, fotos e condições antes de confirmar.'}});
   }catch(e){res.status(400).json({ok:false,message:e.message})}
  });
- app.post('/api/portal/bulk-tools/clone/apply',authPortalOrAgent,guard,async(req,res)=>{
+ app.post('/api/portal/bulk-tools/clone/apply',authPortalOrAgent,gate('clone-listings'),async(req,res)=>{
   try{
    if(req.body?.confirm!==true)return res.status(400).json({ok:false,message:'Confirmação obrigatória.'});
    const id=String(req.body?.item_id||'').toUpperCase().trim();
@@ -112,7 +113,7 @@ module.exports={validItem,validCategory,validDims,packageAttributes,buildDimensi
     message:'Anúncio criado. Confira os atributos e as condições de publicação no Mercado Livre.'});
   }catch(e){res.status(400).json({ok:false,message:e.message})}
  });
- app.post('/api/portal/bulk-tools/dimensions/preview',authPortalOrAgent,guard,async(req,res)=>{
+ app.post('/api/portal/bulk-tools/dimensions/preview',authPortalOrAgent,gate('bulk-dimensions'),async(req,res)=>{
   try{
    const category=String(req.body?.category_id||'').toUpperCase().trim();
    if(!validCategory(category))return res.status(400).json({ok:false,message:'Categoria MLB inválida.'});
@@ -142,7 +143,7 @@ module.exports={validItem,validCategory,validDims,packageAttributes,buildDimensi
    res.json({ok:true,category_id:category,account_name:account.nickname||account.company_name,items,skipped,limitReached:ids.length===limit});
   }catch(e){res.status(400).json({ok:false,message:e.message})}
  });
- app.post('/api/portal/bulk-tools/dimensions/apply',authPortalOrAgent,guard,async(req,res)=>{
+ app.post('/api/portal/bulk-tools/dimensions/apply',authPortalOrAgent,gate('bulk-dimensions'),async(req,res)=>{
   try{
    if(req.body?.confirm!==true)return res.status(400).json({ok:false,message:'Confirmação obrigatória.'});
    const category=String(req.body?.category_id||'').toUpperCase().trim();

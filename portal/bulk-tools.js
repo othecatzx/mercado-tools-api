@@ -3,17 +3,17 @@
 'use strict';
 const q=id=>document.getElementById(id);
 const state={clone:null,dimensions:null};
-function markup(){
+function markup(mode){
  return [
-'<section class="mlsh-bulk-tools"><div class="mlsh-tools-head"><div><span>FERRAMENTAS MERCADO LIVRE</span><h3>Clonagem e dimensões</h3><p>Confira os dados antes de criar anúncios ou atualizar medidas.</p></div></div>',
+'<section class="mlsh-bulk-tools" data-tool="'+(mode||'clone')+'"><div class="mlsh-tools-head"><div><span>FERRAMENTAS MERCADO LIVRE</span><h3>'+ (mode==='clone'?'Clonagem entre contas':'Dimensões por categoria') +'</h3><p>'+ (mode==='clone'?'Revise os anúncios antes de publicar na conta de destino.':'Defina medidas reais e selecione os anúncios por categoria.') +'</p></div></div>',
 '<div class="mlsh-tools-grid"><section class="mlsh-tool-card"><h4>⧉ Clonar anúncio entre contas</h4><p>Uma nova publicação na conta de destino após confirmação.</p>',
 '<label>Conta de origem<select id="mlbtSource"><option value="">Carregando contas...</option></select></label>',
 '<label>Conta de destino<select id="mlbtTarget"><option value="">Carregando contas...</option></select></label>',
-'<label>MLB de origem<input id="mlbtItem" placeholder="MLB123456789" autocomplete="off"></label>',
-'<label>Novo título (opcional)<input id="mlbtTitle" maxlength="60" placeholder="Manter título original"></label>',
+'<label>MLBs de origem (até 20 por lote)<textarea id="mlbtItem" rows="6" placeholder="MLB123456789&#10;MLB987654321" spellcheck="false"></textarea></label>',
+'<p class="mlsh-tools-note">Os anúncios manterão seus títulos originais. Escolha quais serão publicados após a prévia.</p>',
 '<label>Estoque inicial<input id="mlbtStock" type="number" min="1" max="99999" value="1"></label>',
 '<button type="button" id="mlbtClonePreview" class="btn btn-primary">Consultar e revisar</button>',
-'<div id="mlbtCloneStatus" class="mlsh-tools-status" aria-live="polite"></div>',
+'<div id="mlbtCloneStatus" class="mlsh-tools-status" aria-live="polite"></div><div id="mlbtCloneList" class="mlsh-tools-selection" hidden></div>',
 '<label class="mlsh-tools-confirm" id="mlbtCloneConsentWrap" hidden><input type="checkbox" id="mlbtCloneConsent"> Confirmo a criação do anúncio na conta de destino.</label>',
 '<button type="button" id="mlbtCloneApply" class="btn btn-primary" hidden disabled>Confirmar clonagem</button></section>',
 '<section class="mlsh-tool-card"><h4>▣ Dimensões em massa por categoria</h4><p>Defina as dimensões da embalagem real. Não inclui anúncios Full.</p>',
@@ -58,9 +58,9 @@ function init(config){
    if((response.accounts||[]).length<2)setStatus('mlbtCloneStatus','Conecte duas contas Mercado Livre para clonar.');
   }catch(e){setStatus('mlbtCloneStatus',e.message,true);setStatus('mlbtDimStatus',e.message,true)}
  })();
- const cloneReq=()=>({source_id:value('mlbtSource'),target_id:value('mlbtTarget'),item_id:value('mlbtItem').toUpperCase(),title:value('mlbtTitle'),stock:Number(value('mlbtStock'))});
+ const cloneReq=()=>({source_id:value('mlbtSource'),target_id:value('mlbtTarget'),item_id:value('mlbtItem').toUpperCase(),stock:Number(value('mlbtStock'))});
  const dimReq=()=>({account_id:value('mlbtDimAccount'),category_id:value('mlbtCategory').toUpperCase(),dimensions:{height:Number(value('mlbtHeight')),width:Number(value('mlbtWidth')),length:Number(value('mlbtLength')),weight:Number(value('mlbtWeight'))}});
- for(const id of ['mlbtSource','mlbtTarget','mlbtItem','mlbtTitle','mlbtStock'])q(id).addEventListener('input',resetClone);
+ for(const id of ['mlbtSource','mlbtTarget','mlbtItem','mlbtStock'])q(id).addEventListener('input',resetClone);
  for(const id of ['mlbtDimAccount','mlbtCategory','mlbtHeight','mlbtWidth','mlbtLength','mlbtWeight','mlbtLimit'])q(id).addEventListener('input',resetDim);
  q('mlbtCloneConsent').onchange=()=>q('mlbtCloneApply').disabled=!q('mlbtCloneConsent').checked;
  q('mlbtDimConsent').onchange=()=>q('mlbtDimApply').disabled=!q('mlbtDimConsent').checked;

@@ -11,6 +11,8 @@
     'operational-report':'<path d="M8 3h8l4 4v14H4V3h4Z"/><path d="M16 3v5h4M8 12h8M8 16h8"/>',
     shipping:'<rect x="2" y="7" width="12" height="10" rx="1"/><path d="M14 10h4l4 4v3h-8"/><circle cx="6" cy="18" r="2"/><circle cx="18" cy="18" r="2"/>',
     'bulk-editor':'<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/>',
+    'clone-listings':'<rect x="3" y="3" width="12" height="12" rx="2"/><path d="M8 8h12a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H10a2 2 0 0 1-2-2V8Z"/>',
+    'bulk-dimensions':'<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M7 7h10M7 12h10M7 17h10M10 5v4M16 10v4"/>',
     'shipping-free':'<path d="M4 7h10v10H4zM14 10h4l3 4v3h-7"/><circle cx="8" cy="18" r="2"/><circle cx="18" cy="18" r="2"/><path d="m7 12 2 2 3-4"/>',
     automations:'<rect x="4" y="7" width="16" height="13" rx="3"/><path d="M12 3v4M9 3h6"/><circle cx="9" cy="13" r="1"/><circle cx="15" cy="13" r="1"/><path d="M9 17h6"/>',
     codes:'<path d="M4 5v14M7 5v14M10 5v14M14 5v14M17 5v14M20 5v14" stroke-dasharray="3 2"/><path d="M3 3h18v18H3z"/>',

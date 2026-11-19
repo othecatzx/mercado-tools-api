@@ -43,17 +43,30 @@ for(const ep of ['/api/portal/bulk-tools/accounts','/api/portal/bulk-tools/clone
 const ui=fs.readFileSync(path.join(root,'portal','bulk-tools.js'),'utf8');
 const ctx={window:{},document:{}};
 vm.runInNewContext(ui,ctx);
-const html=ctx.window.mlshBulkTools.markup();
+const html=ctx.window.mlshBulkTools.markup('clone');
+assert.match(html,/data-tool="clone"/);
+assert.match(ctx.window.mlshBulkTools.markup('dimensions'),/data-tool="dimensions"/);
 for(const id of ['mlbtSource','mlbtTarget','mlbtClonePreview','mlbtCloneConsent','mlbtDimAccount','mlbtCategory','mlbtDimPreview','mlbtDimConsent'])
  assert.ok(html.includes('id="'+id+'"'),id);
 assert.ok(html.includes('Confirmo a criação'));
 assert.ok(html.includes('Confirmo as medidas'));
 assert.ok(!html.includes('Copiar diagnóstico'));
 const bulk=fs.readFileSync(path.join(root,'portal','bulk-editor.js'),'utf8');
-assert.match(bulk,/mlshBulkTools\?\.markup\(\)/);
-assert.match(bulk,/mlshBulkTools\?\.init\(\{api\}\)/);
+assert.doesNotMatch(bulk,/mlshBulkTools\?\.markup\(\)/);
+assert.doesNotMatch(bulk,/mlshBulkTools\?\.init\(\{api\}\)/);
 const portal=fs.readFileSync(path.join(root,'portal','index.html'),'utf8');
 assert.ok(portal.indexOf('bulk-tools.js')<portal.indexOf('bulk-editor.js'));
+assert.match(portal,/case'clone-listings'/);
+assert.match(portal,/case'bulk-dimensions'/);
+assert.match(portal,/mlshCloneBatch\.init\(\{api\}\)/);
+assert.match(portal,/data-page="clone-listings"/);
+assert.match(portal,/data-page="bulk-dimensions"/);
+const batch=fs.readFileSync(path.join(root,'portal','bulk-clone-batch.js'),'utf8');
+assert.match(batch,/items\.length>20/);
+assert.match(batch,/\.split\(\/\[\\s,;\]\+\//);
+assert.match(batch,/\.mlbtBatchSelected:checked/);
+assert.match(batch,/confirm:true/);
+assert.match(batch,/não repita|não repetir|não repetir|verifique/i);
 assert.match(portal,/bulk-tools\.css/);
 console.log('PASS: validation, clone payload, seller package dimensions, permissions, confirmation UI, integration');
 
@@ -98,3 +111,15 @@ console.log('PASS: validation, clone payload, seller package dimensions, permiss
  }finally{global.fetch=previousFetch}
  console.log('PASS: clone preview read-only, target publication requires consent, dimension write requires consent');
 })().catch(e=>{console.error(e);process.exitCode=1});
+
+const separated={};
+tools.register({get(route,...handlers){separated[route]=handlers},post(route,...handlers){separated[route]=handlers}},
+ {authPortalOrAgent:auth,scopedMenuAllowed:(_,menu)=>menu==='clone-listings',
+ getShippingAccounts:async()=>[],ensureMlToken:async()=>'',shippingFreeFetchItem:async()=>({})});
+let granted=false,blockedCode=0;
+separated['/api/portal/bulk-tools/clone/preview'][1]({}, {status(n){blockedCode=n;return this},json(){}},()=>{granted=true});
+assert.equal(granted,true,'clone permission independently granted');
+separated['/api/portal/bulk-tools/dimensions/apply'][1]({}, {status(n){blockedCode=n;return this},json(){}},()=>{throw Error('dimension escalation')});
+assert.equal(blockedCode,403,'dimension permission independent of cloning');
+const attendance=fs.readFileSync(path.join(root,'atendimento.routes.js'),'utf8');
+assert.match(attendance,/menuKeys = new Set\(\[[^\]]*'clone-listings'[^\]]*'bulk-dimensions'/);
