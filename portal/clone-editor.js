@@ -5,7 +5,7 @@ const html=[
 '<div class="mlbt-modal-card" role="dialog" aria-modal="true" aria-labelledby="mlbtEditHeading">',
 '<div class="mlbt-modal-header"><div><span class="mlbt-kicker">ML SH SUPPORT · CLONAGEM</span><h3 id="mlbtEditHeading">Editar anúncio</h3><p id="mlbtEditSub">As alterações serão feitas apenas na cópia.</p></div><button type="button" id="mlbtEditClose" aria-label="Fechar">✕</button></div>',
 '<div class="mlbt-modal-body"><div id="mlbtEditHint" class="mlbt-edit-hint">Nenhum dado do anúncio original será modificado.</div>',
-'<div class="mlbt-edit-grid"><label><span id="mlbtEditNameLabel">Título do anúncio</span><input id="mlbtEditName" maxlength="60"><small id="mlbtEditNameHelp">Até 60 caracteres.</small></label>',
+'<div class="mlbt-edit-grid"><label><span id="mlbtEditNameLabel">Título do anúncio</span><input id="mlbtEditName" maxlength="60"><small style="display:flex;justify-content:space-between;gap:12px;align-items:center"><span id="mlbtEditNameHelp">Até 60 caracteres.</span><span id="mlbtEditNameCount" aria-live="polite" style="white-space:nowrap;font-weight:700;color:#fca311">0/60</span></small></label>',
 '<label>Preço no destino (R$)<input id="mlbtEditPrice" type="number" min="0.01" max="100000000" step="0.01"><small>O preço original não é alterado.</small></label></div>',
 '<div class="mlbt-edit-section"><div><h4>Fotos</h4><p>Reorganize pelas setas, remova ou envie JPG, PNG e WebP. A primeira imagem é a capa.</p></div><span id="mlbtEditPhotoCount">0 / 12</span></div>',
 '<div id="mlbtEditPhotos" class="mlbt-edit-photos"></div>',
@@ -41,6 +41,8 @@ async function convertWebp(file){
 async function open({api,item_id,source_id,target_id,previous,onSave}){
  const overlay=ensure(),title=$('mlbtEditName'),price=$('mlbtEditPrice');
  const desc=$('mlbtEditDescription'),save=$('mlbtEditSave');
+ const updateNameCount=()=>{$('mlbtEditNameCount').textContent=Array.from(title.value).length+'/60'};
+ title.oninput=updateNameCount;
  let pictures=[],original=null,busy=false,closed=false,familyPreview=false;
  const focusBack=document.activeElement;
  const status=(msg,error=false)=>{const el=$('mlbtEditStatus');el.textContent=msg||'';el.dataset.error=String(error)};
@@ -75,7 +77,7 @@ async function open({api,item_id,source_id,target_id,previous,onSave}){
   $('mlbtEditNameLabel').textContent=familyMode?'Novo nome da família':'Novo título';
   $('mlbtEditNameHelp').textContent=familyMode?'O Mercado Livre gera o título a partir da família e dos atributos.':'Até 60 caracteres.';
   $('mlbtEditHint').textContent=familyPreview?'Família User Products: será criado um MLB por opção. Você pode alterar nome da família, preço e descrição. As fotos originais serão preservadas individualmente para cada opção; edição global de fotos não está disponível neste fluxo.':data.clone_type==='catalog'?'Anúncio de catálogo: algumas alterações podem ser limitadas. Descrição gerenciada pelo catálogo.':data.variations_count?'Anúncio com '+data.variations_count+' variação(ões): mantenha as fotos vinculadas às opções (cor/tamanho). Remover fotos de uma variação impede a validação.':'Alterações exclusivas do novo anúncio. Não modifica a origem.';
-  title.value=familyMode?(data.title||data.family_name||''):(data.title||'');price.value=String(data.price||'');
+  title.value=familyMode?(data.title||data.family_name||''):(data.title||'');updateNameCount();price.value=String(data.price||'');
   $('mlbtEditFiles').disabled=familyPreview;
   $('mlbtEditAddUrl').disabled=familyPreview;
   $('mlbtEditPhotos').dataset.readonly=String(familyPreview);

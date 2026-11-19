@@ -5,7 +5,7 @@ const q=id=>document.getElementById(id);
 function init({api}){
  const root=document.querySelector('.mlsh-bulk-tools[data-tool="clone"]');
  if(!root||typeof api!=='function')return;
- const preview=q('mlbtClonePreview'),apply=q('mlbtCloneApply'),list=q('mlbtCloneList');
+ const preview=q('mlbtClonePreview'),apply=q('mlbtCloneApply'),list=q('mlbtCloneList'),clear=q('mlbtCloneClear');
  const consent=q('mlbtCloneConsent'),consentLine=q('mlbtCloneConsentWrap');
  let approved=null,running=false;
  const edits=new Map(),previews=new Map();
@@ -16,9 +16,11 @@ function init({api}){
  const reset=()=>{
    if(running)return;
    approved=null;edits.clear();previews.clear();list.replaceChildren();list.hidden=true;
+   if(clear)clear.hidden=true;
    consent.checked=false;consentLine.hidden=true;apply.hidden=true;apply.disabled=true;
    text('');
  };
+ if(clear)clear.onclick=()=>{if(running)return;reset()};
  ['mlbtSource','mlbtTarget','mlbtItem','mlbtStock'].forEach(id=>q(id)?.addEventListener('input',reset));
  const current=()=>({
    source_id:q('mlbtSource').value,
@@ -40,7 +42,7 @@ function init({api}){
    const editButton=document.createElement('button');editButton.type='button';editButton.className='mlbt-result-edit';editButton.textContent='✎ Editar anúncio';
    editButton.onclick=()=>openEditor(title);
    row.append(editButton);list.append(row);
-   list.hidden=false;
+   list.hidden=false;if(clear)clear.hidden=false;
  }
  function updateApproved(){
   const eligible=[...previews.entries()].map(([item_id,p])=>({
