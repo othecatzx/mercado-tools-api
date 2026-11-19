@@ -813,6 +813,11 @@ const codes = [...companies.entries()].map(([companyId, company]) => {
     }catch(e){res.status(500).json({ok:false,message:e.message})}
   });
 
+  // Clonagem entre contas e dimensões por categoria — mesma permissão do editor em massa.
+  require('./ml-bulk-tools').register(app, {
+    authPortalOrAgent, scopedMenuAllowed, getShippingAccounts, ensureMlToken, shippingFreeFetchItem
+  });
+
   // Vendas reais das contas do Mercado Livre conectadas às empresas licenciadas.
   const portalSalesHandler = async (req, res) => {
     try {
