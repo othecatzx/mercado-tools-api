@@ -41,7 +41,7 @@ async function convertWebp(file){
 async function open({api,item_id,source_id,target_id,previous,onSave}){
  const overlay=ensure(),title=$('mlbtEditName'),price=$('mlbtEditPrice');
  const desc=$('mlbtEditDescription'),save=$('mlbtEditSave');
- let pictures=[],original=null,busy=false,closed=false;
+ let pictures=[],original=null,busy=false,closed=false,familyPreview=false;
  const focusBack=document.activeElement;
  const status=(msg,error=false)=>{const el=$('mlbtEditStatus');el.textContent=msg||'';el.dataset.error=String(error)};
  const close=()=>{if(busy)return;closed=true;overlay.hidden=true;focusBack?.focus?.()};
@@ -64,17 +64,21 @@ async function open({api,item_id,source_id,target_id,previous,onSave}){
    ];
    actions.forEach(([label,disabled,fn])=>{
     const button=document.createElement('button');button.type='button';button.textContent=label;
-    button.disabled=disabled;button.onclick=fn;controls.append(button);
+    button.disabled=disabled||familyPreview;button.onclick=fn;controls.append(button);
    });
    tile.append(controls);root.append(tile);
   });
  }
  function fill(data){
-  const familyMode=data.clone_type==='user_product'||!!data.family_name;
+  familyPreview=data.clone_type==='user_product_family';
+  const familyMode=familyPreview||data.clone_type==='user_product'||!!data.family_name;
   $('mlbtEditNameLabel').textContent=familyMode?'Novo nome da família':'Novo título';
   $('mlbtEditNameHelp').textContent=familyMode?'O Mercado Livre gera o título a partir da família e dos atributos.':'Até 60 caracteres.';
-  $('mlbtEditHint').textContent=data.clone_type==='catalog'?'Anúncio de catálogo: algumas alterações podem ser limitadas. Descrição gerenciada pelo catálogo.':data.variations_count?'Anúncio com '+data.variations_count+' variação(ões): mantenha as fotos vinculadas às opções (cor/tamanho). Remover fotos de uma variação impede a validação.':'Alterações exclusivas do novo anúncio. Não modifica a origem.';
-  title.value=familyMode?(data.family_name||data.title||''):(data.title||'');price.value=String(data.price||'');
+  $('mlbtEditHint').textContent=familyPreview?'Família User Products: será criado um MLB por opção. Você pode alterar nome da família, preço e descrição. As fotos originais serão preservadas individualmente para cada opção; edição global de fotos não está disponível neste fluxo.':data.clone_type==='catalog'?'Anúncio de catálogo: algumas alterações podem ser limitadas. Descrição gerenciada pelo catálogo.':data.variations_count?'Anúncio com '+data.variations_count+' variação(ões): mantenha as fotos vinculadas às opções (cor/tamanho). Remover fotos de uma variação impede a validação.':'Alterações exclusivas do novo anúncio. Não modifica a origem.';
+  title.value=familyMode?(data.title||data.family_name||''):(data.title||'');price.value=String(data.price||'');
+  $('mlbtEditFiles').disabled=familyPreview;
+  $('mlbtEditAddUrl').disabled=familyPreview;
+  $('mlbtEditPhotos').dataset.readonly=String(familyPreview);
   desc.disabled=data.clone_type==='catalog';
   desc.value=data.description_text||'';$('mlbtEditChars').textContent=desc.value.length+' / 50.000';
   pictures=(Array.isArray(data.pictures)?data.pictures:[]).map(x=>({...x}));renderPictures();
@@ -82,7 +86,8 @@ async function open({api,item_id,source_id,target_id,previous,onSave}){
  try{
   const loaded=await api('/api/portal/bulk-tools/clone/source?source_id='+encodeURIComponent(source_id)+'&item_id='+encodeURIComponent(item_id));
   if(closed)return;
-  original={...loaded,clone_type:previous?.clone_type||'standard'};
+  original={...loaded,clone_type:previous?.clone_type||loaded.clone_type||'standard'};
+  if(original.clone_type==='user_product_family'&&!previous?.title)original.title=loaded.family_name||loaded.title;
   if(previous){for(const key of ['title','price','description_text','clone_type','variations_count'])if(Object.prototype.hasOwnProperty.call(previous,key))original[key]=previous[key];
    if(Array.isArray(previous.pictures))original.pictures=previous.pictures;}
   fill(original);
@@ -92,6 +97,7 @@ async function open({api,item_id,source_id,target_id,previous,onSave}){
  $('mlbtEditReset').onclick=()=>{if(busy)return;fill(original);status('Dados restaurados.')};
  desc.oninput=()=>$('mlbtEditChars').textContent=desc.value.length+' / 50.000';
  $('mlbtEditAddUrl').onclick=()=>{
+  if(familyPreview){status('Fotos devem ser preservadas por opção na família User Products.',true);return}
   const input=$('mlbtEditUrl'),url=input.value.trim();
   if(!/^https:\/\/\S+$/i.test(url)||url.length>2000){status('Informe uma URL HTTPS válida.',true);return}
   if(pictures.length>=12){status('Máximo de 12 fotos.',true);return}
@@ -121,12 +127,12 @@ async function open({api,item_id,source_id,target_id,previous,onSave}){
   const name=title.value.trim(),newPrice=Number(price.value);
   if(!name||name.length>60){status('Informe o título ou nome da família com até 60 caracteres.',true);return}
   if(!Number.isFinite(newPrice)||newPrice<=0||newPrice>100000000){status('Preço inválido.',true);return}
-  if(!pictures.length||pictures.length>12){status('É necessário manter entre 1 e 12 fotos.',true);return}
+  if(!familyPreview&&(!pictures.length||pictures.length>12)){status('É necessário manter entre 1 e 12 fotos.',true);return}
   busy=true;save.disabled=true;save.textContent='Validando...';
   try{
    await onSave({title:name,price:newPrice,
     ...(desc.disabled?{}:{description_text:desc.value}),
-    pictures:pictures.map(p=>p.id?{id:p.id}:{source:p.source})});
+    ...(familyPreview?{}:{pictures:pictures.map(p=>p.id?{id:p.id}:{source:p.source})})});
    busy=false;close();
   }catch(error){status('Não foi possível salvar: '+error.message,true)}
   finally{busy=false;save.disabled=false;save.textContent='Salvar e validar'}

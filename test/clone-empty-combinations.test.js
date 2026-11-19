@@ -65,7 +65,7 @@ async function request(body){
   };
   result=await request({source_id:'271180532',target_id:'220712533',item_id:'MLB1209378674',stock:2});
   assert.equal(result.status,400);
-  assert.match(result.response.message,/User Products/);
+  assert.match(result.response.message,/User Product/);
   assert.equal(calls.some(x=>x.url.endsWith('/items/validate')),false,'unresolved User Products blocked');
   console.log('PASS: single technical variant flattened; multiple source variants enriched by category-allowed attributes; unresolved UP blocked');
  }finally{global.fetch=previous}

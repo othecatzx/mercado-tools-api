@@ -45,14 +45,15 @@ function init({api}){
  function updateApproved(){
   const eligible=[...previews.entries()].map(([item_id,p])=>({
    item_id,catalog_product_id:p.catalog_product_id||null,
-   family_name:p.family_name||null
+   family_name:p.family_name||null,
+   publication_count:p.publication_count||1
   }));
   approved=eligible.length?{...current(),eligible}:null;
   consent.checked=false;consentLine.hidden=!eligible.length;
   apply.hidden=!eligible.length;apply.disabled=true;
  }
  function previewDescription(id,p){
-  const kind=p.clone_type==='user_product'?'Família: '+p.family_name:
+  const kind=p.clone_type==='user_product_family'?'Família UP: '+p.family_name+' ('+p.publication_count+' anúncios novos)':p.clone_type==='user_product'?'Família: '+p.family_name:
     p.clone_type==='catalog'?'Catálogo: '+p.catalog_product_id:'Anúncio independente';
   const selected=edits.get(id);
   const marked=selected?' · Personalizado':'';
@@ -118,11 +119,11 @@ function init({api}){
          });
          if(!root.isConnected)return;
          const p=data.preview;
-         eligible.push({item_id,catalog_product_id:p.catalog_product_id||null,family_name:p.family_name||null});
+         eligible.push({item_id,catalog_product_id:p.catalog_product_id||null,family_name:p.family_name||null,publication_count:p.publication_count||1});
          previews.set(item_id,p);
          const kind=p.clone_type==='catalog'
            ?'CATÁLOGO '+p.catalog_product_id+' · Confirme que é exatamente o mesmo produto'
-           :p.clone_type==='user_product'?'FAMÍLIA '+p.family_name+' · Título gerado pelo Mercado Livre':'Anúncio independente';
+           :p.clone_type==='user_product_family'?'FAMÍLIA USER PRODUCTS '+p.family_name+' · '+p.publication_count+' anúncios novos':p.clone_type==='user_product'?'FAMÍLIA '+p.family_name+' · Título gerado pelo Mercado Livre':'Anúncio independente';
          const variantCount=p.variations_count||0;
          const variantLabels=(p.variations_summary||[]).slice(0,6).map(v=>v.attributes+(v.sku?' ['+v.sku+']':'')).join('; ');
          const variantText=variantCount?' · '+variantCount+' variação(ões), estoque '+request.stock+' por variação'+(variantLabels?' · '+variantLabels:'')+(variantCount>6?' e mais '+(variantCount-6):''):'';
@@ -159,9 +160,11 @@ function init({api}){
    const request=approved;approved=null;
    const expectedCatalog=new Map(request.eligible.map(x=>[x.item_id,x.catalog_product_id]));
    const expectedFamily=new Map(request.eligible.map(x=>[x.item_id,x.family_name]));
+   const expectedCount=new Map(request.eligible.map(x=>[x.item_id,x.publication_count||1]));
    const batchEdits=new Map(edits);
    running=true;preview.disabled=true;apply.disabled=true;
    const successful=[],errors=[];
+   let createdCount=0;
    list.replaceChildren();list.hidden=false;
    // Falhas de rede são ambíguas; não repetir automaticamente uma publicação.
    try{
@@ -173,22 +176,33 @@ function init({api}){
              source_id:request.source_id,target_id:request.target_id,stock:request.stock,
              ...(batchEdits.get(item_id)||{}),
              item_id,expected_catalog_product_id:expectedCatalog.get(item_id)||null,
-             expected_family_name:expectedFamily.get(item_id)||null,confirm:true
+             expected_family_name:expectedFamily.get(item_id)||null,
+             expected_publication_count:expectedCount.get(item_id)||1,confirm:true
            })
          });
          if(!root.isConnected)return;
-         successful.push({item_id,new_id:String(result.created_id||''),description:result.description_status||''});
-         addResult(item_id,'Criado: '+item_id+' → '+result.created_id+' · Descrição: '+result.description_status,false);
+         const created=Array.isArray(result.created_ids)?result.created_ids:null;
+         const createdText=created?created.map(v=>v.id+' ('+v.label+')').join(' · '):String(result.created_id||'');
+         if(result.partial||result.ok===false){
+          createdCount+=created?.length||0;
+          errors.push({item_id,error:(result.issues||[]).join(' | ')});
+          addResult(item_id,'CLONAGEM PARCIAL: '+item_id+' · MLBs confirmados: '+(createdText||'nenhum')+' · '+(result.issues||[]).join(' | ')+'. Verifique o destino antes de repetir.',false,true);
+          // Um erro de família pode ter criado um ou mais anúncios; parar o lote.
+          break;
+         }
+         createdCount+=created?.length||1;
+         successful.push({item_id,new_id:createdText,description:result.description_status||''});
+         addResult(item_id,'Criado: '+item_id+' → '+createdText+' · Descrição: '+result.description_status,false);
        }catch(error){
          if(!root.isConnected)return;
          errors.push({item_id,error:String(error?.message||error)});
          addResult(item_id,'Verificar manualmente: '+item_id+' · '+String(error?.message||error),false,true);
        }
        if(!root.isConnected)return;
-       text(successful.length+' criado(s), '+errors.length+' falha(s), '+(selected.length-index-1)+' restante(s).',errors.length>0);
+       text(createdCount+' MLB(s) criado(s), '+errors.length+' falha(s), '+(selected.length-index-1)+' restante(s).',errors.length>0);
      }
      if(root.isConnected){
-       text(successful.length+' anúncio(s) criado(s), '+errors.length+' falha(s). Antes de repetir qualquer falha, verifique se o anúncio já foi criado na conta de destino.',errors.length>0);
+       text(createdCount+' anúncio(s) criado(s), '+errors.length+' falha(s). Antes de repetir qualquer falha, verifique se o anúncio já foi criado na conta de destino.',errors.length>0);
        consent.checked=false;consentLine.hidden=true;apply.hidden=true;
      }
    }finally{

@@ -379,6 +379,9 @@ module.exports={validItem,normalizeItemId,validCategory,validDims,packageAttribu
   // Nunca usar id da variação do vendedor original na publicação nova.
   for(const v of variations){
    if(cloneVariationAttributes(v.attribute_combinations).length){fresh.push(v);continue}
+   // UP ja identifica a variante: /items/{id}/variations/{id} e um endpoint legado.
+   // Evitar depender dele quando o Mercado Livre ja retornou o User Product.
+   if(/^ML[A-Z]U\d+$/i.test(String(v.user_product_id||''))){fresh.push(v);continue}
    if(!v.id)throw new Error('Há múltiplas variações sem identificadores; a origem não disponibilizou as opções.');
    try{
     const full=await ml(token,'/items/'+encodeURIComponent(item.id||'')+'/variations/'+encodeURIComponent(v.id));
@@ -387,6 +390,11 @@ module.exports={validItem,normalizeItemId,validCategory,validDims,packageAttribu
     throw new Error('Não foi possível consultar os detalhes da variação '+String(v.id)+': '+e.message);
    }
   }
+  // Quando a origem é uma família UP, a publicação nova deve ser
+  // composta por itens independentes, mesmo que o modelo legado contenha
+  // atributos adicionais recuperáveis pela API.
+  if(fresh.length>1&&fresh.every(v=>/^ML[A-Z]U\d+$/i.test(String(v.user_product_id||''))))
+   return {...item,variations:fresh,_cloneUserProductFamily:true};
   // Apenas atributos marcados como allow_variations pelo Mercado Livre
   // podem diferenciar combinações; jamais inferir de SKU ou posição.
   const needsMapping=fresh.some(v=>!cloneVariationAttributes(v.attribute_combinations).length);
@@ -405,12 +413,68 @@ module.exports={validItem,normalizeItemId,validCategory,validDims,packageAttribu
    }
   }
   if(fresh.some(v=>!cloneVariationAttributes(v.attribute_combinations).length)){
-   const userProducts=fresh.some(v=>!!v.user_product_id)||!!item.user_product_id;
-   throw new Error(userProducts
-    ?'Este anúncio usa variações do modelo User Products sem attribute_combinations. A API atual exige o fluxo de famílias de User Products para criar várias opções; não é seguro copiar como variações antigas.'
-    :'O anúncio possui várias variações sem atributo diferenciador disponível nos detalhes do Mercado Livre. Não foi possível identificar as opções sem inventar dados.');
+   const hasUserProducts=fresh.every(v=>/^ML[A-Z]U\d+$/i.test(String(v.user_product_id||'')));
+   if(!hasUserProducts)
+    throw new Error('Este anúncio possui várias opções sem atributos diferenciadores. Não foram fornecidos todos os IDs de User Products para consultar a família com segurança.');
+   return {...item,variations:fresh,_cloneUserProductFamily:true};
   }
   return {...item,variations:fresh};
+ }
+ // Na modalidade User Products cada variante é um item novo, e não uma
+ // entrada de variations. Não enviar IDs de UP/família do vendedor original.
+ async function prepareUserProductFamily(sourceToken,targetToken,targetId,item,stock,overrides){
+  const parts=item.variations||[];
+  if(!item._cloneUserProductFamily||parts.length<2||parts.length>30)
+   throw new Error('Família de User Products inválida ou com mais de 30 opções.');
+  const familyName=String(overrides?.title||item.family_name||item.title||'').trim();
+  if(!familyName||familyName.length>60)throw new Error('Nome de família obrigatório (máximo 60 caracteres).');
+  const copies=[],signatures=new Set();
+  for(let index=0;index<parts.length;index++){
+   const variation=parts[index];
+   const upId=String(variation.user_product_id||'');
+   if(!/^ML[A-Z]U\d+$/i.test(upId))throw new Error('A opção '+(index+1)+' não possui ID User Products válido.');
+   let up;
+   try{up=await ml(sourceToken,'/user-products/'+encodeURIComponent(upId))}
+   catch(e){throw new Error('Falha ao consultar User Product da opção '+(index+1)+': '+e.message)}
+   if(!Array.isArray(up.attributes)||!up.attributes.length)
+    throw new Error('A opção '+(index+1)+' não possui atributos disponíveis no User Product.');
+   const commonAttrs=new Map((item.attributes||[]).filter(a=>a?.id).map(a=>[a.id,a]));
+   const variantAttrs=[...(up.attributes||[]),...(variation.attributes||[])];
+   for(const attribute of variantAttrs)if(attribute?.id)commonAttrs.set(attribute.id,attribute);
+   // Assinatura pelas características específicas de cada UP, não pelo SKU.
+   const unique=cloneVariationAttributes([...commonAttrs.values()]).filter(a=>!['ITEM_CONDITION','SELLER_SKU','SKU','SELLER_CUSTOM_FIELD'].includes(a.id)&&!packageKeys.has(a.id));
+   const signature=unique.map(a=>a.id+':'+(a.value_id||a.value_name)).sort().join('|');
+   if(!signature||signatures.has(signature))
+    throw new Error('As opções '+(index+1)+' não possuem atributos únicos suficientes para publicação como itens separados.');
+   signatures.add(signature);
+   const photos=(up.pictures||[]).map(x=>x?.secure_url||x?.url)
+    .filter(x=>typeof x==='string'&&/^https:\/\//i.test(x));
+   if(!photos.length){
+    const indices=new Set((variation.picture_ids||[]).map(String));
+    for(const pic of item.pictures||[])if(indices.has(String(pic.id))){
+     const url=pic.secure_url||pic.url;
+     if(/^https:\/\//i.test(String(url)))photos.push(url);
+    }
+   }
+   if(!photos.length)throw new Error('Não foi possível consultar as fotos da opção '+(index+1)+'.');
+   const sourcePrice=Number(variation.price)>0?Number(variation.price):Number(item.price);
+   const variantItem={...item,variations:[],user_product_id:undefined,
+    attributes:[...commonAttrs.values()],pictures:photos.slice(0,12).map(secure_url=>({secure_url})),
+    price:sourcePrice,catalog_product_id:up.catalog_product_id||null,
+    seller_custom_field:variation.seller_custom_field||item.seller_custom_field};
+   const changes={...overrides};
+   // Fotos informadas no editor são globais ao anúncio de origem, não
+   // substituem fotos específicas de cada variante automaticamente.
+   if(Object.prototype.hasOwnProperty.call(changes,'pictures'))
+    throw new Error('Nesta família as fotos pertencem a cada opção. Não é possível substituir todas por uma lista única no editor.');
+   const payload=prepareClone(variantItem,stock,familyName,changes);
+   payload.family_name=familyName;delete payload.title;
+   const validated=await validateCloneCandidate(targetToken,variantItem,payload,targetId,familyName)
+    .catch(e=>{throw new Error('Opção '+(index+1)+' ('+upId+'): '+e.message)});
+   copies.push({source_up_id:upId,source_sku:variation.seller_custom_field||'',
+    label:up.name||variation.seller_custom_field||'Opção '+(index+1),payload:validated});
+  }
+  return {family_name:familyName,copies};
  }
  async function selectedAccount(req,id){
   const matches=(await getShippingAccounts(req)).filter(a=>String(a.ml_user_id)===String(id));
@@ -453,7 +517,7 @@ module.exports={validItem,normalizeItemId,validCategory,validDims,packageAttribu
    if(!validItem(id))return res.status(400).json({ok:false,message:'Informe um MLB válido.'});
    const account=await selectedAccount(req,req.query?.source_id);
    const token=await ensureMlToken(account);
-   const item=await shippingFreeFetchItem(id,token);
+   const item=await hydrateSourceVariations(token,await shippingFreeFetchItem(id,token));
    if(String(item.seller_id)!==String(account.ml_user_id))return res.status(403).json({ok:false,message:'O anúncio não pertence à conta selecionada.'});
    let description_text='',description_available=false,description_error=null;
    try{
@@ -464,6 +528,8 @@ module.exports={validItem,normalizeItemId,validCategory,validDims,packageAttribu
     description_error='Não foi possível consultar a descrição original. Você pode informar uma nova descrição, mas confira a origem antes de salvar.';
    }
    return res.json({ok:true,item_id:id,title:String(item.title||'').slice(0,60),
+    clone_type:item._cloneUserProductFamily?'user_product_family':item.family_name?'user_product':'standard',
+    variations_count:(item.variations||[]).length,
     family_name:String(item.family_name||'').slice(0,60),
     pictures:(item.pictures||[]).map(x=>({source:x.secure_url||x.url||''})).filter(x=>/^https:\/\//i.test(x.source)).slice(0,12),
     price:Number(item.price)||0,
@@ -484,6 +550,27 @@ module.exports={validItem,normalizeItemId,validCategory,validDims,packageAttribu
    if(String(item.seller_id)!==String(source.ml_user_id))return res.status(403).json({ok:false,message:'Anúncio não pertence à conta de origem.'});
    const targetToken=await ensureMlToken(target);
    const stock=Number(req.body?.stock),title=String(req.body?.title||item.title||'');
+   if(item._cloneUserProductFamily){
+    const family=await prepareUserProductFamily(token,targetToken,target.ml_user_id,item,stock,req.body);
+    return res.json({ok:true,preview:{
+     item_id:id,source_name:source.nickname||source.company_name,
+     target_name:target.nickname||target.company_name,
+     title:family.family_name,family_name:family.family_name,
+     clone_type:'user_product_family',category_id:item.category_id,
+     price:family.copies[0].payload.price,stock,
+     pictures:family.copies.reduce((sum,v)=>sum+v.payload.pictures.length,0),
+     variations_count:family.copies.length,publication_count:family.copies.length,
+     variations_summary:family.copies.map(v=>({
+      attributes:v.label,sku:v.source_sku,stock:v.payload.available_quantity,
+      price:v.payload.price,photos:v.payload.pictures.length
+     })),
+     catalog_product_id:null,
+     free_shipping:family.copies.some(v=>v.payload.shipping?.free_shipping),
+     shipping_mode:family.copies.some(v=>v.payload.shipping?.mode==='me2')?'me2':'automático',
+     warning:'FAMÍLIA USER PRODUCTS: serão criados '+family.copies.length+' MLBs novos, um por opção, usando o mesmo nome de família. Confira todos antes de confirmar. Se houver falha durante a criação, confira os IDs já criados antes de repetir.',
+     description:'A descrição será copiada para cada novo MLB quando permitido.'
+    }});
+   }
    const candidate=await validateCloneCandidate(targetToken,item,prepareClone(item,stock,title,req.body),target.ml_user_id,req.body?.title);
    res.json({ok:true,preview:{item_id:id,source_name:source.nickname||source.company_name,
     target_name:target.nickname||target.company_name,title:candidate.title||item.title,category_id:candidate.category_id,
@@ -519,6 +606,48 @@ module.exports={validItem,normalizeItemId,validCategory,validDims,packageAttribu
    const sourceToken=await ensureMlToken(source),targetToken=await ensureMlToken(target);
    const item=await hydrateSourceVariations(sourceToken,await shippingFreeFetchItem(id,sourceToken));
    if(String(item.seller_id)!==String(source.ml_user_id))return res.status(403).json({ok:false,message:'Conta de origem não é proprietária do anúncio.'});
+   if(item._cloneUserProductFamily){
+    if(String(req.body?.expected_family_name||'')!==String(req.body?.title||item.family_name||item.title||'').trim())
+     return res.status(409).json({ok:false,message:'Confirme novamente o nome da família e todas as opções na prévia antes de publicar.'});
+    const family=await prepareUserProductFamily(sourceToken,targetToken,target.ml_user_id,item,req.body?.stock,req.body);
+    if(Number(req.body?.expected_publication_count)!==family.copies.length)
+     return res.status(409).json({ok:false,message:'A quantidade de opções mudou. Consulte novamente a prévia antes de publicar.'});
+    // Todas as opções foram validadas ANTES da primeira publicação.
+    // A API não fornece transação atômica; em falhas parciais, jamais repetir
+    // automaticamente, e retornar os IDs criados para conferência manual.
+    const createdIds=[],issues=[];
+    let descriptionText='';
+    if(editedDescription)descriptionText=req.body.description_text;
+    else{
+     try{
+      const description=await ml(sourceToken,'/items/'+encodeURIComponent(id)+'/description');
+      descriptionText=String(description.plain_text||description.text||'');
+     }catch{issues.push('Não foi possível consultar a descrição original.')}
+    }
+    for(let index=0;index<family.copies.length;index++){
+     const part=family.copies[index];
+     let created;
+     try{created=await ml(targetToken,'/items','POST',part.payload)}
+     catch(e){
+      issues.push('Opção '+(index+1)+' ('+part.label+'): '+e.message);
+      break; // Nunca tentar os demais após uma falha potencialmente ambígua.
+     }
+     const newId=String(created?.id||'');
+     if(!/^MLB\d+$/.test(newId)){
+      issues.push('Opção '+(index+1)+': o Mercado Livre não retornou um ID confirmado. Verifique o destino.');
+      break;
+     }
+     createdIds.push({id:newId,label:part.label,sku:part.source_sku});
+     if(descriptionText){
+      try{await ml(targetToken,'/items/'+encodeURIComponent(newId)+'/description','POST',{plain_text:descriptionText})}
+      catch{issues.push('Descrição do '+newId+' não foi aplicada; o anúncio já foi criado.')}
+     }
+    }
+    return res.json({ok:issues.length===0,partial:issues.length>0,
+     created_ids:createdIds,created_id:createdIds.map(v=>v.id).join(', '),
+     expected_count:family.copies.length,issues,description_status:issues.length?'verificar detalhes':'copiada',
+     message:issues.length?'Clonagem parcial. Confira os MLBs criados; não repita automaticamente.':'Família de User Products criada. Confira os MLBs na conta de destino.'});
+   }
    const payload=await validateCloneCandidate(targetToken,item,prepareClone(item,req.body?.stock,req.body?.title,req.body),target.ml_user_id,req.body?.title);
    // Reexamina os dados sempre antes da escrita para não usar preview obsoleto.
    if(payload.family_name && String(req.body?.expected_family_name||'')!==payload.family_name){
