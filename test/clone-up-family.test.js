@@ -25,19 +25,19 @@ async function req(path,body){
 const base={item_id:'1209378674',source_id:'271180532',target_id:'220712533',stock:2};
 (async()=>{
  const oldFetch=global.fetch,seen=[];
- let validationFail=false,creationFail=false;
+ let validationFail=false,creationFail=false,sameAttributes=false;
  let created=0;
  global.fetch=async(url,options)=>{
   const method=options.method||'GET';
   const body=options.body&&typeof options.body==='string'?JSON.parse(options.body):undefined;
   seen.push({url,method,body});
-  if(url.includes('/variations/'))return {ok:true,status:200,json:async()=>({attributes:[]})};
+  if(url.includes('/variations/'))throw Error('User Products must not depend on legacy variation endpoint');
   if(url.includes('/user-products/MLBU')){
    const red=url.includes('MLBU11111');
    return {ok:true,status:200,json:async()=>({
     id:red?'MLBU11111':'MLBU22222',name:red?'Camiseta vermelha':'Camiseta azul',
     attributes:[{id:'BRAND',values:[{name:'Marca Teste'}]},
-     {id:'COLOR',values:[{id:red?'52049':'52055',name:red?'Vermelho':'Azul'}]}],
+     {id:'COLOR',values:[{id:red||sameAttributes?'52049':'52055',name:red||sameAttributes?'Vermelho':'Azul'}]}],
     pictures:[{secure_url:red?'https://example.com/red.jpg':'https://example.com/blue.jpg'}]
    })};
   }
@@ -48,7 +48,7 @@ const base={item_id:'1209378674',source_id:'271180532',target_id:'220712533',sto
    assert.equal(body.variations,undefined);
    assert.equal(body.available_quantity,2);
    assert.equal(body.attributes.find(a=>a.id==='COLOR')?.value_name,
-     body.pictures[0].source.includes('red')?'Vermelho':'Azul');
+     body.pictures[0].source.includes('red')||sameAttributes?'Vermelho':'Azul');
    if(validationFail&&body.pictures[0].source.includes('blue'))
     return {ok:false,status:400,json:async()=>({message:'missing product metadata',
       cause:[{code:'body.required_fields',type:'error',message:'Missing GTIN'}]})};
@@ -74,6 +74,11 @@ const base={item_id:'1209378674',source_id:'271180532',target_id:'220712533',sto
   assert.equal(preview.result.preview.variations_summary[0].sku,'RED');
   assert.equal(preview.result.preview.variations_summary[1].price,120);
   assert.equal(seen.filter(x=>x.url.endsWith('/items')&&x.method==='POST').length,0);
+  sameAttributes=true;
+  const equivalent=await req('/api/portal/bulk-tools/clone/preview',base);
+  assert.equal(equivalent.code,200,JSON.stringify(equivalent.result));
+  assert.equal(equivalent.result.preview.publication_count,2,'Different UP ids may have identical technical attributes');
+  sameAttributes=false;
   validationFail=true;
   const failedPreview=await req('/api/portal/bulk-tools/clone/preview',base);
   assert.equal(failedPreview.code,400);

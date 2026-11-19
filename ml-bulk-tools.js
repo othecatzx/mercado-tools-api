@@ -441,12 +441,12 @@ module.exports={validItem,normalizeItemId,validCategory,validDims,packageAttribu
    const commonAttrs=new Map((item.attributes||[]).filter(a=>a?.id).map(a=>[a.id,a]));
    const variantAttrs=[...(up.attributes||[]),...(variation.attributes||[])];
    for(const attribute of variantAttrs)if(attribute?.id)commonAttrs.set(attribute.id,attribute);
-   // Assinatura pelas características específicas de cada UP, não pelo SKU.
-   const unique=cloneVariationAttributes([...commonAttrs.values()]).filter(a=>!['ITEM_CONDITION','SELLER_SKU','SKU','SELLER_CUSTOM_FIELD'].includes(a.id)&&!packageKeys.has(a.id));
-   const signature=unique.map(a=>a.id+':'+(a.value_id||a.value_name)).sort().join('|');
-   if(!signature||signatures.has(signature))
-    throw new Error('As opções '+(index+1)+' não possuem atributos únicos suficientes para publicação como itens separados.');
-   signatures.add(signature);
+   // IDs de User Products distintos podem compartilhar caracteristicas tecnicas.
+   // O diferencial tambem pode ser uma condicao de venda (preco, modalidade etc.).
+   // Nao bloquear pela igualdade de atributos: /items/validate e a autoridade.
+   // Impedir apenas a clonagem acidental do mesmo UP duas vezes no lote.
+   if(signatures.has(upId))throw new Error('User Product repetido na origem: '+upId+'. Revise as opcoes antes de publicar.');
+   signatures.add(upId);
    const photos=(up.pictures||[]).map(x=>x?.secure_url||x?.url)
     .filter(x=>typeof x==='string'&&/^https:\/\//i.test(x));
    if(!photos.length){
