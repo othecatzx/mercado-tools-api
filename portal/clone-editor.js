@@ -73,7 +73,7 @@ async function open({api,item_id,source_id,target_id,previous,onSave}){
   const familyMode=data.clone_type==='user_product'||!!data.family_name;
   $('mlbtEditNameLabel').textContent=familyMode?'Novo nome da família':'Novo título';
   $('mlbtEditNameHelp').textContent=familyMode?'O Mercado Livre gera o título a partir da família e dos atributos.':'Até 60 caracteres.';
-  $('mlbtEditHint').textContent=data.clone_type==='catalog'?'Anúncio de catálogo: algumas alterações podem ser limitadas. Descrição gerenciada pelo catálogo.':'Alterações exclusivas do novo anúncio. Não modifica a origem.';
+  $('mlbtEditHint').textContent=data.clone_type==='catalog'?'Anúncio de catálogo: algumas alterações podem ser limitadas. Descrição gerenciada pelo catálogo.':data.variations_count?'Anúncio com '+data.variations_count+' variação(ões): mantenha as fotos vinculadas às opções (cor/tamanho). Remover fotos de uma variação impede a validação.':'Alterações exclusivas do novo anúncio. Não modifica a origem.';
   title.value=familyMode?(data.family_name||data.title||''):(data.title||'');price.value=String(data.price||'');
   desc.disabled=data.clone_type==='catalog';
   desc.value=data.description_text||'';$('mlbtEditChars').textContent=desc.value.length+' / 50.000';
@@ -83,7 +83,7 @@ async function open({api,item_id,source_id,target_id,previous,onSave}){
   const loaded=await api('/api/portal/bulk-tools/clone/source?source_id='+encodeURIComponent(source_id)+'&item_id='+encodeURIComponent(item_id));
   if(closed)return;
   original={...loaded,clone_type:previous?.clone_type||'standard'};
-  if(previous){for(const key of ['title','price','description_text','clone_type'])if(Object.prototype.hasOwnProperty.call(previous,key))original[key]=previous[key];
+  if(previous){for(const key of ['title','price','description_text','clone_type','variations_count'])if(Object.prototype.hasOwnProperty.call(previous,key))original[key]=previous[key];
    if(Array.isArray(previous.pictures))original.pictures=previous.pictures;}
   fill(original);
   $('mlbtEditSub').textContent=item_id+' · Personalize antes da publicação.';

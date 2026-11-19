@@ -1,6 +1,7 @@
 'use strict';
 const API='https://api.mercadolibre.com';
-const validItem = value => /^MLB\d{6,15}$/i.test(String(value||'').trim());
+const normalizeItemId = value => {const raw=String(value||'').trim().toUpperCase();return /^\d{6,15}$/.test(raw)?'MLB'+raw:raw};
+const validItem = value => /^MLB\d{6,15}$/.test(normalizeItemId(value));
 const validCategory = value => /^MLB\d{2,12}$/i.test(String(value||'').trim());
 const validDims = d => {
  const height=Number(d?.height),width=Number(d?.width),length=Number(d?.length),weight=Number(d?.weight);
@@ -68,6 +69,58 @@ function parseClonePictures(pictures){
   throw new Error('Foto inválida. Selecione uma imagem original ou envie uma imagem nova.');
  });
 }
+function cloneVariationAttributes(attributes){
+ return (Array.isArray(attributes)?attributes:[]).filter(a=>a&&typeof a.id==='string')
+  .map(a=>{
+   const valueId=a.value_id??a.values?.[0]?.id;
+   const valueName=a.value_name||a.values?.[0]?.name;
+   return {id:a.id,...(valueId!=null&&String(valueId)!=='-1'?{value_id:String(valueId)}:{}),
+    ...(typeof valueName==='string'&&valueName.trim()?{value_name:valueName.trim()}:{})};
+  }).filter(a=>a.value_id||a.value_name);
+}
+function cloneVariations(item,initialStock,priceOverride,pictures){
+ const source=Array.isArray(item.variations)?item.variations:[];
+ if(!source.length)return [];
+ if(source.length>100)throw new Error('Anúncio com mais de 100 variações: divida a operação ou revise no Mercado Livre.');
+ const originalPictures=new Map((item.pictures||[]).filter(p=>p&&p.id)
+  .map(p=>[String(p.id),p.secure_url||p.url]));
+ // Referências de imagens na variação devem corresponder às fotos ENVIADAS
+ // no mesmo anúncio, jamais copiar o ID exclusivo do anúncio de origem.
+ const available=new Map(pictures.filter(p=>p.source).map(p=>[p.source,p.source]));
+ for(const p of pictures)if(p.id)available.set(String(p.id),String(p.id));
+ const seen=new Set();
+ const mapped=source.map((v,index)=>{
+  const combinations=cloneVariationAttributes(v.attribute_combinations);
+  if(!combinations.length)throw new Error('Variação '+(index+1)+' não possui atributos que a diferenciem.');
+  const key=combinations.map(x=>x.id+'='+(x.value_id||x.value_name)).sort().join('|');
+  if(seen.has(key))throw new Error('Há variações com combinações duplicadas. Revise o anúncio de origem.');
+  seen.add(key);
+  const ids=Array.isArray(v.picture_ids)?v.picture_ids:[];
+  const pictureIds=ids.map(id=>{
+   const url=originalPictures.get(String(id))||String(id);
+   return available.get(url)||available.get(String(id))||null;
+  });
+  if(!pictureIds.length||pictureIds.some(x=>!x))
+   throw new Error('A variação '+(index+1)+' possui fotos ausentes ou removidas. Mantenha as fotos originais vinculadas a cada variação.');
+  const variationPrice=priceOverride!==undefined?Number(priceOverride):Number(v.price??item.price);
+  if(!Number.isFinite(variationPrice)||variationPrice<=0)
+   throw new Error('Preço inválido na variação '+(index+1)+'.');
+  const entry={
+   attribute_combinations:combinations,
+   available_quantity:initialStock,price:variationPrice,
+   picture_ids:[...new Set(pictureIds)]
+  };
+  const more=cloneVariationAttributes(v.attributes);
+  if(more.length)entry.attributes=more;
+  if(typeof v.seller_custom_field==='string'&&v.seller_custom_field.trim())
+   entry.seller_custom_field=v.seller_custom_field.trim().slice(0,255);
+  return entry;
+ });
+ const names=mapped.map(v=>v.attribute_combinations.map(x=>x.id).sort().join('|'));
+ if(new Set(names).size!==1)
+  throw new Error('As variações da origem não possuem os mesmos tipos de atributos (cor, tamanho etc.). Revise antes de clonar.');
+ return mapped;
+}
 function prepareClone(item,stock,title,overrides){
  const qty=Number(stock);
  if(!Number.isSafeInteger(qty)||qty<1||qty>99999)throw new Error('Estoque inicial deve estar entre 1 e 99999.');
@@ -76,7 +129,7 @@ function prepareClone(item,stock,title,overrides){
  // O catálogo verdadeiro exige catalog_product_id e catalog_listing=true.
  if(item.parent_item_id)throw new Error('Anúncio vinculado a anúncio-pai: fluxo de clonagem específico necessário.');
  if(item.catalog_listing===true && !/^MLB\d+$/.test(String(item.catalog_product_id||'')))throw new Error('Anúncio de catálogo sem catalog_product_id válido; revise o produto de catálogo antes de publicar.');
- if(item.variations?.length)throw new Error('Anúncio com variações precisa de revisão das variações e fotos; clonagem automática bloqueada.');
+ // Variações são clonadas como novas combinações. Nunca transferir IDs de variações da origem.
  if(!['active','paused'].includes(item.status))throw new Error('Status do anúncio de origem não permitido.');
  const name=String(title||item.title||'').trim();
  if(!name||name.length>60)throw new Error('Informe título de 1 a 60 caracteres.');
@@ -104,6 +157,7 @@ function prepareClone(item,stock,title,overrides){
   condition:item.condition||'new',pictures,
   attributes:[...attrs,...(dims?clonePackageAttributes(dims):[])]
  };
+ if(item.variations?.length)payload.variations=cloneVariations(item,qty,overrides?.price,pictures);
  if(/^MLB\d+$/.test(String(item.catalog_product_id||''))){
   // Mesmo anúncios tradicionais podem precisar do catalog_product_id quando
   // a categoria é productizada. Preservar a identificação do produto original.
@@ -124,7 +178,7 @@ function prepareClone(item,stock,title,overrides){
  if(item.shipping?.local_pick_up===true)payload.shipping={local_pick_up:true};
  return payload;
 }
-module.exports={validItem,validCategory,validDims,packageAttributes,buildDimensionUpdate,prepareClone,
+module.exports={validItem,normalizeItemId,validCategory,validDims,packageAttributes,buildDimensionUpdate,prepareClone,
  register(app,{authPortalOrAgent,scopedMenuAllowed,getShippingAccounts,ensureMlToken,shippingFreeFetchItem}){
  const gate = name => (req,res,next)=>scopedMenuAllowed(req,name)?next():res.status(403).json({ok:false,message:'Permissão não liberada para esta ferramenta.'});
  const guardAccounts = (req,res,next)=>(scopedMenuAllowed(req,'clone-listings')||scopedMenuAllowed(req,'bulk-dimensions'))?next():res.status(403).json({ok:false,message:'Sem permissão para consultar contas.'});
@@ -335,7 +389,7 @@ module.exports={validItem,validCategory,validDims,packageAttributes,buildDimensi
  // enviada à conta destino até a confirmação explícita da clonagem.
  app.get('/api/portal/bulk-tools/clone/source',authPortalOrAgent,gate('clone-listings'),async(req,res)=>{
   try{
-   const id=String(req.query?.item_id||'').toUpperCase().trim();
+   const id=normalizeItemId(req.query?.item_id);
    if(!validItem(id))return res.status(400).json({ok:false,message:'Informe um MLB válido.'});
    const account=await selectedAccount(req,req.query?.source_id);
    const token=await ensureMlToken(account);
@@ -361,7 +415,7 @@ module.exports={validItem,validCategory,validDims,packageAttributes,buildDimensi
    if(Object.prototype.hasOwnProperty.call(req.body||{},'description_text')&&
       (typeof req.body.description_text!=='string'||req.body.description_text.length>50000))
     return res.status(400).json({ok:false,message:'Descrição inválida: texto simples com até 50.000 caracteres.'});
-   const id=String(req.body?.item_id||'').toUpperCase().trim();
+   const id=normalizeItemId(req.body?.item_id);
    if(!validItem(id))return res.status(400).json({ok:false,message:'Informe um MLB válido.'});
    if(String(req.body?.source_id)===String(req.body?.target_id))return res.status(400).json({ok:false,message:'Origem e destino devem ser diferentes.'});
    const source=await selectedAccount(req,req.body?.source_id),target=await selectedAccount(req,req.body?.target_id);
@@ -374,6 +428,8 @@ module.exports={validItem,validCategory,validDims,packageAttributes,buildDimensi
    res.json({ok:true,preview:{item_id:id,source_name:source.nickname||source.company_name,
     target_name:target.nickname||target.company_name,title:candidate.title||item.title,category_id:candidate.category_id,
     price:candidate.price,stock:candidate.available_quantity,pictures:candidate.pictures.length,
+    variations_count:candidate.variations?.length||0,
+    variations_summary:(candidate.variations||[]).map(v=>({attributes:v.attribute_combinations.map(a=>a.value_name||a.value_id).join(' · '),sku:v.seller_custom_field||'',stock:v.available_quantity,price:v.price,photos:v.picture_ids.length})),
     listing_type_id:candidate.listing_type_id,
     clone_type:candidate.catalog_listing===true?'catalog':candidate.family_name?'user_product':'standard',
     family_name:candidate.family_name||null,
@@ -397,7 +453,7 @@ module.exports={validItem,validCategory,validDims,packageAttributes,buildDimensi
    if(req.body?.confirm!==true)return res.status(400).json({ok:false,message:'Confirmação obrigatória.'});
    const editedDescription=Object.prototype.hasOwnProperty.call(req.body||{},'description_text');
    if(editedDescription&&(typeof req.body.description_text!=='string'||req.body.description_text.length>50000))return res.status(400).json({ok:false,message:'Descrição inválida: texto simples com até 50.000 caracteres.'});
-   const id=String(req.body?.item_id||'').toUpperCase().trim();
+   const id=normalizeItemId(req.body?.item_id);
    if(!validItem(id)||String(req.body?.source_id)===String(req.body?.target_id))return res.status(400).json({ok:false,message:'Origem ou destino inválidos.'});
    const source=await selectedAccount(req,req.body?.source_id),target=await selectedAccount(req,req.body?.target_id);
    const sourceToken=await ensureMlToken(source),targetToken=await ensureMlToken(target);

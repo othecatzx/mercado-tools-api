@@ -25,7 +25,8 @@ function init({api}){
    target_id:q('mlbtTarget').value,
    stock:Number(q('mlbtStock').value)
  });
- const ids=()=>[...new Set(String(q('mlbtItem').value||'').toUpperCase().split(/[\s,;]+/).filter(Boolean))];
+ const ids=()=>[...new Set(String(q('mlbtItem').value||'').toUpperCase().split(/[\s,;]+/).filter(Boolean)
+  .map(raw=>/^\d{6,15}$/.test(raw)?'MLB'+raw:raw))];
  function addResult(title,details,checkable,error=false){
    const row=document.createElement('label');
    row.className='mlsh-tools-item'+(error?' mlsh-tools-error':'');
@@ -56,7 +57,8 @@ function init({api}){
   const selected=edits.get(id);
   const marked=selected?' · Personalizado':'';
   const warnings=p.free_shipping?' · Frete grátis obrigatório':'';
-  return id+' · '+p.title+' · '+kind+' · R$ '+Number(p.price).toFixed(2)+
+  const variants=p.variations_count?' · '+p.variations_count+' variação(ões)':'';
+  return id+' · '+p.title+' · '+kind+variants+' · R$ '+Number(p.price).toFixed(2)+
    ' · '+p.pictures+' foto(s)'+warnings+marked;
  }
  async function openEditor(item_id){
@@ -100,7 +102,7 @@ function init({api}){
      text('Escolha duas contas diferentes: origem e destino.',true);return;
    }
    if(!items.length||items.length>20||items.some(id=>!/^MLB\d{6,15}$/.test(id))){
-     text('Informe de 1 a 20 códigos MLB válidos, separados por linha, vírgula ou espaço.',true);return;
+     text('Informe de 1 a 20 códigos válidos, com ou sem MLB, separados por linha, vírgula ou espaço.',true);return;
    }
    if(!Number.isSafeInteger(request.stock)||request.stock<1||request.stock>99999){
      text('Estoque inicial inválido (mínimo 1, máximo 99999).',true);return;
@@ -121,6 +123,9 @@ function init({api}){
          const kind=p.clone_type==='catalog'
            ?'CATÁLOGO '+p.catalog_product_id+' · Confirme que é exatamente o mesmo produto'
            :p.clone_type==='user_product'?'FAMÍLIA '+p.family_name+' · Título gerado pelo Mercado Livre':'Anúncio independente';
+         const variantCount=p.variations_count||0;
+         const variantLabels=(p.variations_summary||[]).slice(0,6).map(v=>v.attributes+(v.sku?' ['+v.sku+']':'')).join('; ');
+         const variantText=variantCount?' · '+variantCount+' variação(ões), estoque '+request.stock+' por variação'+(variantLabels?' · '+variantLabels:'')+(variantCount>6?' e mais '+(variantCount-6):''):'';
          const removed=Array.isArray(p.removed_attributes)?p.removed_attributes:[];
          const cleanup=removed.length?' · '+removed.length+' atributo(s) interno(s) excluído(s) do envio: '+removed.join(', '):'';
          const dimensions=p.package_dimensions;
@@ -128,7 +133,7 @@ function init({api}){
          const shipping=p.shipping_mode==='me2'?' · Envio na conta de destino: Mercado Envios 2':' · Envio definido pelo Mercado Livre';
          const freeShipping=p.free_shipping?' · FRETE GRÁTIS obrigatório: pode gerar custo ao vendedor':'';
          const warnings=Array.isArray(p.validation_warnings)&&p.validation_warnings.length?' · Avisos não bloqueantes do ML: '+p.validation_warnings.join(', '):'';
-         addResult(item_id,item_id+' · '+p.title+' · '+kind+' · R$ '+Number(p.price).toFixed(2)+' · '+p.pictures+' foto(s)'+packing+shipping+freeShipping+warnings+cleanup+' · '+p.warning,true);
+         addResult(item_id,item_id+' · '+p.title+' · '+kind+' · R$ '+Number(p.price).toFixed(2)+' · '+p.pictures+' foto(s)'+variantText+packing+shipping+freeShipping+warnings+cleanup+' · '+p.warning,true);
        }catch(error){
          if(!root.isConnected)return;
          failed.push({item_id,error:String(error?.message||error)});
