@@ -97,6 +97,24 @@ module.exports={validItem,validCategory,validDims,packageAttributes,buildDimensi
    throw new Error('Validação de publicação: '+String(e.message).slice(0,1400));
   }
  }
+ // Algumas contas usam o novo modelo User Products, que exige
+ // family_name em vez de title. Só adaptar após a validação indicar
+ // explicitamente essa regra; não vincular IDs de família entre vendedores.
+ async function validateCloneCandidate(token,item,initial){
+  try{
+   await validateBeforePublish(token,initial);
+   return initial;
+  }catch(firstError){
+   const msg=String(firstError?.message||'');
+   if(!/body\.required_fields/i.test(msg)||!/family_name/i.test(msg))throw firstError;
+   const family=String(item.family_name||initial.title||item.title||'').trim();
+   if(!family||family.length>60)throw new Error('Nome da família obrigatório e inválido; revise o produto de origem.');
+   const adapted={...initial,family_name:family};
+   delete adapted.title; // Novo modelo UP gera o título automaticamente.
+   await validateBeforePublish(token,adapted);
+   return adapted;
+  }
+ }
  async function selectedAccount(req,id){
   const matches=(await getShippingAccounts(req)).filter(a=>String(a.ml_user_id)===String(id));
   if(matches.length!==1)throw new Error('Selecione uma conta conectada e autorizada.');
@@ -119,20 +137,20 @@ module.exports={validItem,validCategory,validDims,packageAttributes,buildDimensi
    if(String(item.seller_id)!==String(source.ml_user_id))return res.status(403).json({ok:false,message:'Anúncio não pertence à conta de origem.'});
    const targetToken=await ensureMlToken(target);
    const stock=Number(req.body?.stock),title=String(req.body?.title||item.title||'');
-   const candidate=prepareClone(item,stock,title);
-   // Validação sem publicação. Se a conta de destino exigir campos extras,
-   // o anúncio não será marcado como apto nem oferecerá confirmação.
-   await validateBeforePublish(targetToken,candidate);
+   const candidate=await validateCloneCandidate(targetToken,item,prepareClone(item,stock,title));
    res.json({ok:true,preview:{item_id:id,source_name:source.nickname||source.company_name,
-    target_name:target.nickname||target.company_name,title:candidate.title,category_id:candidate.category_id,
+    target_name:target.nickname||target.company_name,title:candidate.title||item.title,category_id:candidate.category_id,
     price:candidate.price,stock:candidate.available_quantity,pictures:candidate.pictures.length,
     listing_type_id:candidate.listing_type_id,
-    clone_type:candidate.catalog_listing===true?'catalog':'standard',
+    clone_type:candidate.catalog_listing===true?'catalog':candidate.family_name?'user_product':'standard',
+    family_name:candidate.family_name||null,
     catalog_product_id:candidate.catalog_product_id||null,
     description:candidate.catalog_listing===true?'Descrição definida pelo catálogo quando aplicável.':'Descrição será copiada quando disponível.',
     warning:candidate.catalog_listing===true?
-      'CATÁLOGO: confirme que o item físico corresponde exatamente ao produto '+candidate.catalog_product_id+'. O Mercado Livre controla a ficha técnica e pode recusar a publicação. A confirmação pode criar anúncio ativo imediatamente.':
-      'Anúncio independente: título, preço, fotos e atributos serão enviados; vínculos de família do vendedor original não são transferidos. Confirme os dados antes de publicar.'}});
+      'CATÁLOGO: confirme que o item físico corresponde exatamente ao produto '+candidate.catalog_product_id+'. O Mercado Livre controla a ficha técnica e pode recusar a publicação.':
+      candidate.family_name?
+      'NOVO MODELO: será enviado family_name='+candidate.family_name+'. O Mercado Livre gera o título automaticamente; não serão transferidos IDs de famílias da origem.':
+      'Anúncio independente: título, preço, fotos e atributos serão enviados; vínculos de família do vendedor original não são transferidos.'}});
   }catch(e){res.status(400).json({ok:false,message:e.message})}
  });
  app.post('/api/portal/bulk-tools/clone/apply',authPortalOrAgent,gate('clone-listings'),async(req,res)=>{
@@ -144,15 +162,17 @@ module.exports={validItem,validCategory,validDims,packageAttributes,buildDimensi
    const sourceToken=await ensureMlToken(source),targetToken=await ensureMlToken(target);
    const item=await shippingFreeFetchItem(id,sourceToken);
    if(String(item.seller_id)!==String(source.ml_user_id))return res.status(403).json({ok:false,message:'Conta de origem não é proprietária do anúncio.'});
-   const payload=prepareClone(item,req.body?.stock,req.body?.title);
+   const payload=await validateCloneCandidate(targetToken,item,prepareClone(item,req.body?.stock,req.body?.title));
    // Reexamina os dados sempre antes da escrita para não usar preview obsoleto.
+   if(payload.family_name && String(req.body?.expected_family_name||'')!==payload.family_name){
+     return res.status(409).json({ok:false,message:'O nome da família deve ser confirmado novamente na prévia.'});
+   }
    // Produtos de catálogo precisam coincidir exatamente com o item físico.
    if(payload.catalog_listing===true &&
       String(req.body?.expected_catalog_product_id||'')!==String(payload.catalog_product_id)){
      return res.status(409).json({ok:false,message:'Confirme novamente o produto de catálogo na prévia antes de publicar.'});
    }
-   // Valida novamente: as regras da categoria/conta podem ter mudado após a prévia.
-   await validateBeforePublish(targetToken,payload);
+   // validateCloneCandidate já validou o payload exato antes da escrita.
    // A operação é explícita, limitada a um anúncio por requisição e só após confirmação.
    const created=await ml(targetToken,'/items','POST',payload);
    const newId=String(created.id||'');

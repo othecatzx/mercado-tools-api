@@ -59,10 +59,10 @@ function init({api}){
          });
          if(!root.isConnected)return;
          const p=data.preview;
-         eligible.push({item_id,catalog_product_id:p.catalog_product_id||null});
+         eligible.push({item_id,catalog_product_id:p.catalog_product_id||null,family_name:p.family_name||null});
          const kind=p.clone_type==='catalog'
            ?'CATÁLOGO '+p.catalog_product_id+' · Confirme que é exatamente o mesmo produto'
-           :'Anúncio independente';
+           :p.clone_type==='user_product'?'FAMÍLIA '+p.family_name+' · Título gerado pelo Mercado Livre':'Anúncio independente';
          addResult(item_id,item_id+' · '+p.title+' · '+kind+' · R$ '+Number(p.price).toFixed(2)+' · '+p.pictures+' foto(s) · '+p.warning,true);
        }catch(error){
          if(!root.isConnected)return;
@@ -89,6 +89,7 @@ function init({api}){
    if(!selected.length){text('Selecione pelo menos um anúncio.',true);return}
    const request=approved;approved=null;
    const expectedCatalog=new Map(request.eligible.map(x=>[x.item_id,x.catalog_product_id]));
+   const expectedFamily=new Map(request.eligible.map(x=>[x.item_id,x.family_name]));
    running=true;preview.disabled=true;apply.disabled=true;
    const successful=[],errors=[];
    list.replaceChildren();list.hidden=false;
@@ -100,7 +101,8 @@ function init({api}){
          const result=await api('/api/portal/bulk-tools/clone/apply',{
            method:'POST',body:JSON.stringify({
              source_id:request.source_id,target_id:request.target_id,stock:request.stock,
-             item_id,expected_catalog_product_id:expectedCatalog.get(item_id)||null,confirm:true
+             item_id,expected_catalog_product_id:expectedCatalog.get(item_id)||null,
+             expected_family_name:expectedFamily.get(item_id)||null,confirm:true
            })
          });
          if(!root.isConnected)return;
