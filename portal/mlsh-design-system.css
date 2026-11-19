@@ -33,3 +33,52 @@
  font-weight:800;
 }
 #appView .mlsh-action-primary:hover{background:#ffb93d}
+
+/* Remove tons esverdeados legados das áreas de trabalho; preserva estados de sucesso. */
+html:not([data-theme="dark"]) #appView {
+ --bg:#F8FAFF;
+ --panel:#FFFFFF;
+ --card:#FFFFFF;
+ --panel-2:#F2F5FA;
+ --field:#FFFFFF;
+ --ink:#14213D;
+ --muted:#687991;
+ --line:#DEE6F0;
+ --soft:#EFF3FA;
+ --soft-ink:#14213D;
+ --panel-bg:#FFFFFF;
+ --table-hover:#F3F6FC;
+}
+html:not([data-theme="dark"]) #appView .main,
+html:not([data-theme="dark"]) #appView .content,
+html:not([data-theme="dark"]) #appView #pageContent{background:#F8FAFF!important}
+html:not([data-theme="dark"]) #appView .panel,
+html:not([data-theme="dark"]) #appView .stat-card,
+html:not([data-theme="dark"]) #appView .sales-products-panel,
+html:not([data-theme="dark"]) #appView .sales-orders-panel{
+ background:#FFFFFF;
+ border-color:#DEE6F0;
+}
+html:not([data-theme="dark"]) #appView .sales-products-table th,
+html:not([data-theme="dark"]) #appView .sales-table th,
+html:not([data-theme="dark"]) #appView .table th{
+ background:#EFF3FA;
+ color:#14213D;
+ border-color:#DEE6F0;
+}
+html:not([data-theme="dark"]) #appView .sales-products-table td,
+html:not([data-theme="dark"]) #appView .sales-table td,
+html:not([data-theme="dark"]) #appView .table td{border-color:#E3E9F1}
+html:not([data-theme="dark"]) #appView .product-store,
+html:not([data-theme="dark"]) #appView .product-thumb{
+ background:#F2F5FA;
+ border-color:#E2E8F1;
+ color:#475C79;
+}
+html:not([data-theme="dark"]) #appView .sales-bar-track{
+ background:#E5EAF2;
+}
+html:not([data-theme="dark"]) #appView .sales-products-table tbody tr:hover,
+html:not([data-theme="dark"]) #appView .table tbody tr:hover{
+ background:#F3F6FC;
+}

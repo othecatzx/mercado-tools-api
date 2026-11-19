@@ -11,6 +11,79 @@ const orig=r=>r.original||{};
 const changed=r=>permitted.filter(c=>String(r[c]??'')!==String(orig(r)[c]??''));
 const viewRows=()=>rows.filter(r=>!term||[r.id,r.company_name,r.sku,r.title].some(v=>String(v||'').toLowerCase().includes(term.toLowerCase())));
 let inputDraft='';
+let adjustmentMode='increase',adjustmentUnit='brl';
+function parseAdjustmentValue(text){
+ const raw=String(text??'').trim().replace(/\s/g,'');
+ if(!raw)return NaN;
+ // Aceita 12,50 / 12.50 / 1.234,56 (sem interpretação ambígua).
+ const normalized=raw.includes(',')?raw.replace(/\./g,'').replace(',','.'):raw;
+ if(!/^(?:\d+)(?:\.\d+)?$/.test(normalized))return NaN;
+ return Number(normalized);
+}
+function calculateAdjustedPrice(base,mode,unit,amount){
+ const price=Number(base),value=Number(amount);
+ if(!Number.isFinite(price)||price<=0||!Number.isFinite(value)||value<=0)return null;
+ if(!['increase','discount','fixed'].includes(mode)||!['brl','percent'].includes(unit))return null;
+ if(mode==='discount'&&unit==='percent'&&value>=100)return null;
+ if(unit==='percent'&&value>1000)return null;
+ const next=mode==='fixed'?value:
+   mode==='increase'?(unit==='percent'?price*(1+value/100):price+value):
+   (unit==='percent'?price*(1-value/100):price-value);
+ const rounded=Math.round((next+Number.EPSILON)*100)/100;
+ return Number.isFinite(rounded)&&rounded>=0.01&&rounded<=999999999?rounded:null;
+}
+function adjustmentHelp(){
+ const input=$('bulkAdjustValue'),button=$('bulkAdjustApply'),preview=$('bulkAdjustPreview');
+ if(!input||!button||!preview)return;
+ const amount=parseAdjustmentValue(input.value),count=rows.length;
+ const eligible=rows.filter(r=>calculateAdjustedPrice(orig(r).price,adjustmentMode,adjustmentUnit,amount)!==null);
+ button.disabled=busy||!count||!Number.isFinite(amount)||amount<=0||eligible.length!==count;
+ const hint=adjustmentMode==='fixed'?'Preço único em R$':adjustmentUnit==='percent'?'Percentual (%)':'Valor em reais (R$)';
+ input.placeholder=adjustmentMode==='fixed'?'Digite o preço final (R$)':adjustmentUnit==='percent'?'Digite o percentual':'Digite o valor (R$) '+(adjustmentMode==='discount'?'a descontar':'a acrescer');
+ preview.textContent=!count?'Adicione anúncios para realizar um reajuste.':
+   !input.value.trim()?'O reajuste usa o preço original de cada anúncio; revise antes de aplicar.':
+   eligible.length!==count?'Valor inválido: algum anúncio ficaria com preço menor que R$ 0,01 ou acima do limite.':
+   count+' anúncio(s) elegível(is). Preços recalculados a partir dos valores originais.';
+ preview.dataset.error=input.value.trim()&&eligible.length!==count?'true':'false';
+ $('bulkAdjustUnit').hidden=adjustmentMode==='fixed';
+ input.setAttribute('aria-label',hint);
+}
+function applyAdjustment(){
+ const input=$('bulkAdjustValue'),amount=parseAdjustmentValue(input?.value);
+ if(busy||!rows.length||!Number.isFinite(amount)||amount<=0)return;
+ const pending=rows.map(r=>({row:r,price:calculateAdjustedPrice(orig(r).price,adjustmentMode,adjustmentUnit,amount)}));
+ if(pending.some(p=>p.price===null)){adjustmentHelp();window.toast?.('Reajuste inválido para um ou mais anúncios.');return}
+ let changedCount=0;
+ for(const item of pending){
+   if(Number(item.row.price)!==item.price)changedCount++;
+   item.row.price=String(item.price.toFixed(2));
+ }
+ results=[];render();
+ window.toast?.('Reajuste calculado para '+changedCount+' anúncio(s). Revise a tabela antes de aplicar.');
+}
+function initAdjustment(){
+ const input=$('bulkAdjustValue'),options=$('bulkAdjustModes'),units=$('bulkAdjustUnit');
+ if(!input||!options||!units)return;
+ options.addEventListener('click',e=>{
+   const button=e.target.closest('button[data-adjust-mode]');if(!button)return;
+   adjustmentMode=button.dataset.adjustMode;
+   options.querySelectorAll('button[data-adjust-mode]').forEach(b=>{
+     const selected=b===button;b.classList.toggle('is-selected',selected);b.setAttribute('aria-pressed',String(selected));
+   });
+   adjustmentHelp();
+ });
+ units.addEventListener('click',e=>{
+   const button=e.target.closest('button[data-adjust-unit]');if(!button)return;
+   adjustmentUnit=button.dataset.adjustUnit;
+   units.querySelectorAll('button[data-adjust-unit]').forEach(b=>{
+     const selected=b===button;b.classList.toggle('is-selected',selected);b.setAttribute('aria-pressed',String(selected));
+   });
+   adjustmentHelp();
+ });
+ input.addEventListener('input',adjustmentHelp);
+ $('bulkAdjustApply')?.addEventListener('click',applyAdjustment);
+ adjustmentHelp();
+}
 function render(){
  const body=$('bulkRows');if(!body)return;
  if($('bulkClear'))$('bulkClear').disabled=busy||(!rows.length&&!failures.length&&!results.length);
@@ -21,8 +94,9 @@ function render(){
  $('bulkResults').innerHTML=results.length?'<div class="bulk-result-summary"><div><strong>Resultado da edição em massa</strong><span>'+countFor('success')+' sincronizado(s) · '+countFor('error')+' erro(s) · '+countFor('skipped')+' ignorado(s)</span></div><button type="button" id="bulkViewDetails" class="btn btn-ghost">Ver detalhes</button></div>':'';
  $('bulkViewDetails')?.addEventListener('click',openResultPanel);
  $('bulkApply').disabled=busy||!rows.some(r=>changed(r).length);
+ adjustmentHelp();
 }
-function markBusy(v){busy=v;['bulkSearch','bulkApply','bulkExport','bulkImport','bulkClear'].forEach(id=>{if($(id))$(id).disabled=v});}
+function markBusy(v){busy=v;['bulkSearch','bulkApply','bulkExport','bulkImport','bulkClear','bulkAdjustValue'].forEach(id=>{if($(id))$(id).disabled=v});adjustmentHelp();}
 async function lookup(){
  const input=String($('bulkInputs').value||'').split(/[\n\r,;]+/).map(x=>x.trim()).filter(Boolean);
  if(!input.length){window.toast?.('Informe ao menos um MLB ou SKU.');return}
@@ -184,7 +258,16 @@ function markup(){
  return pageHead('FERRAMENTAS','Ações em massa','Edite títulos, preços e descrições diretamente nas células, como no Excel.')+
  '<section class="panel bulk-panel"><div class="bulk-head"><div><h3>Editor de anúncios</h3><p class="small muted">Tabela de edição em massa, com identificação e estoque protegidos.</p></div><span class="bulk-tag">Mercado Livre</span></div>'+
  '<div class="bulk-toolbar"><button class="btn btn-primary bulk-add-btn" id="bulkOpen">+ Adicione os MLB&#39;s</button><span id="bulkCount">0 anúncios</span><div class="bulk-toolbar-right"><button class="btn btn-ghost bulk-clear-btn" id="bulkClear">Limpar lista</button><button class="btn btn-ghost" id="bulkExport">↓ Baixar Excel</button><button class="btn btn-ghost" id="bulkImport">↑ Importar Excel</button><input id="bulkImportFile" type="file" accept=".xlsx,.xls" hidden></div></div>'+
- '<div class="bulk-grid"><table><thead><tr><th class="bulk-num">#</th><th>Foto</th>'+cols.map(c=>'<th style="min-width:'+c[2]+'px">'+escape(c[1])+(c[3]?' 🔒':'')+'</th>').join('')+'</tr></thead><tbody id="bulkRows"></tbody></table></div>'+
+ '<section class="bulk-adjustment" aria-labelledby="bulkAdjustTitle">'+
+ '<div class="bulk-adjust-head"><div><h4 id="bulkAdjustTitle">Reajuste de preços</h4><p>Defina um reajuste para todos os anúncios carregados, antes de publicar.</p></div><span class="bulk-adjust-chip">PREÇOS</span></div>'+
+ '<div class="bulk-adjust-fields"><div class="bulk-adjust-group"><label>Tipo de reajuste</label><div class="bulk-adjust-modes" id="bulkAdjustModes" role="group" aria-label="Tipo de reajuste">'+
+ '<button type="button" class="is-selected" data-adjust-mode="increase" aria-pressed="true"><span aria-hidden="true">＋</span> Acréscimo</button>'+
+ '<button type="button" data-adjust-mode="discount" aria-pressed="false"><span aria-hidden="true">−</span> Desconto</button>'+
+ '<button type="button" data-adjust-mode="fixed" aria-pressed="false"><span aria-hidden="true">▣</span> Fixar preço único</button></div></div>'+
+ '<div class="bulk-adjust-group"><label for="bulkAdjustValue">Valor</label><div class="bulk-adjust-amount"><input id="bulkAdjustValue" type="text" inputmode="decimal" autocomplete="off" placeholder="Digite o valor (R$) a acrescer" aria-describedby="bulkAdjustPreview">'+
+ '<div id="bulkAdjustUnit" class="bulk-adjust-unit" role="group" aria-label="Unidade do reajuste"><button type="button" class="is-selected" data-adjust-unit="brl" aria-pressed="true">R$</button><button type="button" data-adjust-unit="percent" aria-pressed="false">%</button></div></div></div></div>'+
+ '<div class="bulk-adjust-foot"><p id="bulkAdjustPreview" aria-live="polite">Adicione anúncios para realizar um reajuste.</p><button class="btn btn-primary" id="bulkAdjustApply" type="button" disabled>Aplicar na tabela</button></div></section>'+
+  '<div class="bulk-grid"><table><thead><tr><th class="bulk-num">#</th><th>Foto</th>'+cols.map(c=>'<th style="min-width:'+c[2]+'px">'+escape(c[1])+(c[3]?' 🔒':'')+'</th>').join('')+'</tr></thead><tbody id="bulkRows"></tbody></table></div>'+
  '<div class="bulk-footer"><span class="small muted">As células alteradas ficam destacadas. Loja, MLB, SKU e Estoque são somente leitura.</span><button class="btn btn-primary" id="bulkApply" disabled>Revisar e aplicar alterações</button></div><div id="bulkFailures"></div><div id="bulkResults"></div></section>'+
  '<div id="bulkResultOverlay" class="bulk-result-overlay" hidden><aside class="bulk-result-panel" role="dialog" aria-modal="true" aria-labelledby="bulkResultTitle"><header class="bulk-result-top"><div><span class="bulk-result-eyebrow">ML SH SUPPORT / AÇÕES EM MASSA</span><h2 id="bulkResultTitle">Resumo das alterações</h2></div><button type="button" id="bulkResultClose" aria-label="Fechar resultados">×</button></header><div class="bulk-result-scroll"><div id="bulkResultSummary"></div><div class="bulk-result-section-title">Detalhes por situação</div><div class="bulk-result-groups" id="bulkResultGroups"></div></div><footer class="bulk-result-actions"><button class="btn btn-ghost" type="button" id="bulkResultDownload">↓ Exportar resultado</button><button class="btn btn-primary" type="button" id="bulkResultContinue">Concluir</button></footer></aside></div>'+
  '<div id="bulkModal" class="bulk-modal-overlay" hidden><div class="bulk-modal" role="dialog" aria-modal="true" aria-labelledby="bulkModalTitle"><div class="bulk-modal-top"><div><div class="bulk-modal-kicker">MERCADO LIVRE · IMPORTAÇÃO</div><h2 id="bulkModalTitle">Adicionar anúncios</h2><p>Cole os códigos MLB ou SKU. Vamos procurar nas lojas vinculadas à sua conta.</p></div><button type="button" class="bulk-close" id="bulkClose" aria-label="Fechar">×</button></div>'+
@@ -205,7 +288,7 @@ function init(){
  $('bulkSearch')?.addEventListener('click',lookup);$('bulkApply')?.addEventListener('click',apply);
  $('bulkRows')?.addEventListener('input',edit);$('bulkRows')?.addEventListener('change',edit);
  $('bulkExport')?.addEventListener('click',exportExcel);$('bulkImport')?.addEventListener('click',()=>$('bulkImportFile').click());
- $('bulkImportFile')?.addEventListener('change',e=>importExcel(e.target.files[0]));render();
+ $('bulkImportFile')?.addEventListener('change',e=>importExcel(e.target.files[0]));initAdjustment();render();
 }
-window.mlshBulkEditor={markup,init};
+window.mlshBulkEditor={markup,init,calculateAdjustedPrice,parseAdjustmentValue};
 })();

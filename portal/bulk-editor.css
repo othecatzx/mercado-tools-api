@@ -115,3 +115,60 @@ html[data-theme="dark"] .bulk-result-item-info{color:#cbd6e4}
 html[data-theme="dark"] .bulk-result-number{background:#304158;color:#fff}
 html[data-theme="dark"] .bulk-result-actions .btn-ghost{background:#26364c;color:white;border-color:#465874}
 @media(max-width:600px){.bulk-result-scroll{padding:18px 15px}.bulk-result-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.bulk-result-top,.bulk-result-actions{padding:19px 15px}.bulk-result-hero{padding:16px}.bulk-result-item-info{grid-template-columns:1fr}.bulk-result-top h2{font-size:20px}}
+
+/* Reajuste em massa — referência visual do usuário, identidade do portal */
+.bulk-adjustment{margin:0 22px 20px;padding:19px 20px 15px;border:1px solid #344054;border-radius:15px;background:#242529;color:#f1f3f8;box-shadow:0 6px 22px #00000014}
+.bulk-adjust-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:18px}
+.bulk-adjust-head h4{color:#fff;font-size:15px;line-height:1.35;margin:0 0 4px;font-weight:800}
+.bulk-adjust-head p{font-size:11px;color:#b3bbc9;line-height:1.55;margin:0}
+.bulk-adjust-chip{font-size:10px;font-weight:850;letter-spacing:1px;color:#fca311;background:#fca31119;border:1px solid #fca31138;border-radius:7px;padding:5px 8px}
+.bulk-adjust-fields{display:flex;gap:18px;align-items:end;flex-wrap:wrap}
+.bulk-adjust-group{flex:1 1 340px;min-width:min(260px,100%)}
+.bulk-adjust-group label{display:block;font-size:12px;color:#e5e7ed;font-weight:700;margin-bottom:8px}
+.bulk-adjust-modes{display:inline-flex;align-items:stretch;border:1px solid #454751;border-radius:10px;max-width:100%;overflow:hidden}
+.bulk-adjust-modes button{display:inline-flex;align-items:center;justify-content:center;gap:8px;background:#25262a;color:#e3e4e8;border:0;border-right:1px solid #454751;padding:11px 14px;cursor:pointer;font-size:12px;font-weight:650;white-space:nowrap;transition:background .15s}
+.bulk-adjust-modes button:last-child{border-right:0}
+.bulk-adjust-modes button:hover{background:#35363c}
+.bulk-adjust-modes button.is-selected{background:#14583a;color:#d9f8e7;box-shadow:inset 0 0 0 1px #2eac6d}
+.bulk-adjust-modes button.is-selected[data-adjust-mode=discount]{background:#694c22;color:#fff0c9;box-shadow:inset 0 0 0 1px #c88c36}
+.bulk-adjust-modes button.is-selected[data-adjust-mode=fixed]{background:#233f68;color:#e4efff;box-shadow:inset 0 0 0 1px #6e96d1}
+.bulk-adjust-modes button>span{font-size:15px;font-weight:900;line-height:1}
+.bulk-adjust-amount{display:flex;align-items:center;gap:12px;min-height:43px}
+.bulk-adjust-amount input{flex:1 1 auto;min-width:0;max-width:420px;height:43px;padding:0 14px;background:#3a3c43;color:#fff;border:1px solid #51535e;border-radius:9px;font:13px Inter,system-ui,sans-serif;outline:none}
+.bulk-adjust-amount input::placeholder{color:#adb0bc}
+.bulk-adjust-amount input:focus{border-color:#fca311;box-shadow:0 0 0 3px #fca31122}
+.bulk-adjust-unit{display:flex;flex:none;border:1px solid #494b55;padding:3px;border-radius:24px;background:#242529;gap:3px}
+.bulk-adjust-unit[hidden]{display:none!important}
+.bulk-adjust-unit button{border:0;border-radius:20px;padding:7px 13px;background:transparent;color:#d6d9df;min-width:45px;cursor:pointer;font-size:12px;font-weight:750}
+.bulk-adjust-unit button.is-selected{background:#3b3e45;color:#fca311}
+.bulk-adjust-foot{display:flex;justify-content:space-between;align-items:center;gap:14px;margin-top:16px;padding-top:12px;border-top:1px solid #ffffff14;flex-wrap:wrap}
+.bulk-adjust-foot p{font-size:11px;line-height:1.5;color:#adb7c8;margin:0;flex:1 1 230px}
+.bulk-adjust-foot p[data-error=true]{color:#ffb580}
+.bulk-adjust-foot button{background:#fca311!important;color:#14213d!important;border-color:#fca311!important;border-radius:10px;font-weight:800;padding:10px 17px}
+.bulk-adjust-foot button:not(:disabled):hover{background:#ffba3d!important}
+.bulk-adjust-foot button:disabled{opacity:.5!important;cursor:not-allowed}
+.bulk-adjustment button:focus-visible{outline:2px solid #fca311;outline-offset:2px}
+html[data-theme=light] .bulk-adjustment{background:#14213d;border-color:#384861}
+html[data-theme=light] .bulk-adjust-modes button{background:#192b47;color:#e8eef7;border-color:#374963}
+html[data-theme=light] .bulk-adjust-modes button:hover{background:#2c4363}
+html[data-theme=light] .bulk-adjust-modes button.is-selected[data-adjust-mode=increase]{background:#14583a;color:#d9f8e7}
+html[data-theme=light] .bulk-adjust-modes button.is-selected[data-adjust-mode=discount]{background:#694c22;color:#fff0c9}
+html[data-theme=light] .bulk-adjust-modes button.is-selected[data-adjust-mode=fixed]{background:#233f68;color:#e4efff}
+html[data-theme=light] .bulk-adjust-amount input{background:#263650;border-color:#495875}
+html[data-theme=light] .bulk-adjust-unit{background:#192b47;border-color:#40526e}
+html[data-theme=light] .bulk-adjust-unit button.is-selected{background:#334765}
+@media(max-width:1000px){.bulk-adjust-fields{display:block}.bulk-adjust-group+.bulk-adjust-group{margin-top:15px}.bulk-adjust-group{width:100%}}
+@media(max-width:650px){.bulk-adjustment{margin:0 12px 16px;padding:15px 13px}.bulk-adjust-modes{display:flex;width:100%}.bulk-adjust-modes button{flex:1;padding:10px 6px;white-space:normal;font-size:11px}.bulk-adjust-amount input{max-width:none}.bulk-adjust-foot button{width:100%}}
+
+/* Seleção do reajuste sempre na identidade azul/laranja do portal. */
+.bulk-adjustment,html[data-theme=light] .bulk-adjustment,html[data-theme=dark] .bulk-adjustment{background:#14213d;border-color:#344763}
+.bulk-adjust-modes button.is-selected,
+.bulk-adjust-modes button.is-selected[data-adjust-mode=increase],
+.bulk-adjust-modes button.is-selected[data-adjust-mode=discount],
+.bulk-adjust-modes button.is-selected[data-adjust-mode=fixed],
+html[data-theme=light] .bulk-adjust-modes button.is-selected[data-adjust-mode=increase],
+html[data-theme=light] .bulk-adjust-modes button.is-selected[data-adjust-mode=discount],
+html[data-theme=light] .bulk-adjust-modes button.is-selected[data-adjust-mode=fixed]{
+ background:#fca311!important;color:#14213d!important;
+ box-shadow:inset 0 0 0 1px #ffc65c!important;
+}
